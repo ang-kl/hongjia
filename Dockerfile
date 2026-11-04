@@ -5,11 +5,9 @@
 FROM node:24.22.2-bookworm-slim AS build
 WORKDIR /repo
 COPY . .
-# The optional npm_ca secret is only for builds behind an intercepting proxy (for example a local
-# check); Railway does not provide it and the step runs normally without it.
-RUN --mount=type=secret,id=npm_ca,required=false \
-    if [ -s /run/secrets/npm_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/npm_ca; fi \
- && node common/scripts/install-run-rush.js install \
+# Railway accepts only cache mounts in RUN instructions; any other mount type fails validation
+# (deployment 841268e3, 4 November 2026). apps/web/test/dockerfile.test.mjs guards this.
+RUN node common/scripts/install-run-rush.js install \
  && node common/scripts/install-run-rush.js build --to @hongjia/web \
  && node common/scripts/install-run-rush.js test --to @hongjia/web
 
