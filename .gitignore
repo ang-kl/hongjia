@@ -1,0 +1,22 @@
+# Dependencies and Rush working folders
+node_modules/
+common/temp/
+common/deploy/
+common/autoinstallers/*/.npmrc
+**/.rush/temp/
+temp/
+
+# Build output
+dist/
+
+# Logs and local files
+*.log
+.pnpm-debug.log*
+.DS_Store
+.idea/
+.vscode/
+
+# Secrets never belong in this public repository
+.env
+.env.*
+!.env.example

@@ -553,3 +553,4 @@ INVARIANTS REPORT for the build: to be filled at the end of each approved phase.
 |---|---|---|
 | 0.1 | 4 November 2026 | First draft. |
 | 0.2 | 4 November 2026 | Owner confirmed Rush.js (G1, A1, D1) and adrian as owner (G3, A11, D3). Added the Rush workspace details to section 10, the Railpack build risk, the current 404 state of both addresses, and the expected failed build on merge. Every other assumption is still pending. |
+| 0.3 | 4 November 2026 | P0 spec approved and built (`docs/specs/2026-11-04_P0-foundations.md`). Delta from section 10: PostgreSQL and migrations move from P0 to P1; production uses Node 24; Railway builds from a root `Dockerfile` because `railway.json` is deprecated. |

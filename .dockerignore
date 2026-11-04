@@ -1,0 +1,12 @@
+.git
+.github
+**/node_modules
+common/temp
+common/deploy
+**/.rush
+**/dist
+docs
+tests
+*.log
+.env
+.env.*

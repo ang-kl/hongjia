@@ -148,3 +148,33 @@ If the first deployment fails or misbehaves, revert the merge commit on `main`. 
 ## Evidence
 
 To be filled after building: INVARIANTS REPORT (Passed, Failed or Not Verifiable, each with evidence), the verify output, CI links and, after the merge, the deployment checks.
+
+### Evidence, build stage (appended 4 November 2026, before merge)
+
+Approval: the owner replied `APPROVE docs/specs/2026-11-04_P0-foundations.md` on 4 November 2026. Nothing above this heading was changed after approval.
+
+**Verify command** (local, Node 22.23.4): `rush install`, `rush build` and `rush test` all report SUCCESS for both projects. Tests: `@hongjia/shared` 12 of 12, `@hongjia/web` 21 of 21.
+
+**Browser check** (`tests/browser/p0-layout.mjs`, Chromium, light and dark): 14 of 14 passed at the seven viewports, with the correct tier, no sideways scroll, text fully visible, and no console messages, failed requests or CSP violations.
+
+**Container** (local Docker 29.9.2, same Dockerfile): the image builds; Rush ran on Node 24.22.2 and the tests passed inside the build. The container answers `{"status":"ok","commit":"60a5806"}` on both `PORT=3000` and 8080, runs as uid 1000 (`node`), has no `node_modules`, and sends the security headers. Docker Hub refused the anonymous base-image pull locally (429), so the same `node:24.22.2-bookworm-slim` image was taken from Google's Docker Hub mirror for this local check only. Railway pulls from Docker Hub itself.
+
+**Notes on how the spec was met**
+- `public/assets/site.mjs` is generated at build time from `src/client/apply-profile.mjs` plus the shared device profile, so the server still sends exactly two static files.
+- One test expectation I wrote was wrong and was corrected: the device profile's fallback size, 1280 × 800, counts as a tablet under the owner's rules (as in michi). The rules were not changed.
+- The README heading was corrected from "hongia" to "hongjia".
+
+**INVARIANTS REPORT (build stage)**
+
+| ID | Result | Evidence |
+|----|--------|----------|
+| I1 | Passed | approved-copy test; scan of all 33 files found no private terms |
+| I2 | Passed | Railway variable names and environment description identical before and after (only Railway's own variables; latest deployment still the earlier failed one) |
+| I3 | Passed | PR #1 still a draft; nothing merged |
+| I4 | Passed | `headers.test.mjs`, 8 cases including 404 and 405 |
+| I5 | Passed | `device-profile.test.mjs`, 480-row parity table generated from michi's module (commit fb60076) |
+| I6 | Passed | local container: uid 1000, no `node_modules` |
+| I7 | Passed | dash test on served files; scan of all repository files found no en or em dashes |
+| I8 | Passed | `rush.json` pins Rush 5.182.1 and pnpm 9.15.9; Dockerfile pins `node:24.22.2-bookworm-slim`; CI pins Node 24.22.2 |
+
+Still to come: CI results on the pull request, then, after `APPROVE merge PR #1`, the deployment checks.

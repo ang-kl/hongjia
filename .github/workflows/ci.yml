@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.22.2
+      - name: Rush install
+        run: node common/scripts/install-run-rush.js install
+      - name: Rush build
+        run: node common/scripts/install-run-rush.js build --verbose
+      - name: Rush test
+        run: node common/scripts/install-run-rush.js test --verbose
+
+  container:
+    name: container
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build image (the same Dockerfile Railway uses)
+        run: docker build -t hongjia-web .
+      - name: Run and check the container
+        run: |
+          docker run -d --name web -e PORT=3000 -e RAILWAY_GIT_COMMIT_SHA="$GITHUB_SHA" -p 3000:3000 -p 8080:8080 hongjia-web
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:3000/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:3000/healthz | grep -q '"status":"ok"'
+          curl -fsS http://127.0.0.1:8080/healthz | grep -q "${GITHUB_SHA::7}"
+          curl -fsSI http://127.0.0.1:3000/ | grep -qi '^content-security-policy:'
+          test "$(docker exec web id -u)" != "0"
+          docker exec web sh -c 'test ! -e /app/node_modules'
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs web || true
