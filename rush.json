@@ -1,0 +1,23 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/rush/v5/rush.schema.json",
+  "rushVersion": "5.182.1",
+  "pnpmVersion": "9.15.9",
+  "nodeSupportedVersionRange": ">=22.12.0 <25.0.0",
+  "projectFolderMinDepth": 2,
+  "projectFolderMaxDepth": 2,
+  "gitPolicy": {},
+  "repository": {
+    "url": "https://github.com/ang-kl/hongjia",
+    "defaultBranch": "main"
+  },
+  "eventHooks": {
+    "preRushInstall": [],
+    "postRushInstall": [],
+    "preRushBuild": [],
+    "postRushBuild": []
+  },
+  "projects": [
+    { "packageName": "@hongjia/shared", "projectFolder": "packages/shared", "shouldPublish": false },
+    { "packageName": "@hongjia/web", "projectFolder": "apps/web", "shouldPublish": false }
+  ]
+}

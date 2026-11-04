@@ -1,0 +1,67 @@
+:root {
+  --bg: #f6f2e9;
+  --card: #fffdfa;
+  --ink: #14373e;
+  --muted: #526c70;
+  --line: #d9e4df;
+  --gutter: 16px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1f22;
+    --card: #15292d;
+    --ink: #e6efed;
+    --muted: #a7bcba;
+    --line: #24413f;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { margin: 0; }
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding:
+    max(var(--gutter), env(safe-area-inset-top))
+    max(var(--gutter), env(safe-area-inset-right))
+    max(var(--gutter), env(safe-area-inset-bottom))
+    max(var(--gutter), env(safe-area-inset-left));
+}
+
+.card {
+  width: min(100%, 34rem);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: clamp(24px, 6vw, 48px);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+h1 {
+  margin: 0 0 0.5em;
+  font: 400 clamp(2rem, 7vw, 3.25rem)/1.15 Georgia, "Songti SC", "Noto Serif CJK SC", "Noto Serif", serif;
+  letter-spacing: -0.01em;
+}
+
+p {
+  margin: 0;
+  color: var(--muted);
+  font-size: clamp(1rem, 2.6vw, 1.15rem);
+}
+
+/* The owner's device tiers (set by site.mjs from the device profile). */
+[data-form-factor="desktop"] .card { padding: 56px; }
+[data-size-tier="tablet-small"] .card { width: min(100%, 30rem); }
+[data-form-factor="phone"] .card { border-radius: 18px; }
+[data-size-tier="phone-compact"] { --gutter: 12px; }
+[data-size-tier="phone-compact"] .card { padding: 22px; border-radius: 16px; }
