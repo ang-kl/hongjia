@@ -1,12 +1,10 @@
 .git
 .github
-**/node_modules
-common/temp
-common/deploy
-**/.rush
-**/dist
+target
 docs
 tests
+web/test
+**/node_modules
 *.log
 .env
 .env.*

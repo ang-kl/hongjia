@@ -137,3 +137,34 @@ Railway can roll back to deployment `0d357c5a` (the live Node.js placeholder), o
 ## Evidence
 
 To be filled after building: INVARIANTS REPORT, verify output, CI links and, after the merge, the live checks.
+
+### Evidence, build stage (appended 5 November 2026, before merge)
+
+Approval: the owner replied `APPROVE docs/specs/2026-11-05_P0R-rust-server.md` on 5 November 2026. Nothing above this heading was changed after approval.
+
+**Verify command** (local, Rust 1.99.1 installed from `rust-toolchain.toml`): `cargo fmt --check` clean; `cargo clippy --all-targets --locked -- -D warnings` clean; `cargo test --locked` 16 of 16 (2 unit, 2 Dockerfile guard, 12 HTTP); `node --test "web/test/**/*.test.mjs"` 12 of 12 (device profile parity with michi, 480 rows). `Cargo.lock` holds 42 packages; direct dependencies are axum 0.8.9 and tokio 1.54.1 only.
+
+**Parity with the live P0** (the Rust binary against https://hongjia.org, 13 cases: page, health, robots, both shared assets, unknown path, POST on known and unknown paths, HEAD, dotted and encoded paths, double slash, query string): status codes and 11 header values identical in every case. The only intended difference is the third asset, `/assets/device-profile.mjs` (A5), which returns 200 as JavaScript.
+
+**Browser check** (`tests/browser/p0-layout.mjs` against the Rust binary, Chromium, light and dark): 14 of 14 passed at the seven viewports.
+
+**Runtime image** (local; the repository Dockerfile's runtime stage with a host-built binary, because this workspace's proxy blocks crate downloads inside a container build): answers on `PORT=3000` and 8080, runs as `65532:65532`, has no shell, sends all eight security headers, is 44.7 MB, and stops cleanly on SIGTERM (exit 0). The release binary is 1.1 MB. The build image `rust:1.99.1-slim-trixie` exists (checked through Google's Docker Hub mirror). The full Dockerfile build is proven by CI's `container` job.
+
+**Railway**: variable names unchanged (only Railway's own); live deployment still `0d357c5a` (Node.js placeholder).
+
+**INVARIANTS REPORT (build stage)**
+
+| ID | Result | Evidence |
+|----|--------|----------|
+| I1 | Passed | 13-case live comparison: no differences; `tests/http.rs` |
+| I2 | Passed | runtime image holds one binary; no npm packages anywhere in the repository |
+| I3 | Passed | Railway variables and deployment unchanged |
+| I4 | Passed | PR #3 still a draft |
+| I5 | Passed | `every_response_carries_every_security_header` (9 cases including 404 and 405) |
+| I6 | Passed | `tests/dockerfile.rs`; local runtime: user 65532, no shell |
+| I7 | Passed | `only_cache_mounts_which_railway_accepts` |
+| I8 | Passed | `web/test/device-profile.test.mjs` 12 of 12 |
+| I9 | Passed | `served_text_uses_hyphens_only`, approved-copy test; repository scan of 25 files clean |
+| I10 | Passed | toolchain 1.99.1 pinned; `--locked` everywhere; runtime image pinned by digest |
+
+Still to come: CI on the PR, then, after `APPROVE merge PR #3`, the live checks.

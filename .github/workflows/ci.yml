@@ -13,26 +13,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-test:
-    name: build-test
+  rust:
+    name: rust
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Toolchain (pinned by rust-toolchain.toml)
+        run: rustup show active-toolchain && rustup component add rustfmt clippy
+      - name: Format
+        run: cargo fmt --check
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --locked
+
+  browser-js:
+    name: browser-js
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 24.22.2
-      - name: Rush install
-        run: node common/scripts/install-run-rush.js install
-      - name: Rush build
-        run: node common/scripts/install-run-rush.js build --verbose
-      - name: Rush test
-        run: node common/scripts/install-run-rush.js test --verbose
+      - name: Device profile parity with michi
+        run: node --test "web/test/**/*.test.mjs"
 
   container:
     name: container
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
       - name: Build image (the same Dockerfile Railway uses)
@@ -44,8 +55,10 @@ jobs:
           curl -fsS http://127.0.0.1:3000/healthz | grep -q '"status":"ok"'
           curl -fsS http://127.0.0.1:8080/healthz | grep -q "${GITHUB_SHA::7}"
           curl -fsSI http://127.0.0.1:3000/ | grep -qi '^content-security-policy:'
-          test "$(docker exec web id -u)" != "0"
-          docker exec web sh -c 'test ! -e /app/node_modules'
+          test "$(docker inspect --format '{{.Config.User}}' hongjia-web)" = "65532:65532"
+          size=$(docker image inspect --format '{{.Size}}' hongjia-web)
+          echo "image size: $size bytes"
+          test "$size" -lt 60000000
       - name: Container logs on failure
         if: failure()
         run: docker logs web || true

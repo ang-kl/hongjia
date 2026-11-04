@@ -1,4 +1,4 @@
-import { readDeviceProfile } from '@hongjia/shared/device-profile';
+import { readDeviceProfile } from './device-profile.mjs';
 
 // Mark the page with the owner's device tiers so the stylesheet can follow geometry, not brand.
 const apply = () => {

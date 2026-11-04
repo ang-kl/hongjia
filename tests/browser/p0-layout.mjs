@@ -1,19 +1,31 @@
-// P0 browser check across the owner's device classes (plan section 5.9).
-// Run after `rush build`:  node tests/browser/p0-layout.mjs [screenshot-folder]
+// Browser check across the owner's device classes (plan section 5.9), against the Rust server.
+// Run after `cargo build --release`:  node tests/browser/p0-layout.mjs [screenshot-folder]
 // Needs Playwright with Chromium installed on the machine; it is not a project dependency.
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
-const dist = pathToFileURL(resolve('apps/web/dist') + '/');
-const { createApp, loadFiles } = await import(new URL('server.mjs', dist));
-const server = createApp({ files: await loadFiles(new URL('public/', dist)), commit: 'browser' });
-await new Promise(done => server.listen(0, '127.0.0.1', done));
-const base = `http://127.0.0.1:${server.address().port}/`;
+const freePort = () => new Promise((done, fail) => {
+  const probe = createServer();
+  probe.once('error', fail);
+  probe.listen(0, '127.0.0.1', () => { const { port } = probe.address(); probe.close(() => done(port)); });
+});
+
+const port = await freePort();
+const server = spawn(resolve('target/release/hongjia-web'), [], {
+  env: { ...process.env, PORT: String(port), HONGJIA_ALSO_LISTEN: '', RAILWAY_GIT_COMMIT_SHA: '' },
+  stdio: ['ignore', 'inherit', 'inherit']
+});
+const base = `http://127.0.0.1:${port}/`;
+for (let i = 0; i < 50; i++) {
+  try { if ((await fetch(base + 'healthz')).ok) break; } catch { /* not up yet */ }
+  await new Promise(done => setTimeout(done, 100));
+}
 
 const shots = process.argv[2] ? resolve(process.argv[2]) : '';
 if (shots) await mkdir(shots, { recursive: true });
@@ -78,6 +90,6 @@ for (const scheme of ['light', 'dark']) {
   }
 }
 await browser.close();
-server.close();
+server.kill('SIGTERM');
 console.log(failures.length ? `\n${failures.length} of ${CLASSES.length * 2} checks failed` : `\nall ${CLASSES.length * 2} checks passed`);
 process.exit(failures.length ? 1 : 0);

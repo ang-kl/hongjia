@@ -1,20 +1,16 @@
-# hongjia.org web app, phase P0.
-# Stage 1 builds and tests with Rush on Node 24. Stage 2 runs the built files on a slim Node 24
-# image as the non-root "node" user, with no npm packages. Railway detects this file automatically.
+# hongjia.org web server (Rust), phase P0R.
+# Stage 1 tests and builds on Rust 1.99.1. Stage 2 is a distroless image with no shell that runs
+# the single binary as a non-root user. Railway detects this file automatically and accepts only
+# cache mounts in RUN steps, so no other mount is used (crates/web/tests/dockerfile.rs checks this).
 
-FROM node:24.22.2-bookworm-slim AS build
-WORKDIR /repo
+FROM rust:1.99.1-slim-trixie AS build
+WORKDIR /src
 COPY . .
-# Railway accepts only cache mounts in RUN instructions; any other mount type fails validation
-# (deployment 841268e3, 4 November 2026). apps/web/test/dockerfile.test.mjs guards this.
-RUN node common/scripts/install-run-rush.js install \
- && node common/scripts/install-run-rush.js build --to @hongjia/web \
- && node common/scripts/install-run-rush.js test --to @hongjia/web
+RUN cargo test --locked --release \
+ && cargo build --locked --release
 
-FROM node:24.22.2-bookworm-slim AS runtime
-ENV NODE_ENV=production
-WORKDIR /app
-COPY --from=build --chown=node:node /repo/apps/web/dist ./
-USER node
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
+COPY --from=build /src/target/release/hongjia-web /hongjia-web
+USER 65532:65532
 EXPOSE 8080
-CMD ["node", "server.mjs"]
+ENTRYPOINT ["/hongjia-web"]

@@ -1,0 +1,15 @@
+[package]
+name = "hongjia-web"
+version = "0.1.0"
+description = "hongjia.org web server"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "sync"] }
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["io-util"] }

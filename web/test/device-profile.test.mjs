@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { classifyDeviceProfile, readDeviceProfile, RESPONSIVE_PROFILE_VERSION } from '../src/device-profile.mjs';
+import { classifyDeviceProfile, readDeviceProfile, RESPONSIVE_PROFILE_VERSION } from '../assets/device-profile.mjs';
 
 const fixture = JSON.parse(await readFile(new URL('./fixtures/michi-parity.json', import.meta.url), 'utf8'));
 
