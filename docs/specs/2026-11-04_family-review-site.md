@@ -21,7 +21,7 @@ verify: ""
 
 # Hongjia family review site - draft plan
 
-Version 0.1 (draft) · 4 November 2026 · Asia/Singapore · prepared in Claude Code for the owner's review.
+Version 0.2 (draft) · 4 November 2026 · Asia/Singapore · prepared in Claude Code for the owner's review. Changes since 0.1 are listed in section 19.
 This is a plan only. Nothing here has been built, deployed, configured or sent.
 
 ## 0. Privacy note for this public repository
@@ -29,7 +29,7 @@ This is a plan only. Nothing here has been built, deployed, configured or sent.
 This repository is public. This plan therefore leaves out, on purpose:
 
 - the proposed starter password, and any hint that narrows it;
-- the family members' names (the four profiles are seeded from configuration, see D16);
+- the family members' names (the four profiles are seeded from configuration, see D16), except the owner profile, adrian, who is already named in LICENSE.MD;
 - the content of the first document (dates, places, bookings). Only its structure is described here. The detailed analysis profile is kept outside the repository.
 
 No family file has been committed, uploaded or deployed.
@@ -57,13 +57,14 @@ No family file has been committed, uploaded or deployed.
 11. PostgreSQL holds application data; files live in object storage. Hosting is compared on the owner's existing Railway and Vercel plans by additional usage, not by new subscriptions.
 12. Layout follows the owner's device profile from 2026-0313_AI-JS (as ported into michi): notebook, tablet, mini tablet, phone max, phone small.
 13. Navigation follows michi's floating button group: 🛰️ satellite (search), globe, 📁 folder (contents), driven by a keyword profile built from each document.
-14. "Build using Rush" is read as Rush (rushjs.io), Microsoft's monorepo manager. See G1.
+14. The build uses Rush (rushjs.io), Microsoft's monorepo manager. Confirmed by the owner, 4 November 2026.
+15. The owner profile is adrian. Confirmed by the owner, 4 November 2026.
 
 ### GAPS (could change the outcome; owner to resolve)
 
-- **G1 "Rush".** (a) Rush.js monorepo manager (this plan's working reading); (b) Rust, the language; (c) "rush" meaning "quickly, as an MVP". (a) shapes the repository layout; (b) would change the whole server stack; (c) would change scope and order.
+- **G1 "Rush".** Resolved 4 November 2026: Rush.js.
 - **G2 "second HTML".** (a) The first document is analysed deeply to build and calibrate the profiler; every later upload is document 2, 3 and so on, profiled by the same rules. (b) Every upload keeps its original ("first HTML") and the site generates a reviewed rendition ("second HTML") with the globe and comments around it. This plan does both, without ever editing the stored original, but the owner should confirm which was meant.
-- **G3 Owner role.** Which profile is the owner (uploads settings, retention, deletions, credential resets)?
+- **G3 Owner role.** Resolved 4 November 2026: adrian is the owner (settings, retention, deletions, credential resets).
 - **G4 "Change using iPad pencil".** Read as drawing ink marks and suggesting changes, not editing the stored file. Applying a suggestion creates a new version made by the uploader.
 - **G5 "Text documents".** TXT and Markdown are assumed. Word (.docx) and PDF would add converters (D13).
 
@@ -71,7 +72,7 @@ No family file has been committed, uploaded or deployed.
 
 | ID | Assumption | Status | Note |
 |----|------------|--------|------|
-| A1 | Rush means Rush.js (G1) | pending | |
+| A1 | Rush means Rush.js (G1) | confirmed | owner, 4 November 2026 |
 | A2 | Railway is the host; Vercel is not used for this site | pending | evidence in section 7 |
 | A3 | All four profiles see all documents and the whole dashboard | pending | per-document privacy is D12 |
 | A4 | Any profile may upload; only the uploader or owner may replace or delete | pending | D12 |
@@ -81,6 +82,7 @@ No family file has been committed, uploaded or deployed.
 | A8 | Real-time updates use Server-Sent Events from one Node process | pending | fits Railway, not Vercel functions |
 | A9 | The michi globe and device-profile code may be reused here | pending | both are the owner's repositories |
 | A10 | Family names are seeded from configuration, not hard-coded | pending | D16 |
+| A11 | The owner profile is adrian (G3) | confirmed | owner, 4 November 2026 |
 
 Only the owner confirms an assumption.
 
@@ -357,7 +359,7 @@ How location works: the browser's own location prompt with low accuracy; the coo
 ## 7. Hosting: Railway versus Vercel (additional usage on existing plans)
 
 **Read-only checks made on 4 November 2026**
-- Railway: project "hongjia" exists in the owner's workspace, one production environment, one service "hongjia" building from this repository's `main` branch with Railpack, region asia-southeast1 (Singapore), domains hongjia.up.railway.app and hongjia.org attached. Latest deployment FAILED (the repository has no app yet). No database, volume or bucket yet. **A merge to `main` will start a Railway deployment.**
+- Railway: project "hongjia" exists in the owner's workspace, one production environment, one service "hongjia" building from this repository's `main` branch with Railpack, region asia-southeast1 (Singapore), domains hongjia.up.railway.app and hongjia.org attached. Latest deployment FAILED at the image build stage ("Railpack failed to prepare the build"), because the repository has no app yet. No database, volume or bucket yet. Both addresses answer `404 Application not found` (checked 21:20 SGT). **A merge to `main` will start a Railway deployment**; until the app exists, that build is expected to fail the same way.
 - Vercel: the owner's team exists; no Vercel project is linked to this repository, so pushes here do not deploy on Vercel.
 
 | | Railway (recommended) | Vercel |
@@ -400,7 +402,16 @@ Estimated additional Railway usage per month (rates above; computed, not measure
 
 ## 10. Implementation plan (each phase gets its own spec and APPROVE)
 
-Repository layout under Rush (if G1 is confirmed): `apps/web`, `packages/profiler`, `packages/review-bridge`, `packages/fab-globe`, `packages/shared`, `db/migrations`, `tests`; `rush.json` with pnpm; `railway.json` sets the build to `node common/scripts/install-run-rush.js install && node common/scripts/install-run-rush.js build` and the start command. Node 22, the same as michi.
+**Rush workspace (G1 confirmed)**
+
+- Rush 5.182.1 is the current release on npm (checked 4 November 2026; it requires Node 20.9 or later). The exact Rush and pnpm versions are pinned in `rush.json` at P0.
+- Projects: `apps/web` (`@hongjia/web`), `packages/profiler`, `packages/review-bridge`, `packages/fab-globe`, `packages/shared`. Each has its own `package.json`. All are private, with `shouldPublish: false`, so Rush change files are not needed.
+- Package manager: pnpm, the one Rush recommends; one lockfile in `common/config/rush/`.
+- `nodeSupportedVersionRange` is `>=22.0.0 <25.0.0`, the same range as michi.
+- Bulk commands `test` and `check` go in `common/config/rush/command-line.json`. Each project's tests run with `node --test`.
+- CI and Railway run Rush through `common/scripts/install-run-rush.js`, so no global install is needed.
+- Railway build: a Rush repository has no root `package.json`, so Railpack may not recognise it as Node. The README-only commit already failed at "Railpack failed to prepare the build". P0 therefore adds either a `Dockerfile` (Node 22 slim, `install-run-rush.js install`, then `build --to @hongjia/web`) or a Railpack config file, and proves it with a local container build before any merge.
+- Other folders: `db/migrations` and `tests` (cross-project browser and security suites).
 
 | Phase | Delivers | Deploys? |
 |---|---|---|
@@ -463,9 +474,9 @@ The first document is used only as a local test fixture until go-live; the publi
 
 | ID | Decision | Recommendation |
 |----|----------|----------------|
-| D1 | What "Rush" means (G1) | Rush.js if a monorepo is wanted; plain npm workspaces would be lighter |
+| D1 | What "Rush" means (G1) | decided: Rush.js |
 | D2 | What "second HTML" means (G2) | both readings, original never edited |
-| D3 | Which profile is owner (G3) | the person who maintains the site |
+| D3 | Which profile is owner (G3) | decided: adrian |
 | D4 | Go-live credentials | passkeys with passphrase fallback |
 | D5 | Sandbox origin | (a) view.hongjia.org, no cost; (b) a separate domain, stronger isolation, yearly fee |
 | D6 | Allow named CDNs, font hosts, embeds or downloads inside documents | allow cdnjs, jsDelivr, unpkg and Google Fonts; keep embeds and downloads off |
@@ -493,7 +504,7 @@ The first document is used only as a local test fixture until go-live; the publi
 - HEIC (iPhone photo) decoding in the image pipeline.
 - `window.print()` in a sandboxed frame on iPadOS and iOS Safari, and Apple Pencil pressure through Pointer Events: real-device tests needed.
 - Who manages DNS for hongjia.org, and whether it sits behind a proxy such as Cloudflare.
-- Current Rush version and Railpack's handling of a Rush workspace.
+- Whether Railpack builds a Rush workspace without a root `package.json` (Rush version itself now checked: 5.182.1).
 - Prices and features of the products in section 16 (vendor claims, not tested).
 - Legal position under Singapore's PDPA for a family site: not legal advice. The design asks for consent regardless.
 
@@ -535,3 +546,10 @@ Read-only checks and sources used for this draft (4 November 2026):
 - Document 1 analysed locally with a deterministic parser; counts above are exact for that file.
 
 INVARIANTS REPORT for the build: to be filled at the end of each approved phase.
+
+## 19. Change log
+
+| Version | Date | Change |
+|---|---|---|
+| 0.1 | 4 November 2026 | First draft. |
+| 0.2 | 4 November 2026 | Owner confirmed Rush.js (G1, A1, D1) and adrian as owner (G3, A11, D3). Added the Rush workspace details to section 10, the Railpack build risk, the current 404 state of both addresses, and the expected failed build on merge. Every other assumption is still pending. |
