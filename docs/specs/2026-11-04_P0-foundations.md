@@ -178,3 +178,11 @@ Approval: the owner replied `APPROVE docs/specs/2026-11-04_P0-foundations.md` on
 | I8 | Passed | `rush.json` pins Rush 5.182.1 and pnpm 9.15.9; Dockerfile pins `node:24.22.2-bookworm-slim`; CI pins Node 24.22.2 |
 
 Still to come: CI results on the pull request, then, after `APPROVE merge PR #1`, the deployment checks.
+
+### Evidence, deployment attempt 1 (appended 4 November 2026)
+
+- The owner replied `APPROVE merge PR #1`. PR #1 was merged as `f46b6a1` and Railway started deployment `841268e3`.
+- **Failed** at image build after about 9 seconds: `dockerfile invalid: flag '--mount=type=secret,id=npm_ca,required=false' is missing a type=cache argument (other mount types are not supported) at Line 10`. Railway's validator accepts only cache mounts. GitHub's builder accepted the same file, which is why CI was green.
+- Cause: my optional secret mount, added only to make local builds work behind this workspace's proxy. Site state unchanged: both addresses still return `404 Application not found`.
+- Fix (PR #2): the secret mount is removed. New test `apps/web/test/dockerfile.test.mjs` fails on the old Dockerfile (reproduced) and passes on the fixed one, so this cannot return. `rush test`: 12 + 23 tests pass.
+- Deploying the fix needs a fresh `APPROVE merge PR #2`.
