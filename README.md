@@ -1,42 +1,44 @@
 # hongjia
 洪家
 
-A private family review site for hongjia.org. Updated 4 November 2026.
+A private family review site for hongjia.org. Updated 5 November 2026.
 
-**Status: phase P0.** The site shows a placeholder page only. There is no login, family content or data yet.
+**Status: phase P0R.** The site shows a placeholder page only. There is no login, family content or data yet.
 
 ## Plan and specs
 
 - [`docs/specs/2026-11-04_family-review-site.md`](docs/specs/2026-11-04_family-review-site.md): the overall plan (draft).
-- [`docs/specs/2026-11-04_P0-foundations.md`](docs/specs/2026-11-04_P0-foundations.md): phase P0, approved by the owner.
-
-## Working on it
-
-Needs Node 22.12 or later (production runs Node 24). Rush runs through the checked-in script, so no global install is needed:
-
-```bash
-node common/scripts/install-run-rush.js install
-```
-
-```bash
-node common/scripts/install-run-rush.js build
-```
-
-```bash
-node common/scripts/install-run-rush.js test
-```
-
-```bash
-node apps/web/dist/server.mjs
-```
-
-The server listens on `$PORT` and on 8080.
+- [`docs/specs/2026-11-04_P0-foundations.md`](docs/specs/2026-11-04_P0-foundations.md): phase P0 (done; Node.js placeholder).
+- [`docs/specs/2026-11-05_P0R-rust-server.md`](docs/specs/2026-11-05_P0R-rust-server.md): phase P0R, the Rust server.
 
 ## Layout
 
-- `apps/web`: the web app (`@hongjia/web`).
-- `packages/shared`: code shared between projects (`@hongjia/shared`), starting with the owner's device profile.
+- `crates/web`: the Rust web server (`hongjia-web`, axum and tokio).
+- `web`: browser files (plain JavaScript, no build step). They are compiled into the server binary.
+- `web/test`: tests for the browser JavaScript, run with Node.js (a test tool only, never shipped).
 - `tests/browser`: browser checks across the owner's device classes.
+
+## Working on it
+
+Rust 1.99.1 is pinned in `rust-toolchain.toml`; `rustup` installs it automatically.
+
+```bash
+cargo test --locked
+```
+
+```bash
+cargo clippy --all-targets --locked -- -D warnings
+```
+
+```bash
+node --test "web/test/**/*.test.mjs"
+```
+
+```bash
+cargo run --release
+```
+
+The server listens on `$PORT` and on 8080 (`HONGJIA_ALSO_LISTEN` changes or, if empty, disables the second port).
 
 ## Deploying
 

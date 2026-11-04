@@ -186,3 +186,11 @@ Still to come: CI results on the pull request, then, after `APPROVE merge PR #1`
 - Cause: my optional secret mount, added only to make local builds work behind this workspace's proxy. Site state unchanged: both addresses still return `404 Application not found`.
 - Fix (PR #2): the secret mount is removed. New test `apps/web/test/dockerfile.test.mjs` fails on the old Dockerfile (reproduced) and passes on the fixed one, so this cannot return. `rush test`: 12 + 23 tests pass.
 - Deploying the fix needs a fresh `APPROVE merge PR #2`.
+
+### Evidence, deployment attempt 2 (appended 5 November 2026)
+
+- The owner replied `APPROVE merge PR #2`. Merged as `a8b046c`; Railway deployment `0d357c5a` **succeeded** in asia-southeast1 about 50 seconds after the merge.
+- Live checks, 5 November 2026 05:39 SGT, on hongjia.org and hongjia.up.railway.app: `/` 200 (approved copy only), `/healthz` 200 `{"status":"ok","commit":"a8b046c"}`, `/robots.txt` 200, both assets 200, unknown path 404, POST 405, all eight security headers present, `http` redirects to `https`.
+- Live browser check at the seven viewports: 7 of 7 passed (correct tier, no sideways scroll, no console errors).
+- Railway variable names unchanged (only Railway's own). The build log shows "load build definition from Dockerfile"; the exact phrase "Using detected Dockerfile!" was not in the lines retrieved.
+- P0 acceptance: met. Next: P0R replaces this Node.js server with Rust (owner's option a, 5 November 2026).

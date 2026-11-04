@@ -1,17 +1,11 @@
-# Dependencies and Rush working folders
-node_modules/
-common/temp/
-common/deploy/
-common/autoinstallers/*/.npmrc
-**/.rush/temp/
-temp/
+# Rust build output
+target/
 
-# Build output
-dist/
+# Node.js is used only to run the browser JavaScript tests
+node_modules/
 
 # Logs and local files
 *.log
-.pnpm-debug.log*
 .DS_Store
 .idea/
 .vscode/
