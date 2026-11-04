@@ -168,3 +168,12 @@ Approval: the owner replied `APPROVE docs/specs/2026-11-05_P0R-rust-server.md` o
 | I10 | Passed | toolchain 1.99.1 pinned; `--locked` everywhere; runtime image pinned by digest |
 
 Still to come: CI on the PR, then, after `APPROVE merge PR #3`, the live checks.
+
+### Evidence, deployment (appended 5 November 2026)
+
+- The owner replied `APPROVE merge PR #3`. Merged as `4922888`; Railway deployment `ef908466` **succeeded** in asia-southeast1 about 70 seconds after the merge. The Node.js deployment `0d357c5a` was retired by Railway and remains available for rollback.
+- Railway's log: `hongjia web 4922888 listening on 8080`. Railway gives the app port 8080, so one listener serves both addresses.
+- Live checks, 5 November 2026 07:07 SGT: 14 request kinds on each of hongjia.org and hongjia.up.railway.app, 28 of 28 with the expected status and all eight security headers; `/healthz` shows `4922888` on both; page text is the approved copy; `http` redirects to `https`.
+- Live browser check at the seven viewports: 7 of 7.
+- Railway variable names unchanged.
+- P0R acceptance: met.

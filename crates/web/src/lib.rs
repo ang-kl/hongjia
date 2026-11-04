@@ -14,6 +14,8 @@ use axum::{
 };
 use std::sync::Arc;
 
+pub mod family;
+
 /// The placeholder page loads only its own stylesheet and scripts; nothing else is allowed.
 pub const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
@@ -30,6 +32,22 @@ static INDEX_HTML: &[u8] = include_bytes!("../../../web/index.html");
 static SITE_CSS: &[u8] = include_bytes!("../../../web/assets/site.css");
 static SITE_MJS: &[u8] = include_bytes!("../../../web/assets/site.mjs");
 static DEVICE_PROFILE_MJS: &[u8] = include_bytes!("../../../web/assets/device-profile.mjs");
+static SESSION_MJS: &[u8] = include_bytes!("../../../web/assets/session.mjs");
+
+/// A compiled-in browser file (served in placeholder mode except session.mjs, which is family-only).
+pub(crate) fn asset(name: &str) -> Response {
+    match name {
+        "site.css" => file(SITE_CSS, "text/css; charset=utf-8", ASSET_CACHE),
+        "site.mjs" => file(SITE_MJS, JAVASCRIPT, ASSET_CACHE),
+        "device-profile.mjs" => file(DEVICE_PROFILE_MJS, JAVASCRIPT, ASSET_CACHE),
+        "session.mjs" => file(SESSION_MJS, JAVASCRIPT, ASSET_CACHE),
+        _ => plain(StatusCode::NOT_FOUND, "Not found\n"),
+    }
+}
+
+pub(crate) fn robots() -> Response {
+    file(ROBOTS.as_bytes(), TEXT, "public, max-age=3600")
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -93,7 +111,7 @@ fn file(body: &'static [u8], content_type: &'static str, cache: &'static str) ->
         .into_response()
 }
 
-fn plain(status: StatusCode, body: &'static str) -> Response {
+pub(crate) fn plain(status: StatusCode, body: &'static str) -> Response {
     (
         status,
         [

@@ -3,17 +3,19 @@
 
 A private family review site for hongjia.org. Updated 5 November 2026.
 
-**Status: phase P0R.** The site shows a placeholder page only. There is no login, family content or data yet.
+**Status: phase P1.** Without a database the site shows the placeholder page. With one (`DATABASE_URL`), it offers individual sign-in, sessions, consent and the login journal. Documents and review come next.
 
 ## Plan and specs
 
 - [`docs/specs/2026-11-04_family-review-site.md`](docs/specs/2026-11-04_family-review-site.md): the overall plan (draft).
 - [`docs/specs/2026-11-04_P0-foundations.md`](docs/specs/2026-11-04_P0-foundations.md): phase P0 (done; Node.js placeholder).
-- [`docs/specs/2026-11-05_P0R-rust-server.md`](docs/specs/2026-11-05_P0R-rust-server.md): phase P0R, the Rust server.
+- [`docs/specs/2026-11-05_P0R-rust-server.md`](docs/specs/2026-11-05_P0R-rust-server.md): phase P0R, the Rust server (done).
+- [`docs/specs/2026-11-05_P1-signin-journal.md`](docs/specs/2026-11-05_P1-signin-journal.md): phase P1, sign-in and the login journal.
 
 ## Layout
 
-- `crates/web`: the Rust web server (`hongjia-web`, axum and tokio).
+- `crates/web`: the Rust web server (`hongjia-web`: axum, tokio, sqlx, Argon2id).
+- `db/migrations`: PostgreSQL schema, applied by the server at start.
 - `web`: browser files (plain JavaScript, no build step). They are compiled into the server binary.
 - `web/test`: tests for the browser JavaScript, run with Node.js (a test tool only, never shipped).
 - `tests/browser`: browser checks across the owner's device classes.
@@ -31,6 +33,10 @@ cargo clippy --all-targets --locked -- -D warnings
 ```
 
 ```bash
+DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgres cargo test --locked --features db-tests
+```
+
+```bash
 node --test "web/test/**/*.test.mjs"
 ```
 
@@ -39,6 +45,8 @@ cargo run --release
 ```
 
 The server listens on `$PORT` and on 8080 (`HONGJIA_ALSO_LISTEN` changes or, if empty, disables the second port).
+
+Family mode settings (environment variables, never committed): `DATABASE_URL`, `HONGJIA_PROFILES` (comma-separated lowercase names), `HONGJIA_OWNER`, `HONGJIA_PUBLIC_ORIGIN` (required on Railway, for example `https://hongjia.org`), and `HONGJIA_BOOTSTRAP_CODE` (24 or more characters; lets the owner enrol once). `HONGJIA_AUTH_MODE=shared-dev` with `HONGJIA_DEV_PASSWORD` is for local development only and is refused on Railway.
 
 ## Deploying
 
