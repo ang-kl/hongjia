@@ -343,6 +343,9 @@
   }
 
   var lastQuote = '';
+  // The last words reported, and when they went away: on iPad a tap on ✎ Mark Up can clear the
+  // selection a moment before the page asks for the menu, so the menu still gets these words.
+  var lastWords = null, wordsGoneAt = 0;
   var selectionTimer = 0;
   var lastPointer = 'mouse';
   document.addEventListener('pointerdown', function (event) {
@@ -369,6 +372,8 @@
       var rect = sel.getRangeAt(0).getBoundingClientRect();
       box = { x: Math.round(rect.left), y: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) };
     }
+    if (quote) { lastWords = { quote: found.quote, prefix: found.prefix, suffix: found.suffix }; wordsGoneAt = 0; }
+    else if (lastWords && !wordsGoneAt) wordsGoneAt = Date.now();
     var key = quote + (box ? '|' + box.x + ',' + box.y + ',' + box.w + ',' + box.h : '');
     if (key === lastQuote) return;
     lastQuote = key;
@@ -606,8 +611,8 @@
       box: { x: r.left, y: r.top, w: r.width, h: r.height }
     };
   }
-  function menuAt(x, y, input, target) {
-    var sel = selectionInfo() || { quote: '', prefix: '', suffix: '' };
+  function menuAt(x, y, input, target, words) {
+    var sel = selectionInfo() || words || { quote: '', prefix: '', suffix: '' };
     var point = pointInfo(x, y);
     var place = anchorInfo(x, y);
     var field = target && isField(target) ? target : null;
@@ -618,6 +623,16 @@
       path: place.path, fx: Math.round(place.fx * 10000) / 10000, fy: Math.round(place.fy * 10000) / 10000,
       field: field ? fieldKey(field) : '', label: field ? clip(labelOf(field), MAX.label) : ''
     });
+    // The menu now holds the words. On a touch screen or with the Pencil the page lets go of its own
+    // selection, because iPad (and Android) keep their own edit menu on top of ours while it lasts.
+    if ((input === 'touch' || input === 'pen') && sel.quote) {
+      var live = window.getSelection && window.getSelection();
+      if (live && live.rangeCount) live.removeAllRanges();
+      // Say so at once, so choosing the same words again is reported as new.
+      clearTimeout(selectionTimer);
+      lastQuote = '';
+      send({ type: 'hj:selection', quote: '', prefix: '', suffix: '' });
+    }
   }
   var lastTouchMenu = 0;
   document.addEventListener('contextmenu', function (event) {
@@ -805,7 +820,8 @@
     } else if (d.type === 'hj:menu-at' && isFinite(d.x) && isFinite(d.y)) {
       // ✎ Mark Up on the page: open the menu for the selected words, as a long press would.
       var mx = clamp(Number(d.x), 0, window.innerWidth - 1), my = clamp(Number(d.y), 0, window.innerHeight - 1);
-      menuAt(mx, my, 'touch', document.elementFromPoint(mx, my));
+      var words = lastWords && (!wordsGoneAt || Date.now() - wordsGoneAt < 3000) ? lastWords : null;
+      menuAt(mx, my, lastPointer === 'pen' ? 'pen' : 'touch', document.elementFromPoint(mx, my), words);
     } else if (d.type === 'hj:tool' && typeof d.color === 'string' && PALETTE[d.color]) {
       toolColor = d.color;
     } else if (d.type === 'hj:locate' && typeof d.req === 'string' && /^[0-9]{1,12}$/.test(d.req) && isFinite(d.x) && isFinite(d.y)) {

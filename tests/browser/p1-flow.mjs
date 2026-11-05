@@ -321,22 +321,35 @@ await page.click('.anno-menu [data-nav=more]');
 const moreText = (await page.textContent('.anno-menu .anno-body')).replace(/\s+/g, ' ');
 if (!moreText.includes('Loupe') || !moreText.includes('Highlight: Select words first')) failures.push(`… did not show Loupe and the reasons: ${moreText.slice(0, 120)}`);
 await page.click('.anno-menu [data-nav=close]');
-// ✎ Mark Up beside words selected with a finger opens the menu with the word tools ready.
-await rawFrame(page).evaluate(() => {
-  document.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true }));
+// ✎ Mark Up beside words selected with a finger or the Pencil opens the menu with the word tools
+// ready, and the page lets go of its own selection so iPad's edit menu does not cover ours.
+const selectWith = pointerType => rawFrame(page).evaluate(type => {
+  document.dispatchEvent(new PointerEvent('pointerdown', { pointerType: type, bubbles: true }));
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     const at = n.data.indexOf('river orchard');
     if (at !== -1) { const r = document.createRange(); r.setStart(n, at); r.setEnd(n, at + 13); getSelection().removeAllRanges(); getSelection().addRange(r); break; }
   }
-});
-await page.waitForSelector('.anno-pill:not([hidden])', { timeout: 3000 }).catch(() => failures.push('✎ Mark Up did not appear beside a touch selection'));
-if (await page.isVisible('.anno-pill')) {
+}, pointerType);
+for (const pointerType of ['touch', 'pen']) {
+  await selectWith(pointerType);
+  await page.waitForSelector('.anno-pill:not([hidden])', { timeout: 3000 }).catch(() => failures.push(`✎ Mark Up did not appear beside a ${pointerType} selection`));
+  if (!(await page.isVisible('.anno-pill'))) continue;
   await page.click('.anno-pill');
-  await page.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => failures.push('✎ Mark Up did not open the menu'));
-  if ((await page.getAttribute('.anno-menu .swatch >> nth=0', 'aria-disabled')) === 'true') failures.push('✎ Mark Up opened the menu without the selected words');
+  await page.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => failures.push(`✎ Mark Up (${pointerType}) did not open the menu`));
+  if ((await page.getAttribute('.anno-menu .swatch >> nth=0', 'aria-disabled')) === 'true') failures.push(`✎ Mark Up (${pointerType}) opened the menu without the selected words`);
+  if (!(await rawFrame(page).evaluate(() => getSelection().isCollapsed))) failures.push(`✎ Mark Up (${pointerType}) left the page's own selection, so iPad would keep its own menu on top`);
   await page.click('.anno-menu [data-nav=close]');
 }
+// On iPad the tap on ✎ Mark Up can clear the selection a moment before the menu is asked for;
+// the menu still gets the words.
+await selectWith('pen');
+await page.waitForSelector('.anno-pill:not([hidden])', { timeout: 3000 }).catch(() => {});
+await rawFrame(page).evaluate(() => getSelection().removeAllRanges());
+await page.evaluate(() => document.querySelector('.doc-frame').contentWindow.postMessage({ type: 'hj:menu-at', x: 40, y: 40 }, '*'));
+await page.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => failures.push('✎ Mark Up after a cleared selection did not open the menu'));
+if ((await page.getAttribute('.anno-menu .swatch >> nth=0', 'aria-disabled').catch(() => 'true')) === 'true') failures.push('✎ Mark Up lost the words when the tap had already cleared them');
+if (await page.isVisible('.anno-menu')) await page.click('.anno-menu [data-nav=close]');
 await rawFrame(page).evaluate(() => getSelection().removeAllRanges());
 await rightClick(page, 'river orchard');
 await page.locator('.doc-frame').focus();
