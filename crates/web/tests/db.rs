@@ -294,9 +294,13 @@ async fn family_password_signs_in_every_profile(pool: PgPool) {
     let port = start(pool, config()).await;
     for handle in ["alpha", "beta", "gamma", "delta"] {
         let mut c = member(port, handle).await;
-        let home = c.get("/home").await;
-        assert_eq!(home.status, 200);
-        assert!(home.body.contains(&format!("Hello, {handle}")));
+        let about = c.get("/about").await;
+        assert_eq!(about.status, 200);
+        assert!(about.body.contains(&format!("Hello, {handle}")));
+        assert!(
+            about.body.contains(r#"href="/about""#),
+            "Settings lists About"
+        );
     }
     let page = Client::new(port).get("/").await.body;
     assert!(page.contains("Family password"));
@@ -384,6 +388,7 @@ async fn csrf_origin_and_owner_checks(pool: PgPool) {
 
     let mut anonymous = Client::new(port);
     assert_eq!(anonymous.get("/home").await.status, 303);
+    assert_eq!(anonymous.get("/about").await.status, 303);
     assert_eq!(
         anonymous
             .send("POST", "/api/heartbeat", "", &[])
@@ -427,7 +432,18 @@ async fn location_needs_consent_and_is_rounded(pool: PgPool) {
         "no consent, no location"
     );
     assert_eq!(o.consent("yes").await.status, 303);
-    assert!(o.get("/home").await.body.contains(r#"data-location="yes""#));
+    assert!(
+        o.get("/about")
+            .await
+            .body
+            .contains(r#"data-location="yes""#)
+    );
+    assert!(
+        o.get("/documents")
+            .await
+            .body
+            .contains(r#"data-location="yes""#)
+    );
     assert_eq!(send(&mut o, &csrf, "91", "0").await, 400);
     assert_eq!(send(&mut o, &csrf, "1.3521", "103.8198").await, 204);
     let journal = o.get("/journal").await.body;
@@ -523,8 +539,8 @@ async fn sessions_end_in_every_way(pool: PgPool) {
     // Sign out here only.
     let csrf = b2.csrf().await;
     assert_eq!(b2.post("/signout", &[("csrf", &csrf)]).await.status, 303);
-    assert_eq!(b2.get("/home").await.status, 303);
-    assert_eq!(b1.get("/home").await.status, 200);
+    assert_eq!(b2.get("/about").await.status, 303);
+    assert_eq!(b1.get("/about").await.status, 200);
 
     // Owner ends beta's sessions.
     let csrf = o.csrf().await;
@@ -537,7 +553,7 @@ async fn sessions_end_in_every_way(pool: PgPool) {
         .status,
         303
     );
-    assert_eq!(b1.get("/home").await.status, 303);
+    assert_eq!(b1.get("/about").await.status, 303);
 
     // Idle limit: a session unused for 15 days is no longer valid.
     let mut b3 = Client::new(port);
@@ -546,7 +562,7 @@ async fn sessions_end_in_every_way(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(b3.get("/home").await.status, 303);
+    assert_eq!(b3.get("/about").await.status, 303);
 
     // Sign out everywhere.
     let mut o2 = Client::new(port);
@@ -558,7 +574,7 @@ async fn sessions_end_in_every_way(pool: PgPool) {
             .status,
         303
     );
-    assert_eq!(o2.get("/home").await.status, 303);
+    assert_eq!(o2.get("/about").await.status, 303);
 }
 
 #[sqlx::test(migrations = "../../db/migrations")]
@@ -2268,7 +2284,7 @@ async fn mentions_are_listed_for_the_people_named(pool: PgPool) {
         r.body
     );
     let mut g = member(port, "gamma").await;
-    let home = g.get("/home").await.body;
+    let home = g.get("/about").await.body;
     assert!(
         home.contains("Mentioned you")
             && home.contains("Checklist")
@@ -2277,11 +2293,11 @@ async fn mentions_are_listed_for_the_people_named(pool: PgPool) {
     assert!(home.contains("#annotation-"));
     let mut a = member(port, "alpha").await;
     assert!(
-        !a.get("/home").await.body.contains("Mentioned you"),
+        !a.get("/about").await.body.contains("Mentioned you"),
         "an email-like @ is not a mention"
     );
     assert!(
-        !b.get("/home").await.body.contains("Mentioned you"),
+        !b.get("/about").await.body.contains("Mentioned you"),
         "the author is not listed"
     );
     let view = g.get(&key).await.body;
@@ -3517,4 +3533,26 @@ async fn attachments_are_checked_downloaded_only_and_follow_the_rules(pool: PgPo
         .await
         .unwrap();
     assert_eq!(stored, 0);
+}
+
+/// Signing in, `/` and the old `/home` land on the latest document, or the list while there is none
+/// (the owner's request, 5 November 2026); the old greeting is at `/about`.
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn signed_in_people_land_on_the_latest_document(pool: PgPool) {
+    let port = start(pool, config()).await;
+    let mut o = owner(port).await;
+    for path in ["/", "/home"] {
+        let r = o.get(path).await;
+        assert_eq!(r.status, 303, "{path}");
+        assert_eq!(r.header("location"), Some("/documents/latest"), "{path}");
+    }
+    assert_eq!(
+        o.get("/documents/latest").await.header("location"),
+        Some("/documents")
+    );
+    let csrf = o.csrf().await;
+    assert_eq!(o.post("/signout", &[("csrf", &csrf)]).await.status, 303);
+    let r = o.signin("delta", FAMILY).await;
+    assert_eq!(r.status, 303);
+    assert_eq!(r.header("location"), Some("/documents/latest"));
 }
