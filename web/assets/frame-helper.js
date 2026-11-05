@@ -628,6 +628,10 @@
     if ((input === 'touch' || input === 'pen') && sel.quote) {
       var live = window.getSelection && window.getSelection();
       if (live && live.rangeCount) live.removeAllRanges();
+      // Say so at once, so choosing the same words again is reported as new.
+      clearTimeout(selectionTimer);
+      lastQuote = '';
+      send({ type: 'hj:selection', quote: '', prefix: '', suffix: '' });
     }
   }
   var lastTouchMenu = 0;
