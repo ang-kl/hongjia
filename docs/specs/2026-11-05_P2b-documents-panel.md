@@ -231,3 +231,11 @@ Owner request in chat: "make .md files display as formatted pages".
   - A database test uploads a Markdown file and checks that the frame gets a formatted page with the helper and the document policy, that raw `<script>` appears as text, and that the download is the file as uploaded. It also checks that a `.txt` file is still sent as plain text.
   - The sources list was viewed locally on iPad and phone sizes: 1 top heading, 7 section headings and 5 tables, nothing wider than the screen, and no script except the helper.
 - **Review fix (Codex):** only `.md` is treated as Markdown, because uploads do not accept `.markdown`. On a Markdown document, a redaction mark whose words cannot be found in the stored file is refused when it is made, with the message "these words cross formatting (bold, a link or a table)". This happens, for example, when the words cross bold text. Before, such a mark could be saved and then failed when the redactions were applied. A database test covers both a plain passage, which is accepted, and a passage across bold, which is refused.
+
+## Owner follow-up: Sign out in sight (6 November 2026)
+
+Owner request in chat: "add logout button".
+
+- **Place:** Sign out *name* moves out of Settings to the foot of the ☰ menu, below a thin line, so it is in sight as soon as the menu opens on every signed-in page, documents included. Settings now folds open to About and, for the owner, Owner. "Sign out on all devices" stays on About.
+- **Behaviour:** unchanged. The button posts to `/signout` with the page's CSRF token and ends this device's session only.
+- **Checks:** the menu unit test checks that Sign out comes after the Settings group, not inside it. `tests/browser/p1-flow.mjs` checks, on every device class, that Sign out is visible as soon as the menu opens and names who is signed in.

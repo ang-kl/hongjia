@@ -48,7 +48,8 @@ fn explorer(contents: &str) -> String {
 
 /// The menu button at the bottom left of every signed-in page (the owner's request, 5 November
 /// 2026): Latest document, the sidebar switch on a document page (Ö on, ø off), Documents (folds
-/// open), Journal, and Settings (folds open) with About, the owner page and Sign out. It works without
+/// open), Journal, Settings (folds open) with About and the owner page, and Sign out at the foot, in
+/// sight as soon as the menu opens (the owner: "add logout button", 6 November 2026). It works without
 /// script as nested `<details>`; menu.mjs adds closing, the document list and the sidebar switch.
 fn menu(nav: &Nav, viewer: bool) -> String {
     let sidebar = if viewer {
@@ -67,7 +68,8 @@ fn menu(nav: &Nav, viewer: bool) -> String {
 {sidebar}
 <details class="menu-group" data-menu-documents><summary class="menu-item">Documents</summary><div class="menu-list" data-menu-docs><a class="menu-sub" href="/documents">All documents</a></div></details>
 <a class="menu-item" href="/journal">Journal</a>
-<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list"><a class="menu-sub" href="/about">About</a>{owner}<form method="post" action="/signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="menu-sub">Sign out {handle}</button></form></div></details>
+<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list"><a class="menu-sub" href="/about">About</a>{owner}</div></details>
+<form method="post" action="/signout" class="menu-signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="menu-item" data-signout>Sign out {handle}</button></form>
 </div></details></nav>"#,
         csrf = escape(nav.csrf),
         handle = escape(nav.handle),
@@ -1234,6 +1236,15 @@ mod tests {
             !page.contains("data-sidebar-toggle"),
             "the sidebar switch is for documents only"
         );
+        // Sign out sits at the foot of the menu, not folded inside Settings.
+        let settings = page.find("Settings</summary>").unwrap();
+        let settings_end = settings + page[settings..].find("</details>").unwrap();
+        let sign_out = page.find("Sign out delta").unwrap();
+        assert!(
+            sign_out > settings_end,
+            "Sign out is folded inside Settings"
+        );
+        assert!(page.contains(r#"<form method="post" action="/signout" class="menu-signout">"#));
         let other = about(&member, "Safari on iPhone", &[]);
         assert!(!other.contains(r#"href="/owner""#) && other.contains("Sign out beta"));
     }
