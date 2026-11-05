@@ -65,3 +65,95 @@ p {
 [data-form-factor="phone"] .card { border-radius: 18px; }
 [data-size-tier="phone-compact"] { --gutter: 12px; }
 [data-size-tier="phone-compact"] .card { padding: 22px; border-radius: 16px; }
+
+/* Family pages (P1): sign-in, enrolment, consent, home, journal, owner. */
+body.app {
+  display: block;
+  /* The placeholder centres with place-items; browsers that apply it to block layout would
+     shrink the page to its content (a wide table), so reset it here. */
+  place-items: normal;
+  padding-top: max(var(--gutter), env(safe-area-inset-top));
+}
+
+.bar {
+  max-width: 64rem;
+  margin: 0 auto 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.bar .brand {
+  color: var(--ink);
+  text-decoration: none;
+  font: 400 1.35rem/1.2 Georgia, "Songti SC", "Noto Serif CJK SC", serif;
+}
+
+.bar nav { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.bar nav form { margin: 0; }
+
+.page {
+  max-width: 64rem;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: clamp(18px, 4vw, 36px);
+}
+
+.page h1 { font-size: clamp(1.7rem, 5vw, 2.4rem); margin-bottom: 0.4em; }
+.page h2 { font: 400 1.35rem/1.25 Georgia, serif; margin: 1.6em 0 0.5em; }
+.page p { color: var(--ink); margin: 0 0 0.9em; font-size: 1rem; }
+.page a, .bar a { color: inherit; text-underline-offset: 3px; min-height: 44px; display: inline-flex; align-items: center; }
+.page p a, .page li a { display: inline; min-height: 0; }
+
+.stack { display: grid; gap: 14px; max-width: 30rem; }
+.stack.narrow { max-width: 22rem; }
+.stack label { display: grid; gap: 6px; font-weight: 600; }
+
+input[type="text"], input[type="password"], input[type="number"] {
+  font: inherit;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  min-height: 44px;
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--card);
+  cursor: pointer;
+}
+
+button.secondary { background: transparent; color: var(--ink); }
+button.link { background: none; border: 0; padding: 0 2px; color: inherit; text-decoration: underline; text-underline-offset: 3px; font-weight: 400; }
+
+.choices { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px 14px; margin: 0; display: grid; gap: 8px; }
+.choices legend { font-weight: 600; padding: 0 6px; }
+.choice, .stack .choice { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font-weight: 600; }
+.choice input { width: 20px; height: 20px; margin: 0; }
+
+.notice { border: 1px solid #c79343; background: color-mix(in srgb, #c79343 14%, transparent); border-radius: 10px; padding: 10px 14px; }
+.caption { color: var(--muted) !important; font-size: 0.95rem !important; }
+.small { color: var(--muted) !important; font-size: 0.9rem !important; }
+.code { font: 600 clamp(1.1rem, 4.5vw, 1.6rem)/1.4 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.04em; overflow-wrap: anywhere; }
+
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 0 1em; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; white-space: nowrap; }
+td form { margin: 0; }
+
+[data-form-factor="phone"] .page { border-radius: 14px; }
+[data-size-tier="phone-compact"] .page { padding: 16px; }
