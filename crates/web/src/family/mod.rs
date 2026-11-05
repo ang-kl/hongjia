@@ -8,6 +8,7 @@ mod explore;
 mod handlers;
 pub mod json;
 mod pages;
+mod review;
 pub mod store;
 pub mod web;
 
@@ -207,6 +208,16 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             )),
         )
         .route("/documents/{key}/delete", post(documents::delete))
+        .route("/documents/{key}/fields", post(review::save_field))
+        .route("/documents/{key}/fields-mode", post(review::set_mode))
+        .route(
+            "/documents/{key}/annotations",
+            get(review::list_annotations).post(review::create_annotation),
+        )
+        .route(
+            "/documents/{key}/annotations/{id}/delete",
+            post(review::delete_annotation),
+        )
         .route("/healthz", get(handlers::healthz))
         .route("/robots.txt", get(|| async { crate::robots() }))
         .route(
@@ -232,6 +243,10 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route(
             "/assets/globe-layout.mjs",
             get(|| async { crate::asset("globe-layout.mjs") }),
+        )
+        .route(
+            "/assets/doc-view.mjs",
+            get(|| async { crate::asset("doc-view.mjs") }),
         )
         .fallback(|| async { crate::plain(StatusCode::NOT_FOUND, "Not found\n") })
         .with_state(state.clone())

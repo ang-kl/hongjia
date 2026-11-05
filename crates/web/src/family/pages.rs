@@ -2,6 +2,7 @@
 
 use super::doccheck::filing_label;
 use super::documents::{DELETE_WORD, DocumentRow, IFRAME_SANDBOX, VersionRow};
+use super::review::{AnnotationRow, Review};
 use super::store::{AuditRow, FailureCount, FailureDetail, JournalRow, Profile, ProfileStatus};
 use super::web::escape;
 
@@ -512,7 +513,7 @@ fn check_section(latest: Option<&VersionRow>) -> String {
     let fields = match v.field_count {
         0 => String::new(),
         n => format!(
-            r#"<dt>Fillable fields</dt><dd>{n}. Saving what people fill in comes in a later update.</dd>"#
+            r#"<dt>Fillable fields</dt><dd>{n}. What people fill in is saved; see Saved fields.</dd>"#
         ),
     };
     section(
@@ -556,14 +557,142 @@ fn document_contents(key: &str, latest: Option<&VersionRow>) -> String {
     };
     let note = match unanchored {
         0 => String::new(),
-        1 => r#"<p class="small">1 more heading has no anchor; jumping to it comes with annotations.</p>"#.to_string(),
+        1 => r#"<p class="small">1 more heading has no anchor, so it cannot be jumped to yet.</p>"#
+            .to_string(),
         n => format!(
-            r#"<p class="small">{n} more headings have no anchor; jumping to them comes with annotations.</p>"#
+            r#"<p class="small">{n} more headings have no anchor, so they cannot be jumped to yet.</p>"#
         ),
     };
     format!(
         r#"<p class="fab-contents-head">In this document</p>{list}{note}<p class="small"><a href="/documents">All documents</a></p>"#
     )
+}
+
+/// What a saved value looks like in the panel: ticks in words, long text shortened.
+fn shown_value(value: &str) -> String {
+    match value {
+        "true" => "ticked".into(),
+        "false" => "not ticked".into(),
+        "" => "cleared".into(),
+        v if v.chars().count() > 80 => format!("{}…", v.chars().take(80).collect::<String>()),
+        v => v.replace('\n', ", "),
+    }
+}
+
+fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, can_delete: bool) -> String {
+    let target = if let Some(field) = row.field_key.as_deref() {
+        let label = if row.field_label.is_empty() {
+            field
+        } else {
+            row.field_label.as_str()
+        };
+        format!(
+            r#"<p class="annotation-quote" data-annotation-jump>On the field: {}</p>"#,
+            escape(label)
+        )
+    } else if !row.quote.is_empty() {
+        format!(
+            r#"<blockquote class="annotation-quote" data-annotation-jump>“{}”</blockquote>"#,
+            escape(&row.quote)
+        )
+    } else {
+        r#"<p class="annotation-quote">On the whole document</p>"#.to_string()
+    };
+    let delete = if can_delete {
+        format!(
+            r#"<form method="post" action="/documents/{key}/annotations/{id}/delete" data-annotation-delete><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="link">Delete</button></form>"#,
+            id = row.id
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        r#"<li class="annotation" id="annotation-{id}" tabindex="-1" data-annotation-id="{id}" data-quote="{quote}" data-prefix="{prefix}" data-suffix="{suffix}" data-field="{field}">{target}<p class="annotation-body">{body}</p><p class="small">{author}, {created} (SGT) · version {version}</p>{delete}</li>"#,
+        id = row.id,
+        quote = escape(&row.quote),
+        prefix = escape(&row.prefix),
+        suffix = escape(&row.suffix),
+        field = escape(row.field_key.as_deref().unwrap_or("")),
+        body = escape(&row.body),
+        author = escape(row.author.as_deref().unwrap_or("someone")),
+        created = escape(&row.created),
+        version = row.version_no,
+    )
+}
+
+/// Annotations: the list, and the composer that the page's script fills when Comment is pressed
+/// (it also works as a plain form for a comment on the whole document).
+fn annotations_section(key: &str, csrf: &str, review: &Review) -> String {
+    let items: String = review
+        .annotations
+        .iter()
+        .map(|a| annotation_item(key, csrf, a, review.can_delete(a)))
+        .collect();
+    let empty = if review.annotations.is_empty() {
+        ""
+    } else {
+        " hidden"
+    };
+    format!(
+        r#"<section class="panel-section" id="annotations"><div class="section-head"><h2>Annotations</h2><span class="count" data-annotation-count>{n}</span></div>
+<p class="small">Select text in the document, or click into a field, then press Comment. Everyone in the family can comment; you can delete your own.</p>
+<ol class="annotations" data-annotations>{items}</ol><p class="small" data-annotations-empty{empty}>No annotations yet.</p>
+<form method="post" action="/documents/{key}/annotations" class="stack composer" data-composer><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="quote" value=""><input type="hidden" name="prefix" value=""><input type="hidden" name="suffix" value=""><input type="hidden" name="field_key" value=""><input type="hidden" name="field_label" value="">
+<p class="composer-target" data-composer-target hidden></p>
+<label>Add a comment <textarea name="body" rows="3" maxlength="4000" required data-composer-body></textarea></label>
+<div class="composer-actions"><button type="submit">Save comment</button><button type="button" class="secondary" data-composer-clear hidden>On the whole document instead</button></div>
+<p class="small" role="status" data-composer-status></p>
+</form></section>"#,
+        n = review.annotations.len(),
+    )
+}
+
+/// Saved fields: who sees what people fill in, and the latest changes to the family copy.
+fn fields_section(key: &str, csrf: &str, review: &Review) -> String {
+    let state = if review.mode == "personal" {
+        format!(
+            r#"<p>Ticks and typed answers are <strong>personal</strong>: each person sees only their own. You have {} saved.</p>"#,
+            review.own_count
+        )
+    } else {
+        let changes = if review.recent.is_empty() {
+            r#"<p class="small">Nothing filled in yet.</p>"#.to_string()
+        } else {
+            format!(
+                r#"<ul class="changes">{}</ul>"#,
+                review
+                    .recent
+                    .iter()
+                    .map(|c| {
+                        let label = if c.label.is_empty() { &c.key } else { &c.label };
+                        format!(
+                            r#"<li><span class="wrap">{}</span>: {} · {}, {}</li>"#,
+                            escape(label),
+                            escape(&shown_value(&c.value)),
+                            escape(c.by.as_deref().unwrap_or("someone")),
+                            escape(&c.at)
+                        )
+                    })
+                    .collect::<String>()
+            )
+        };
+        format!(
+            r#"<p>Ticks and typed answers are <strong>shared</strong>: the family sees one copy. Latest changes:</p>{changes}"#
+        )
+    };
+    let form = if review.can_choose_mode {
+        let (shared, personal) = if review.mode == "personal" {
+            ("", " checked")
+        } else {
+            (" checked", "")
+        };
+        format!(
+            r#"<form method="post" action="/documents/{key}/fields-mode" class="stack"><input type="hidden" name="csrf" value="{csrf}"><fieldset class="choices"><legend>Who sees what people fill in?</legend><label class="choice"><input type="radio" name="mode" value="shared"{shared}><span>Shared: one family copy</span></label><label class="choice"><input type="radio" name="mode" value="personal"{personal}><span>Personal: each person their own</span></label></fieldset><p class="small">Switching keeps both sets; each choice shows its own answers.</p><button type="submit" class="secondary">Save choice</button></form>"#
+        )
+    } else {
+        String::new()
+    };
+    section("Saved fields", None, &format!("{state}{form}"))
 }
 
 /// One document, filling the window: the document frame and the management panel beside it
@@ -575,6 +704,7 @@ pub fn document_view(
     can_manage: bool,
     owner: &str,
     message: Option<&str>,
+    review: &Review,
 ) -> String {
     let key = escape(&doc.key);
     let csrf = escape(nav.csrf);
@@ -666,18 +796,25 @@ pub fn document_view(
     let latest = versions.iter().find(|v| v.version_no == doc.version_no);
     let main = format!(
         r##"<div class="viewer-doc">
-<div class="doc-bar"><span class="filing">{label}</span><h1 class="doc-title">{title}</h1><a class="pill manage-open" href="#panel">Manage</a></div>
+<div class="doc-bar"><span class="filing">{label}</span><h1 class="doc-title">{title}</h1><button type="button" class="pill comment-open" data-comment hidden>Comment</button><a class="pill manage-open" href="#panel">Manage</a></div>
 {notice}
 <iframe class="doc-frame" src="/documents/{key}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe>
 </div>
 <aside class="panel" id="panel" aria-label="Manage this document">
 <div class="panel-head"><span class="panel-title">This document</span><a class="pill manage-close" href="#doc">Close</a></div>
-{details}{tags}{version_section}{check}{manage}
-</aside>"##,
+{details}{annotations}{fields}{tags}{version_section}{check}{manage}
+</aside>
+<script type="module" src="/assets/doc-view.mjs"></script>"##,
         title = escape(&doc.title),
         notice = notice(message),
         sandbox = IFRAME_SANDBOX,
         check = check_section(latest),
+        annotations = annotations_section(&key, &csrf, review),
+        fields = if doc.kind == "html" {
+            fields_section(&key, &csrf, review)
+        } else {
+            String::new()
+        },
     );
     page_shell(
         &doc.title,

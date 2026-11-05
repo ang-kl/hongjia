@@ -62,13 +62,107 @@ if (!(await page.textContent('h1')).includes('Hello, delta')) failures.push('hom
 const SAMPLE = `<!doctype html><html><head><meta charset="utf-8"><title>Sample</title>
 <style>body{font:16px system-ui;margin:24px}section{min-height:60vh}</style></head><body>
 <h1 id="top">Sample trip</h1><section id="days"><h2>Day by day</h2><label><input type="checkbox"> Book the car</label></section>
-<section id="stays"><h2>Stays</h2><p>Two bedrooms.</p></section>
-<script>document.body.dataset.ran = 'yes';</script></body></html>`;
+<section id="stays"><h2>Stays</h2><p>Two bedrooms.</p><p id="visits"></p></section>
+<script>document.body.dataset.ran = 'yes';
+var n = Number(localStorage.getItem('visits') || 0) + 1; localStorage.setItem('visits', String(n));
+document.getElementById('visits').textContent = 'Visits: ' + n;</script></body></html>`;
 await page.goto(base + '/documents/new');
 await page.setInputFiles('input[name=file]', { name: 'sample-trip.html', mimeType: 'text/html', buffer: Buffer.from(SAMPLE) });
 await page.click('form[action="/documents"] button[type=submit]');
 await page.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
 const docPath = new URL(page.url()).pathname;
+
+// 2. Saved fields, the storage stand-in and annotations (P2b C), as the owner at notebook size.
+async function signIn(context, profile) {
+  const p = await context.newPage();
+  await p.goto(base + '/');
+  await p.check(`input[name=profile][value=${profile}]`);
+  await p.fill('input[name=passphrase]', FAMILY);
+  await p.click('form[action="/signin"] button[type=submit]');
+  await p.waitForURL(base + '/consent');
+  await p.click('form[action="/consent"] button[type=submit]');
+  await p.waitForURL(base + '/home');
+  return p;
+}
+const frameOf = p => p.frameLocator('.doc-frame');
+const box = () => frameOf(page).locator('input[type=checkbox]');
+const settle = () => page.waitForTimeout(1500);
+const openDoc = async (p = page) => { await p.goto(base + docPath, { waitUntil: 'networkidle' }); await p.waitForTimeout(300); };
+const visits = async () => Number(((await frameOf(page).locator('#visits').textContent()) || '').replace(/\D/g, ''));
+const selectText = (p, text) => p.frames().find(f => f.url().includes('/raw')).evaluate(wanted => {
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const at = n.data.indexOf(wanted);
+    if (at !== -1) {
+      const r = document.createRange();
+      r.setStart(n, at); r.setEnd(n, at + wanted.length);
+      getSelection().removeAllRanges(); getSelection().addRange(r);
+      return true;
+    }
+  }
+  return false;
+}, text);
+const annotate = async (p, body) => {
+  await p.waitForSelector('[data-comment]:not([hidden])', { timeout: 4000 });
+  await p.click('[data-comment]');
+  await p.fill('[data-composer-body]', body);
+  await p.click('form[data-composer] button[type=submit]');
+  await p.waitForFunction(text => [...document.querySelectorAll('li[data-annotation-id] .annotation-body')].some(el => el.textContent === text), body, { timeout: 4000 });
+};
+const marks = p => frameOf(p).locator('mark[data-hj-id]').count();
+
+await openDoc();
+const firstVisits = await visits();
+await box().check();
+await settle();
+await openDoc();
+if (!(await box().isChecked())) failures.push('a tick was not saved across a reload');
+if (await visits() !== firstVisits + 1) failures.push(`the storage stand-in did not keep counting (${firstVisits} then ${await visits()})`);
+await selectText(page, 'Two bedrooms');
+await annotate(page, 'Invented note to delete');
+if (await marks(page) !== 1) failures.push('no highlight for the new annotation');
+await page.click('li[data-annotation-id] form[data-annotation-delete] button');
+await page.waitForFunction(() => !document.querySelector('li[data-annotation-id]'), null, { timeout: 4000 }).catch(() => failures.push('delete did not remove the annotation'));
+if (await marks(page) !== 0) failures.push('the highlight stayed after the delete');
+// Two that stay, for the pages below: one on a passage, one on the field.
+await selectText(page, 'Two bedrooms');
+await annotate(page, 'Ask for a quiet room');
+await box().focus();
+await page.waitForFunction(() => document.querySelector('[data-comment]')?.textContent === 'Comment on this field', null, { timeout: 4000 }).catch(() => failures.push('Comment on this field was not offered'));
+await annotate(page, 'Booked');
+await openDoc();
+if (await page.locator('li[data-annotation-id]').count() !== 2 || await marks(page) !== 1) failures.push('annotations or highlight missing after a reload');
+if ((await frameOf(page).locator('input[type=checkbox][data-hj-field]').count()) !== 1) failures.push('the annotated field is not outlined');
+// Personal mode: each person sees only their own; the shared copy comes back untouched.
+const setMode = async mode => {
+  await page.check(`form[action$="/fields-mode"] input[value=${mode}]`);
+  await page.click('form[action$="/fields-mode"] button[type=submit]');
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(300);
+};
+await setMode('personal');
+if (await box().isChecked()) failures.push('personal mode showed the shared tick');
+await box().check();
+await settle();
+const other = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const beta = await signIn(other, 'beta');
+await openDoc(beta);
+if (await frameOf(beta).locator('input[type=checkbox]').isChecked()) failures.push('another member saw a personal tick');
+await other.close();
+await setMode('shared');
+if (!(await box().isChecked())) failures.push('the shared tick did not come back');
+if (shots) {
+  await page.locator('#annotations').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${shots}/notebook-annotations.png` });
+  const phone = await browser.newContext({ viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, storageState: await setup.storageState() });
+  const pp = await phone.newPage();
+  await openDoc(pp);
+  await pp.click('.manage-open');
+  await pp.waitForTimeout(400);
+  await pp.locator('#annotations').scrollIntoViewIfNeeded();
+  await pp.screenshot({ path: `${shots}/phone-annotations.png` });
+  await phone.close();
+}
 const state = await setup.storageState();
 await setup.close();
 
@@ -183,6 +277,10 @@ async function checkViewer(p, width, height, problems, shot) {
   }
   const ran = await p.frameLocator('.doc-frame').locator('body').getAttribute('data-ran');
   if (ran !== 'yes') problems.push('document script did not run in the frame');
+  // Saved fields and annotations (P2b C).
+  if (!(await p.frameLocator('.doc-frame').locator('input[type=checkbox]').isChecked())) problems.push('the saved tick is not shown');
+  if ((await p.frameLocator('.doc-frame').locator('mark[data-hj-id]').count()) !== 1) problems.push('the highlight is not shown');
+  if ((await p.locator('li[data-annotation-id]').count()) !== 2) problems.push('the annotations are not listed');
 }
 
 for (const scheme of ['light', 'dark']) {
