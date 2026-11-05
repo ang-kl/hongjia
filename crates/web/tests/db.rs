@@ -3565,3 +3565,47 @@ async fn signed_in_people_land_on_the_latest_document(pool: PgPool) {
     assert_eq!(r.status, 303);
     assert_eq!(r.header("location"), Some("/documents/latest"));
 }
+
+/// Markdown documents are shown as formatted pages with the frame helper (the owner's request,
+/// 5 November 2026); plain text stays as it is; the download is always the stored file.
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn markdown_documents_are_formatted_pages(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let md = "# Lantern guide\n\n| Place | Link |\n|---|---|\n| Quay | [site](https://example.org) |\n\n<script>alert(1)</script>\n";
+    let r = upload(&mut o, &csrf, "Guide", Some(("guide.md", md))).await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    let key = r.header("location").unwrap().to_string();
+    let raw = o.get(&format!("{key}/raw")).await;
+    assert_eq!(raw.status, 200);
+    assert_eq!(raw.header("content-type"), Some("text/html; charset=utf-8"));
+    assert_eq!(
+        raw.header("content-security-policy"),
+        Some(hongjia_web::family::documents::DOCUMENT_CSP)
+    );
+    assert!(
+        raw.body.contains("<script data-hj-helper>"),
+        "the helper is added"
+    );
+    assert!(raw.body.contains("<h1>Lantern guide</h1>"));
+    assert!(raw.body.contains("<div class=\"table\"><table>"));
+    assert!(raw.body.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+    let original = o.get(&format!("{key}/original")).await;
+    assert_eq!(original.body, md, "the download is the file as uploaded");
+
+    let r = upload(
+        &mut o,
+        &csrf,
+        "Plain",
+        Some(("plain.txt", "# not a heading")),
+    )
+    .await;
+    let key = r.header("location").unwrap().to_string();
+    let raw = o.get(&format!("{key}/raw")).await;
+    assert_eq!(
+        raw.header("content-type"),
+        Some("text/plain; charset=utf-8")
+    );
+    assert_eq!(raw.body, "# not a heading");
+}
