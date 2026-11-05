@@ -436,7 +436,8 @@ async function checkMenu(p, label, width, height, problems) {
   const org = p.locator('[data-menu-docs] a.menu-org').first();
   if ((await org.textContent()) !== 'org') problems.push('no org link');
   if (label === 'document' && width >= 720) {
-    const [download] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), org.click()]);
+    const sampleOrg = p.locator('[data-menu-docs] tr', { hasText: 'sample-trip' }).locator('a.menu-org');
+    const [download] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), sampleOrg.click()]);
     if (!download) problems.push('org did not download');
     else if (download.suggestedFilename() !== 'sample-trip.html') problems.push(`download named ${download.suggestedFilename()}`);
   }
