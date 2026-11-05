@@ -21,11 +21,17 @@ pub const STYLE_HOSTS: [&str; 4] = [
 ];
 /// Sites a document may fetch from (3D models, textures, fonts for Three.js and similar).
 pub const CONNECT_HOSTS: [&str; 3] = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com"];
-/// Pages a document may embed in a frame: Google Maps only (the owner's choice, 5 November 2026).
-/// `maps.google.com/maps` is matched exactly; Google sends it on to `www.google.com/maps/embed`.
-pub const FRAME_SOURCES: [&str; 2] = [
+/// Pages a document may embed in a frame (the owner's choices, 5 November 2026): Google Maps, and
+/// Instagram's and TikTok's own embed pages ("APPROVE embeds"). `maps.google.com/maps` is matched
+/// exactly; Google sends it on to `www.google.com/maps/embed`. Instagram is allowed by host because
+/// its embed pages sit under each account or post (`/name/embed/`, `/p/code/embed/`); its other pages
+/// refuse to be framed. YouTube and Facebook were tried and do not run inside the document sandbox,
+/// which never grants `allow-same-origin`, so they are not listed.
+pub const FRAME_SOURCES: [&str; 4] = [
     "https://maps.google.com/maps",
     "https://www.google.com/maps/",
+    "https://www.instagram.com/",
+    "https://www.tiktok.com/embed/",
 ];
 
 pub const MAX_TAGS: usize = 20;
@@ -1086,7 +1092,19 @@ pub fn check_html(html: &str) -> Check {
         let src = attr(tag, "src").unwrap_or_default();
         let src = src.trim();
         // Frames whose address a script fills in later cannot be judged here.
-        if src.is_empty() || src.contains("${") || is_google_map(src) {
+        if src.is_empty() || src.contains("${") {
+            continue;
+        }
+        if is_allowed_frame(src) {
+            let lower_src = src.to_ascii_lowercase();
+            for (name, prefix) in [
+                ("Instagram (embedded)", FRAME_SOURCES[2]),
+                ("TikTok (embedded)", FRAME_SOURCES[3]),
+            ] {
+                if lower_src.starts_with(prefix) && !check.libraries.iter().any(|l| l == name) {
+                    check.libraries.push(name.to_string());
+                }
+            }
             continue;
         }
         let name = host_of(src)
@@ -1098,7 +1116,7 @@ pub fn check_html(html: &str) -> Check {
     }
     if !blocked_frames.is_empty() {
         check.warnings.push(format!(
-            "Embedded frames from {} are blocked; only Google Maps can be embedded. Links to them still work.",
+            "Embedded frames from {} are blocked; documents can embed Google Maps and Instagram or TikTok embed pages only. YouTube players cannot run inside a document; link to the video instead. Links to them still work.",
             blocked_frames.join(", ")
         ));
     }
@@ -1138,12 +1156,22 @@ pub fn check_html(html: &str) -> Check {
     check
 }
 
-/// A Google Maps page that documents may embed (see `FRAME_SOURCES`).
-fn is_google_map(src: &str) -> bool {
+/// A page that documents may embed (see `FRAME_SOURCES`): Google Maps, an Instagram embed page
+/// (an account, post or reel address ending in `/embed` or `/embed/captioned`) or a TikTok embed page.
+fn is_allowed_frame(src: &str) -> bool {
     let lower = src.trim().to_ascii_lowercase();
-    lower == FRAME_SOURCES[0]
+    if lower == FRAME_SOURCES[0]
         || lower.starts_with(&format!("{}?", FRAME_SOURCES[0]))
         || lower.starts_with(FRAME_SOURCES[1])
+        || lower.starts_with(FRAME_SOURCES[3])
+    {
+        return true;
+    }
+    lower.strip_prefix(FRAME_SOURCES[2]).is_some_and(|rest| {
+        let path = rest.split(['?', '#']).next().unwrap_or("");
+        let path = path.trim_end_matches('/');
+        path.ends_with("/embed") || path.ends_with("/embed/captioned")
+    })
 }
 
 fn is_relative(value: &str) -> bool {
@@ -1501,6 +1529,34 @@ localStorage.setItem('k', 'v');
                 .warnings
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn instagram_and_tiktok_embed_pages_are_allowed() {
+        let allowed = r#"<iframe src="https://www.instagram.com/kingspark/embed/"></iframe>
+<iframe src="https://www.instagram.com/p/AbC123/embed/captioned/?cr=1"></iframe>
+<iframe src="https://www.instagram.com/reel/XyZ/embed"></iframe>
+<iframe src="https://www.tiktok.com/embed/@lakeside"></iframe>
+<iframe src="https://www.tiktok.com/embed/v2/7012345678901234567"></iframe>"#;
+        let check = check_html(allowed);
+        assert!(check.warnings.is_empty(), "{:?}", check.warnings);
+        assert!(
+            check
+                .libraries
+                .contains(&"Instagram (embedded)".to_string())
+        );
+        assert!(check.libraries.contains(&"TikTok (embedded)".to_string()));
+        for refused in [
+            "https://www.instagram.com/kingspark/",
+            "https://www.instagram.com.evil.example/x/embed/",
+            "https://www.tiktok.com/embedx",
+            "https://www.tiktok.com/@lakeside",
+            "https://www.youtube-nocookie.com/embed/x",
+            "https://www.facebook.com/plugins/page.php?href=x",
+        ] {
+            let check = check_html(&format!(r#"<iframe src="{refused}"></iframe>"#));
+            assert_eq!(check.warnings.len(), 1, "{refused}: {:?}", check.warnings);
+        }
     }
 
     #[test]

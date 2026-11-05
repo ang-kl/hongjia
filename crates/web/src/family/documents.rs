@@ -27,7 +27,7 @@ pub const MAX_BYTES: usize = 10 * 1024 * 1024;
 
 /// The policy for uploaded documents: sandboxed; inline scripts and styles; scripts, styles and
 /// fetches only from the library sites in `doccheck`; pictures and media from https sites.
-pub const DOCUMENT_CSP: &str = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals; default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://cdn.tailwindcss.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; img-src https: data: blob:; media-src https: blob:; font-src https: data:; connect-src https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; form-action 'none'; frame-src https://maps.google.com/maps https://www.google.com/maps/; base-uri 'none'; frame-ancestors 'self'";
+pub const DOCUMENT_CSP: &str = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals; default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://cdn.tailwindcss.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; img-src https: data: blob:; media-src https: blob:; font-src https: data:; connect-src https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; form-action 'none'; frame-src https://maps.google.com/maps https://www.google.com/maps/ https://www.instagram.com/ https://www.tiktok.com/embed/; base-uri 'none'; frame-ancestors 'self'";
 
 /// The iframe's own sandbox, matching the policy above. `allow-same-origin` is never given.
 pub const IFRAME_SANDBOX: &str =
@@ -382,7 +382,7 @@ async fn insert(
 /// The upload check's rules. When they change, this number goes up and every version is checked
 /// again at the next start, so each panel shows the current findings (not the ones from the day
 /// the file was uploaded).
-pub const CHECK_VERSION: i32 = 2;
+pub const CHECK_VERSION: i32 = 3;
 
 /// Marks every version for a fresh check when the rules changed since the last start.
 async fn recheck_when_rules_change(pool: &PgPool) -> sqlx::Result<()> {
@@ -1209,7 +1209,7 @@ mod tests {
         assert!(
             DOCUMENT_CSP.contains("form-action 'none'")
                 && DOCUMENT_CSP.contains(
-                    "frame-src https://maps.google.com/maps https://www.google.com/maps/;"
+                    "frame-src https://maps.google.com/maps https://www.google.com/maps/ https://www.instagram.com/ https://www.tiktok.com/embed/;"
                 )
         );
         assert!(
@@ -1249,7 +1249,7 @@ mod tests {
         assert_eq!(
             sources("frame-src"),
             doccheck::FRAME_SOURCES.map(String::from).to_vec(),
-            "Google Maps only"
+            "Google Maps, Instagram and TikTok embeds only"
         );
     }
 }
