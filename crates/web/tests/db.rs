@@ -10,9 +10,7 @@ use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-const BOOTSTRAP: &str = "bootstrap-code-for-tests-0123456789";
-const OWNER_PASS: &str = "river lantern cobalt sparrow";
-const MEMBER_PASS: &str = "quiet harbour violet ember";
+const FAMILY: &str = "test family password";
 
 fn config() -> Config {
     Config {
@@ -21,8 +19,7 @@ fn config() -> Config {
             .to_vec(),
         owner: "delta".into(),
         public_origin: None,
-        bootstrap_code: Some(BOOTSTRAP.into()),
-        dev_password: None,
+        family_password: FAMILY.into(),
         on_railway: false,
     }
 }
@@ -65,11 +62,6 @@ impl Reply {
             .unwrap_or_else(|| panic!("no hidden {name} in page"))
             + marker.len();
         self.body[start..start + self.body[start..].find('"').expect("quote")].to_string()
-    }
-    fn code(&self) -> String {
-        let start = self.body.find(r#"<p class="code">"#).expect("code shown")
-            + r#"<p class="code">"#.len();
-        self.body[start..start + self.body[start..].find('<').expect("end")].to_string()
     }
 }
 
@@ -127,10 +119,13 @@ impl Client {
             if let Some(origin) = &self.origin {
                 request.push_str(&format!("Origin: {origin}\r\n"));
             }
-            request.push_str(&format!(
-                "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n",
-                body.len()
-            ));
+            let custom_type = extra
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
+            if !custom_type {
+                request.push_str("Content-Type: application/x-www-form-urlencoded\r\n");
+            }
+            request.push_str(&format!("Content-Length: {}\r\n", body.len()));
         }
         for (name, value) in extra {
             request.push_str(&format!("{name}: {value}\r\n"));
@@ -186,21 +181,6 @@ impl Client {
         self.send("POST", path, &body, &[]).await
     }
 
-    async fn enrol(&mut self, code: &str, passphrase: &str) -> Reply {
-        let page = self.get("/enrol").await;
-        let csrf = page.hidden("csrf");
-        self.post(
-            "/enrol",
-            &[
-                ("csrf", &csrf),
-                ("code", code),
-                ("passphrase", passphrase),
-                ("confirm", passphrase),
-            ],
-        )
-        .await
-    }
-
     async fn signin(&mut self, profile: &str, passphrase: &str) -> Reply {
         let page = self.get("/").await;
         let csrf = page.hidden("csrf");
@@ -234,80 +214,38 @@ impl Client {
     }
 }
 
-/// Owner enrols with the bootstrap code and saves consent; returns the signed-in client.
+/// Signs in as the owner with the family password and saves consent; returns the client.
 async fn owner(port: u16) -> Client {
+    member(port, "delta").await
+}
+
+/// Signs in as a profile with the family password and saves consent; returns the client.
+async fn member(port: u16, handle: &str) -> Client {
     let mut c = Client::new(port);
-    let r = c.enrol(BOOTSTRAP, OWNER_PASS).await;
+    let r = c.signin(handle, FAMILY).await;
     assert_eq!(r.status, 303, "{}", r.body);
     assert_eq!(r.header("location"), Some("/consent"));
     assert_eq!(c.consent("no").await.status, 303);
     c
 }
 
-async fn member(port: u16, owner: &mut Client, handle: &str, pass: &str) -> Client {
-    let csrf = owner.csrf().await;
-    let issued = owner
-        .post("/owner/code", &[("csrf", &csrf), ("profile", handle)])
-        .await;
-    assert_eq!(issued.status, 200);
-    let code = issued.code();
-    let mut c = Client::new(port);
-    let r = c.enrol(&code, pass).await;
-    assert_eq!(r.status, 303, "{}", r.body);
-    assert_eq!(c.consent("no").await.status, 303);
-    c
-}
-
 #[sqlx::test(migrations = "../../db/migrations")]
-async fn bootstrap_then_codes_then_member_enrols(pool: PgPool) {
-    let port = start(pool.clone(), config()).await;
-    let mut o = owner(port).await;
-    let home = o.get("/home").await;
-    assert_eq!(home.status, 200);
-    assert!(home.body.contains("Hello, delta"));
-
-    // The bootstrap code stops working once the owner has a passphrase.
-    let mut stranger = Client::new(port);
+async fn family_password_signs_in_every_profile(pool: PgPool) {
+    let port = start(pool, config()).await;
+    for handle in ["alpha", "beta", "gamma", "delta"] {
+        let mut c = member(port, handle).await;
+        let home = c.get("/home").await;
+        assert_eq!(home.status, 200);
+        assert!(home.body.contains(&format!("Hello, {handle}")));
+    }
+    let page = Client::new(port).get("/").await.body;
+    assert!(page.contains("Family password"));
+    assert!(!page.contains("/enrol"), "no enrolment link");
     assert_eq!(
-        stranger
-            .enrol(BOOTSTRAP, "another long passphrase here")
-            .await
-            .status,
-        401
+        Client::new(port).get("/enrol").await.status,
+        404,
+        "enrolment is gone"
     );
-
-    // Owner issues a code; it is shown once and works once.
-    let csrf = o.csrf().await;
-    let issued = o
-        .post("/owner/code", &[("csrf", &csrf), ("profile", "beta")])
-        .await;
-    let code = issued.code();
-    assert_eq!(code.len(), 24);
-    let mut b = Client::new(port);
-    let weak = b.enrol(&code, "short").await;
-    assert_eq!(
-        weak.status, 400,
-        "a rule-breaking passphrase does not use up the code"
-    );
-    assert_eq!(b.enrol(&code, MEMBER_PASS).await.status, 303);
-    let mut again = Client::new(port);
-    assert_eq!(
-        again.enrol(&code, MEMBER_PASS).await.status,
-        401,
-        "a used code does not work twice"
-    );
-
-    let stored: String = sqlx::query_scalar("SELECT passphrase_hash FROM credentials c JOIN profiles p ON p.id = c.profile_id WHERE p.handle = 'beta'")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert!(stored.starts_with("argon2id$") && !stored.contains(MEMBER_PASS));
-    let codes_plain: i64 = sqlx::query_scalar("SELECT count(*) FROM enrolment_codes WHERE encode(code_hash, 'escape') LIKE '%' || $1 || '%'")
-        .bind(code.replace('-', ""))
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(codes_plain, 0, "codes are stored only as hashes");
 }
 
 #[sqlx::test(migrations = "../../db/migrations")]
@@ -318,8 +256,8 @@ async fn signin_success_failure_and_rate_limit(pool: PgPool) {
     let wrong = c.signin("delta", "wrong passphrase entirely").await;
     assert_eq!(wrong.status, 401);
     assert!(wrong.body.contains("That did not work"));
-    assert_eq!(c.signin("nobody", OWNER_PASS).await.status, 401);
-    let ok = c.signin("delta", OWNER_PASS).await;
+    assert_eq!(c.signin("nobody", FAMILY).await.status, 401);
+    let ok = c.signin("delta", FAMILY).await;
     assert_eq!(ok.status, 303);
     assert_eq!(
         ok.header("location"),
@@ -334,7 +272,7 @@ async fn signin_success_failure_and_rate_limit(pool: PgPool) {
             401
         );
     }
-    let blocked = attacker.signin("delta", OWNER_PASS).await;
+    let blocked = attacker.signin("delta", FAMILY).await;
     assert_eq!(
         blocked.status, 429,
         "five failures in 15 minutes block even the right passphrase"
@@ -350,9 +288,12 @@ async fn csrf_origin_and_owner_checks(pool: PgPool) {
     let csrf = o.csrf().await;
     o.origin = Some("https://evil.example".into());
     assert_eq!(
-        o.post("/owner/code", &[("csrf", &csrf), ("profile", "beta")])
-            .await
-            .status,
+        o.post(
+            "/owner/end-sessions",
+            &[("csrf", &csrf), ("profile", "beta")]
+        )
+        .await
+        .status,
         403
     );
     o.origin = Some(format!("http://127.0.0.1:{port}"));
@@ -368,13 +309,16 @@ async fn csrf_origin_and_owner_checks(pool: PgPool) {
         204
     );
 
-    let mut b = member(port, &mut o, "beta", MEMBER_PASS).await;
+    let mut b = member(port, "beta").await;
     assert_eq!(b.get("/owner").await.status, 403);
     let bcsrf = b.csrf().await;
     assert_eq!(
-        b.post("/owner/code", &[("csrf", &bcsrf), ("profile", "alpha")])
-            .await
-            .status,
+        b.post(
+            "/owner/end-sessions",
+            &[("csrf", &bcsrf), ("profile", "alpha")]
+        )
+        .await
+        .status,
         403
     );
 
@@ -396,7 +340,7 @@ async fn csrf_origin_and_owner_checks(pool: PgPool) {
                 &[
                     ("csrf", &form),
                     ("profile", "delta"),
-                    ("passphrase", OWNER_PASS)
+                    ("passphrase", FAMILY)
                 ]
             )
             .await
@@ -485,7 +429,7 @@ async fn heartbeat_adds_bounded_active_time(pool: PgPool) {
 async fn journal_captions_counts_and_owner_details(pool: PgPool) {
     let port = start(pool, config()).await;
     let mut o = owner(port).await;
-    let mut b = member(port, &mut o, "beta", MEMBER_PASS).await;
+    let mut b = member(port, "beta").await;
     let mut x = Client::new(port);
     assert_eq!(
         x.signin("beta", "not the passphrase at all").await.status,
@@ -512,9 +456,9 @@ async fn journal_captions_counts_and_owner_details(pool: PgPool) {
 async fn sessions_end_in_every_way(pool: PgPool) {
     let port = start(pool.clone(), config()).await;
     let mut o = owner(port).await;
-    let mut b1 = member(port, &mut o, "beta", MEMBER_PASS).await;
+    let mut b1 = member(port, "beta").await;
     let mut b2 = Client::new(port);
-    assert_eq!(b2.signin("beta", MEMBER_PASS).await.status, 303);
+    assert_eq!(b2.signin("beta", FAMILY).await.status, 303);
 
     // Sign out here only.
     let csrf = b2.csrf().await;
@@ -537,7 +481,7 @@ async fn sessions_end_in_every_way(pool: PgPool) {
 
     // Idle limit: a session unused for 15 days is no longer valid.
     let mut b3 = Client::new(port);
-    assert_eq!(b3.signin("beta", MEMBER_PASS).await.status, 303);
+    assert_eq!(b3.signin("beta", FAMILY).await.status, 303);
     sqlx::query("UPDATE sessions SET last_seen_at = now() - interval '15 days' WHERE ended_at IS NULL AND profile_id = (SELECT id FROM profiles WHERE handle = 'beta')")
         .execute(&pool)
         .await
@@ -546,7 +490,7 @@ async fn sessions_end_in_every_way(pool: PgPool) {
 
     // Sign out everywhere.
     let mut o2 = Client::new(port);
-    assert_eq!(o2.signin("delta", OWNER_PASS).await.status, 303);
+    assert_eq!(o2.signin("delta", FAMILY).await.status, 303);
     let csrf = o.csrf().await;
     assert_eq!(
         o.post("/signout-everywhere", &[("csrf", &csrf)])
@@ -566,12 +510,12 @@ async fn retention_purges_and_settings_are_bounded(pool: PgPool) {
         .await
         .unwrap();
     let mut o2 = Client::new(port);
-    assert_eq!(o2.signin("delta", OWNER_PASS).await.status, 303);
+    assert_eq!(o2.signin("delta", FAMILY).await.status, 303);
     sqlx::query("UPDATE sessions SET lat_tenths = 13, lon_tenths = 1038, location_at = now() - interval '100 days' WHERE created_at > now() - interval '1 day'")
         .execute(&pool)
         .await
         .unwrap();
-    let (sessions, locations, _, _) = family::store::run_retention(&pool).await.unwrap();
+    let (sessions, locations, _) = family::store::run_retention(&pool).await.unwrap();
     assert_eq!(sessions, 1);
     assert_eq!(locations, 1);
     let left: i64 =
@@ -656,17 +600,6 @@ async fn family_headers_health_and_unknown_routes(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../db/migrations")]
-async fn shared_dev_mode_signs_in_any_profile_locally(pool: PgPool) {
-    let mut cfg = config();
-    cfg.dev_password = Some("local-dev-only".into());
-    let port = start(pool, cfg).await;
-    let mut c = Client::new(port);
-    assert_eq!(c.signin("alpha", "local-dev-only").await.status, 303);
-    let mut d = Client::new(port);
-    assert_eq!(d.signin("alpha", "wrong").await.status, 401);
-}
-
-#[sqlx::test(migrations = "../../db/migrations")]
 async fn profiles_follow_the_environment(pool: PgPool) {
     start(pool.clone(), config()).await;
     let mut cfg = config();
@@ -676,5 +609,139 @@ async fn profiles_follow_the_environment(pool: PgPool) {
     assert!(
         page.contains(r#"value="alpha""#) && !page.contains(r#"value="beta""#),
         "removed profiles are hidden, not deleted"
+    );
+}
+
+const BOUNDARY: &str = "----hongjia-test-boundary";
+
+fn multipart(fields: &[(&str, &str)], file: Option<(&str, &str)>) -> String {
+    let mut body = String::new();
+    for (name, value) in fields {
+        body.push_str(&format!(
+            "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+        ));
+    }
+    if let Some((filename, content)) = file {
+        body.push_str(&format!(
+            "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: text/html\r\n\r\n{content}\r\n"
+        ));
+    }
+    body.push_str(&format!("--{BOUNDARY}--\r\n"));
+    body
+}
+
+async fn upload(c: &mut Client, csrf: &str, title: &str, file: Option<(&str, &str)>) -> Reply {
+    let body = multipart(&[("csrf", csrf), ("title", title)], file);
+    let content_type = format!("multipart/form-data; boundary={BOUNDARY}");
+    c.send(
+        "POST",
+        "/documents",
+        &body,
+        &[("Content-Type", &content_type)],
+    )
+    .await
+}
+
+const SAMPLE: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Sample</title></head><body><h1>Sample trip</h1><img data-src=\"https://example.org/p.jpg\" alt=\"photo\"><button id=\"retry\">Retry photos</button><script>document.getElementById('retry').onclick=()=>{};</script></body></html>";
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn documents_upload_list_view_and_sandboxed_raw(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let r = upload(&mut o, &csrf, "", Some(("sample-trip.html", SAMPLE))).await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    let location = r.header("location").unwrap().to_string();
+    assert!(location.starts_with("/documents/"));
+
+    let list = o.get("/documents").await;
+    assert_eq!(list.status, 200);
+    assert!(list.body.contains("sample-trip") && list.body.contains("added by delta"));
+
+    let view = o.get(&location).await;
+    assert_eq!(view.status, 200);
+    assert!(view.body.contains(
+        r#"sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals""#
+    ));
+    assert!(!view.body.contains("allow-same-origin"));
+    assert!(
+        view.header("content-security-policy")
+            .unwrap()
+            .contains("frame-src 'self'")
+    );
+
+    let raw = o.get(&format!("{location}/raw")).await;
+    assert_eq!(raw.status, 200);
+    assert_eq!(raw.body, SAMPLE, "served byte for byte");
+    assert_eq!(raw.header("content-type"), Some("text/html; charset=utf-8"));
+    assert_eq!(
+        raw.header("content-security-policy"),
+        Some(hongjia_web::family::documents::DOCUMENT_CSP)
+    );
+    assert_eq!(raw.header("referrer-policy"), Some("no-referrer"));
+    assert_eq!(raw.header("cache-control"), Some("private, no-store"));
+    assert_eq!(raw.header("x-content-type-options"), Some("nosniff"));
+
+    let stored: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM document_versions WHERE version_no = 1 AND octet_length(sha256) = 32",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, 1);
+
+    // Members can upload and read too; strangers cannot read anything.
+    let mut b = member(port, "beta").await;
+    assert_eq!(b.get(&format!("{location}/raw")).await.status, 200);
+    let mut stranger = Client::new(port);
+    assert_eq!(stranger.get(&format!("{location}/raw")).await.status, 303);
+    assert_eq!(stranger.get("/documents").await.status, 303);
+    assert_eq!(o.get("/documents/999999").await.status, 404);
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn document_uploads_are_checked(pool: PgPool) {
+    let port = start(pool, config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    assert_eq!(
+        upload(&mut o, "wrong", "x", Some(("a.html", SAMPLE)))
+            .await
+            .status,
+        403,
+        "CSRF token required"
+    );
+    assert_eq!(
+        upload(&mut o, &csrf, "x", Some(("tool.exe", "MZ")))
+            .await
+            .status,
+        400,
+        "only HTML and text for now"
+    );
+    assert_eq!(
+        upload(&mut o, &csrf, "x", Some(("empty.html", "")))
+            .await
+            .status,
+        400
+    );
+    assert_eq!(
+        upload(&mut o, &csrf, "x", None).await.status,
+        400,
+        "a file is required"
+    );
+    let big = "a".repeat(hongjia_web::family::documents::MAX_BYTES + 1);
+    assert_eq!(
+        upload(&mut o, &csrf, "x", Some(("big.txt", &big)))
+            .await
+            .status,
+        413
+    );
+    o.origin = Some("https://evil.example".into());
+    assert_eq!(
+        upload(&mut o, &csrf, "x", Some(("a.html", SAMPLE)))
+            .await
+            .status,
+        403,
+        "Origin must match"
     );
 }

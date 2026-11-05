@@ -1,5 +1,6 @@
 //! Server-rendered pages. Every value from the database or the request is escaped.
 
+use super::documents::{DocumentRow, IFRAME_SANDBOX};
 use super::store::{AuditRow, FailureCount, FailureDetail, JournalRow, Profile, ProfileStatus};
 use super::web::escape;
 
@@ -12,7 +13,7 @@ pub struct Nav<'a> {
 fn layout(title: &str, nav: Option<&Nav>, body_attrs: &str, main: &str) -> String {
     let header = match nav {
         Some(nav) => format!(
-            r#"<header class="bar"><a class="brand" href="/home"><span lang="zh">洪家</span> · hongjia</a><nav><a href="/journal">Journal</a>{owner}<form method="post" action="/signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="link">Sign out {handle}</button></form></nav></header>"#,
+            r#"<header class="bar"><a class="brand" href="/home"><span lang="zh">洪家</span> · hongjia</a><nav><a href="/documents">Documents</a><a href="/journal">Journal</a>{owner}<form method="post" action="/signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="link">Sign out {handle}</button></form></nav></header>"#,
             owner = if nav.is_owner { r#"<a href="/owner">Owner</a>"# } else { "" },
             csrf = escape(nav.csrf),
             handle = escape(nav.handle),
@@ -76,34 +77,10 @@ pub fn signin(profiles: &[Profile], csrf: &str, message: Option<&str>) -> String
 <form method="post" action="/signin" class="stack">
 <input type="hidden" name="csrf" value="{csrf}">
 <fieldset class="choices"><legend>Who is signing in?</legend>{choices}</fieldset>
-<label>Passphrase <input type="password" name="passphrase" autocomplete="current-password" required maxlength="256"></label>
+<label>Family password <input type="password" name="passphrase" autocomplete="current-password" required maxlength="256"></label>
 <button type="submit">Sign in</button>
 </form>
-<p class="small">First time, or given a new code? <a href="/enrol">Enrol with a code</a>. <a href="/privacy">What we collect</a>.</p>"#,
-            notice = notice(message),
-            csrf = escape(csrf)
-        ),
-    )
-}
-
-pub fn enrol(csrf: &str, message: Option<&str>) -> String {
-    layout(
-        "Enrol",
-        None,
-        "",
-        &format!(
-            r#"<h1>Enrol with a code</h1>
-<p>Use the one-time code you were given in person. It works once and expires after 24 hours.</p>
-{notice}
-<form method="post" action="/enrol" class="stack">
-<input type="hidden" name="csrf" value="{csrf}">
-<label>Code <input type="text" name="code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required maxlength="80"></label>
-<label>New passphrase <input type="password" name="passphrase" autocomplete="new-password" required minlength="16" maxlength="256"></label>
-<label>New passphrase again <input type="password" name="confirm" autocomplete="new-password" required minlength="16" maxlength="256"></label>
-<p class="small">At least 16 characters. Four unrelated words work well. Leave your name out.</p>
-<button type="submit">Set passphrase and sign in</button>
-</form>
-<p class="small"><a href="/">Back to sign in</a>.</p>"#,
+<p class="small"><a href="/privacy">What we collect</a>.</p>"#,
             notice = notice(message),
             csrf = escape(csrf)
         ),
@@ -162,7 +139,7 @@ pub fn home(nav: &Nav, device: &str, location_pending: bool) -> String {
         &format!(
             r#"<h1>Hello, {handle}</h1>
 <p>You are signed in on {device}.</p>
-<p>Documents and review come next. For now you can see the <a href="/journal">login journal</a>, change <a href="/consent">this device's settings</a>, or read <a href="/privacy">what we collect</a>.</p>
+<p>Open the <a href="/documents">documents</a> or <a href="/documents/new">add one</a>. Comments and review come next. You can also see the <a href="/journal">login journal</a>, change <a href="/consent">this device's settings</a>, or read <a href="/privacy">what we collect</a>.</p>
 <form method="post" action="/signout-everywhere"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="secondary">Sign out on all devices</button></form>"#,
             handle = escape(nav.handle),
             device = escape(device),
@@ -289,13 +266,11 @@ pub fn owner(
         .iter()
         .map(|s| {
             format!(
-                r#"<tr><td>{h}{owner}</td><td>{enrolled}</td><td>{last}</td><td><form method="post" action="/owner/code"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="profile" value="{h}"><button type="submit" class="secondary">{code_label}</button></form></td><td><form method="post" action="/owner/end-sessions"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="profile" value="{h}"><button type="submit" class="secondary">End sessions</button></form></td></tr>"#,
+                r#"<tr><td>{h}{owner}</td><td>{last}</td><td><form method="post" action="/owner/end-sessions"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="profile" value="{h}"><button type="submit" class="secondary">End sessions</button></form></td></tr>"#,
                 h = escape(&s.handle),
                 owner = if s.is_owner { " (owner)" } else { "" },
-                enrolled = if s.enrolled { "yes" } else { "not yet" },
                 last = escape(s.last_signin.as_deref().unwrap_or("never")),
                 csrf = escape(nav.csrf),
-                code_label = if s.enrolled { "New code (resets passphrase)" } else { "Enrolment code" },
             )
         })
         .collect();
@@ -318,8 +293,7 @@ pub fn owner(
         &format!(
             r#"<h1>Owner</h1>
 <h2>Profiles</h2>
-<p class="small">An enrolment code is shown once, works once and expires in 24 hours. Give it in person. A new code for an enrolled profile replaces that passphrase when used.</p>
-<div class="scroll"><table><thead><tr><th>Profile</th><th>Enrolled</th><th>Last sign-in</th><th>Code</th><th>Sessions</th></tr></thead><tbody>{rows}</tbody></table></div>
+<div class="scroll"><table><thead><tr><th>Profile</th><th>Last sign-in</th><th>Sessions</th></tr></thead><tbody>{rows}</tbody></table></div>
 <h2>Retention</h2>
 <form method="post" action="/owner/settings" class="stack narrow">
 <input type="hidden" name="csrf" value="{csrf}">
@@ -330,23 +304,6 @@ pub fn owner(
 <h2>Recent owner and system actions</h2>
 <div class="scroll"><table><thead><tr><th>When</th><th>By</th><th>Action</th><th>Detail</th></tr></thead><tbody>{audit_rows}</tbody></table></div>"#,
             csrf = escape(nav.csrf)
-        ),
-    )
-}
-
-pub fn code_issued(nav: &Nav, handle: &str, code: &str, expires: &str) -> String {
-    layout(
-        "Enrolment code",
-        Some(nav),
-        "",
-        &format!(
-            r#"<h1>Enrolment code for {handle}</h1>
-<p class="code">{code}</p>
-<p>Valid until {expires} (SGT). It works once. Give it to {handle} in person; this page will not show it again.</p>
-<p><a href="/owner">Back to Owner</a></p>"#,
-            handle = escape(handle),
-            code = escape(code),
-            expires = escape(expires)
         ),
     )
 }
@@ -370,6 +327,75 @@ pub fn privacy(owner: &str, journal_days: i32, location_days: i32) -> String {
 <p>Questions or corrections: ask {owner}.</p>
 <p class="small"><a href="/">Back</a></p>"#,
             owner = escape(owner)
+        ),
+    )
+}
+
+pub fn documents(nav: &Nav, rows: &[DocumentRow]) -> String {
+    let items: String = if rows.is_empty() {
+        r#"<p>No documents yet.</p>"#.to_string()
+    } else {
+        let list: String = rows
+            .iter()
+            .map(|d| {
+                format!(
+                    r#"<li><a href="/documents/{id}">{title}</a><span class="small"> · version {v} · {kind} · added by {by}, {when} (SGT)</span></li>"#,
+                    id = d.id,
+                    title = escape(&d.title),
+                    v = d.version_no,
+                    kind = if d.kind == "html" { "web page" } else { "text" },
+                    by = escape(d.uploaded_by.as_deref().unwrap_or("someone")),
+                    when = escape(&d.uploaded_at)
+                )
+            })
+            .collect();
+        format!(r#"<ul class="documents">{list}</ul>"#)
+    };
+    layout(
+        "Documents",
+        Some(nav),
+        &format!(r#" data-csrf="{}""#, escape(nav.csrf)),
+        &format!(r#"<h1>Documents</h1>{items}<p><a href="/documents/new">Add a document</a></p>"#),
+    )
+}
+
+pub fn document_upload(nav: &Nav, message: Option<&str>) -> String {
+    layout(
+        "Add a document",
+        Some(nav),
+        &format!(r#" data-csrf="{}""#, escape(nav.csrf)),
+        &format!(
+            r#"<h1>Add a document</h1>
+{notice}
+<form method="post" action="/documents" enctype="multipart/form-data" class="stack">
+<input type="hidden" name="csrf" value="{csrf}">
+<label>Title (optional) <input type="text" name="title" maxlength="120" placeholder="Uses the file name if left empty"></label>
+<label>File <input type="file" name="file" accept=".html,.htm,.txt,.md,text/html,text/plain,text/markdown" required></label>
+<p class="small">HTML pages and text files, up to 10 MB. Pages run in a locked-down frame: their own scripts, online pictures, links and printing work, but they cannot reach your account, the family's data or other pages.</p>
+<button type="submit">Upload</button>
+</form>"#,
+            notice = notice(message),
+            csrf = escape(nav.csrf)
+        ),
+    )
+}
+
+pub fn document_view(nav: &Nav, doc: &DocumentRow) -> String {
+    layout(
+        &doc.title,
+        Some(nav),
+        &format!(r#" data-csrf="{}""#, escape(nav.csrf)),
+        &format!(
+            r#"<div class="doc-head"><h1>{title}</h1><p class="small">Version {v} · {file} · {kb} KB · added by {by}, {when} (SGT) · <a href="/documents/{id}/raw" target="_blank" rel="noopener noreferrer">open on its own</a> · <a href="/documents">all documents</a></p></div>
+<iframe class="doc-frame" src="/documents/{id}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe>"#,
+            id = doc.id,
+            title = escape(&doc.title),
+            v = doc.version_no,
+            file = escape(&doc.filename),
+            kb = (doc.size_bytes + 1023) / 1024,
+            by = escape(doc.uploaded_by.as_deref().unwrap_or("someone")),
+            when = escape(&doc.uploaded_at),
+            sandbox = IFRAME_SANDBOX
         ),
     )
 }
@@ -420,12 +446,7 @@ mod tests {
         let page = home(&nav, "Safari on iPhone", false);
         assert!(page.contains("&lt;x&gt;") && !page.contains("<x>"));
         assert!(page.contains("&quot;q&quot;"));
-        for text in [
-            page,
-            privacy("alpha", 180, 90),
-            enrol("t", None),
-            signin(&[], "t", Some("m")),
-        ] {
+        for text in [page, privacy("alpha", 180, 90), signin(&[], "t", Some("m"))] {
             assert!(!text.contains('\u{2013}') && !text.contains('\u{2014}'));
         }
     }

@@ -73,19 +73,6 @@ pub async fn profile_by_handle(pool: &PgPool, handle: &str) -> sqlx::Result<Opti
         .await
 }
 
-pub async fn owner(pool: &PgPool) -> sqlx::Result<Option<Profile>> {
-    sqlx::query_as("SELECT id, handle, is_owner FROM profiles WHERE active AND is_owner")
-        .fetch_optional(pool)
-        .await
-}
-
-pub async fn credential(pool: &PgPool, profile_id: i16) -> sqlx::Result<Option<String>> {
-    sqlx::query_scalar("SELECT passphrase_hash FROM credentials WHERE profile_id = $1")
-        .bind(profile_id)
-        .fetch_optional(pool)
-        .await
-}
-
 pub async fn recent_failures(
     pool: &PgPool,
     net_hash: &[u8],
@@ -210,65 +197,6 @@ pub async fn end_profile_sessions(
         .execute(pool)
         .await?
         .rows_affected())
-}
-
-pub async fn set_credential(
-    pool: &PgPool,
-    profile_id: i16,
-    passphrase_hash: &str,
-) -> sqlx::Result<()> {
-    sqlx::query(
-        "INSERT INTO credentials (profile_id, passphrase_hash) VALUES ($1, $2)
-         ON CONFLICT (profile_id) DO UPDATE SET passphrase_hash = EXCLUDED.passphrase_hash, updated_at = now()",
-    )
-    .bind(profile_id)
-    .bind(passphrase_hash)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-pub async fn create_enrolment_code(
-    pool: &PgPool,
-    profile_id: i16,
-) -> sqlx::Result<(String, String)> {
-    let code = auth::new_enrolment_code();
-    let expires: String = sqlx::query_scalar(
-        "INSERT INTO enrolment_codes (code_hash, profile_id, expires_at) VALUES ($1, $2, now() + interval '24 hours')
-         RETURNING to_char(expires_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI')"
-    )
-    .bind(auth::sha256(auth::normalise_code(&code).as_bytes()))
-    .bind(profile_id)
-    .fetch_one(pool)
-    .await?;
-    Ok((code, expires))
-}
-
-/// The profile a one-time code belongs to, if it is valid, without using it up.
-pub async fn peek_enrolment_code(pool: &PgPool, code: &str) -> sqlx::Result<Option<i16>> {
-    sqlx::query_scalar("SELECT profile_id FROM enrolment_codes WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()")
-        .bind(auth::sha256(auth::normalise_code(code).as_bytes()))
-        .fetch_optional(pool)
-        .await
-}
-
-/// Uses a one-time code (marks it used) and returns its profile, if it is valid.
-pub async fn use_enrolment_code(pool: &PgPool, code: &str) -> sqlx::Result<Option<i16>> {
-    sqlx::query_scalar(
-        "UPDATE enrolment_codes SET used_at = now()
-         WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()
-         RETURNING profile_id",
-    )
-    .bind(auth::sha256(auth::normalise_code(code).as_bytes()))
-    .fetch_optional(pool)
-    .await
-}
-
-pub async fn profile_by_id(pool: &PgPool, id: i16) -> sqlx::Result<Option<Profile>> {
-    sqlx::query_as("SELECT id, handle, is_owner FROM profiles WHERE active AND id = $1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
 }
 
 pub async fn save_consent(
@@ -462,15 +390,14 @@ pub struct ProfileStatus {
     pub id: i16,
     pub handle: String,
     pub is_owner: bool,
-    pub enrolled: bool,
     pub last_signin: Option<String>,
 }
 
 pub async fn profile_statuses(pool: &PgPool) -> sqlx::Result<Vec<ProfileStatus>> {
     sqlx::query_as(
-        "SELECT p.id, p.handle, p.is_owner, (c.profile_id IS NOT NULL) AS enrolled,
+        "SELECT p.id, p.handle, p.is_owner,
                 (SELECT to_char(max(s.created_at) AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') FROM sessions s WHERE s.profile_id = p.id) AS last_signin
-         FROM profiles p LEFT JOIN credentials c ON c.profile_id = p.id
+         FROM profiles p
          WHERE p.active ORDER BY p.position"
     )
     .fetch_all(pool)
@@ -494,8 +421,8 @@ pub async fn recent_audit(pool: &PgPool) -> sqlx::Result<Vec<AuditRow>> {
     .await
 }
 
-/// Deletes journal data older than the owner's settings. Returns (sessions, locations, attempts, codes).
-pub async fn run_retention(pool: &PgPool) -> sqlx::Result<(u64, u64, u64, u64)> {
+/// Deletes journal data older than the owner's settings. Returns (sessions, locations, attempts).
+pub async fn run_retention(pool: &PgPool) -> sqlx::Result<(u64, u64, u64)> {
     let journal_days = setting(pool, "journal_retention_days").await?;
     let location_days = setting(pool, "location_retention_days").await?;
     let sessions =
@@ -519,17 +446,12 @@ pub async fn run_retention(pool: &PgPool) -> sqlx::Result<(u64, u64, u64, u64)> 
     .execute(pool)
     .await?
     .rows_affected();
-    let codes =
-        sqlx::query("DELETE FROM enrolment_codes WHERE expires_at < now() - interval '7 days'")
-            .execute(pool)
-            .await?
-            .rows_affected();
     audit(
         pool,
         None,
         "retention",
-        &format!("sessions {sessions}, locations {locations}, attempts {attempts}, codes {codes}"),
+        &format!("sessions {sessions}, locations {locations}, attempts {attempts}"),
     )
     .await?;
-    Ok((sessions, locations, attempts, codes))
+    Ok((sessions, locations, attempts))
 }

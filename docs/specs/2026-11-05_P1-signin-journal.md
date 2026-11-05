@@ -163,3 +163,14 @@ The owner replied "approve all" for the Railway gates, then "backup isn't necess
 | Enable Postgres backups | **Declined by the owner** ("backup isn't necessary"). Plan safeguard not applied; journal data would be lost if the volume were lost. |
 | Owner action: `HONGJIA_BOOTSTRAP_CODE` | Pending: set by the owner in Railway. |
 | Merge | Authorised by the owner ("merge when green"); blocked because GitHub refuses every update to the branch (`fatal error in commit_refs`, API 500) since 07:53 SGT. |
+
+### Amendment (5 November 2026): one family password
+
+Owner decision: "i dont want to enrol / it is meant to be simple", then "just one password". The owner also noted that enrolment had been added without permission; that is correct (A1 and A2 above were recommendations, never confirmed).
+
+- Sign-in is now: tap your name, type the one family password (`HONGJIA_FAMILY_PASSWORD`, a Railway variable, never committed). It is compared in constant time.
+- Removed: per-profile passphrases, the bootstrap code, enrolment codes, the enrolment page, the owner's code page and the Argon2 dependency. The unused `credentials` and `enrolment_codes` tables stay in the database (migration 0001 is already applied) and are not used.
+- Kept, because the original brief asked for them: the four names, sessions, rate limiting (5 failures in 15 minutes), location consent, the login journal, the owner's retention settings and ending sessions.
+- If `HONGJIA_FAMILY_PASSWORD` is missing the server keeps serving the placeholder instead of failing.
+- Known and accepted by the owner: a shared password cannot show who really picked which name. Invariant I1 ("own credential per profile") is withdrawn by this decision.
+

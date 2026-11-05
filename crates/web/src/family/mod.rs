@@ -2,6 +2,7 @@
 //! Active only when a database is configured; otherwise the server stays the P0 placeholder.
 
 pub mod auth;
+pub mod documents;
 mod handlers;
 mod pages;
 pub mod store;
@@ -26,8 +27,8 @@ pub struct Config {
     pub profiles: Vec<String>,
     pub owner: String,
     pub public_origin: Option<String>,
-    pub bootstrap_code: Option<String>,
-    pub dev_password: Option<String>,
+    /// The one family password (the owner's choice, 5 November 2026). Set in Railway, never committed.
+    pub family_password: String,
     pub on_railway: bool,
 }
 
@@ -75,32 +76,14 @@ impl Config {
         } else if on_railway {
             return Err("HONGJIA_PUBLIC_ORIGIN is required on Railway".into());
         }
-        let bootstrap_code = present("HONGJIA_BOOTSTRAP_CODE");
-        if bootstrap_code
-            .as_ref()
-            .is_some_and(|c| c.chars().count() < 24)
-        {
-            return Err("HONGJIA_BOOTSTRAP_CODE must be at least 24 characters".into());
-        }
-        let dev_password = match present("HONGJIA_AUTH_MODE").as_deref() {
-            None | Some("passphrase") => None,
-            Some("shared-dev") => {
-                if on_railway {
-                    return Err("shared-dev sign-in is refused on Railway: each profile needs its own credential".into());
-                }
-                Some(
-                    present("HONGJIA_DEV_PASSWORD")
-                        .ok_or("shared-dev mode needs HONGJIA_DEV_PASSWORD")?,
-                )
-            }
-            Some(_) => return Err("HONGJIA_AUTH_MODE must be passphrase or shared-dev".into()),
-        };
+        let family_password = get("HONGJIA_FAMILY_PASSWORD")
+            .filter(|v| !v.is_empty())
+            .ok_or("HONGJIA_FAMILY_PASSWORD is required")?;
         Ok(Config {
             profiles,
             owner,
             public_origin,
-            bootstrap_code,
-            dev_password,
+            family_password,
             on_railway,
         })
     }
@@ -145,7 +128,7 @@ impl FamilyState {
     }
 }
 
-pub const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+pub const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 pub const PERMISSIONS_POLICY: &str = "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(self), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()";
 
 /// The security headers in family mode (P0R's set, with forms, same-origin fetch, same-origin
@@ -181,7 +164,6 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
     Ok(Router::new()
         .route("/", get(handlers::start))
         .route("/signin", post(handlers::signin))
-        .route("/enrol", get(handlers::enrol_page).post(handlers::enrol))
         .route(
             "/consent",
             get(handlers::consent_page).post(handlers::consent),
@@ -189,7 +171,6 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route("/home", get(handlers::home))
         .route("/journal", get(handlers::journal))
         .route("/owner", get(handlers::owner_page))
-        .route("/owner/code", post(handlers::owner_code))
         .route("/owner/end-sessions", post(handlers::owner_end_sessions))
         .route("/owner/settings", post(handlers::owner_settings))
         .route("/signout", post(handlers::signout))
@@ -197,6 +178,15 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route("/privacy", get(handlers::privacy))
         .route("/api/heartbeat", post(handlers::heartbeat))
         .route("/api/location", post(handlers::location))
+        .route(
+            "/documents",
+            get(documents::index).post(documents::upload).layer(
+                axum::extract::DefaultBodyLimit::max(documents::MAX_BYTES + 64 * 1024),
+            ),
+        )
+        .route("/documents/new", get(documents::new_form))
+        .route("/documents/{id}", get(documents::view))
+        .route("/documents/{id}/raw", get(documents::raw))
         .route("/healthz", get(handlers::healthz))
         .route("/robots.txt", get(|| async { crate::robots() }))
         .route(
@@ -239,10 +229,16 @@ async fn guard(State(state): State<FamilyState>, request: Request, next: Next) -
         refused
     };
     let headers = response.headers_mut();
+    // A handler may set a stricter policy of its own (uploaded documents do); keep it.
     for (name, value) in security_headers() {
-        headers.insert(name, HeaderValue::from_static(value));
+        headers
+            .entry(name)
+            .or_insert(HeaderValue::from_static(value));
     }
-    if !path.starts_with("/assets/") && path != "/robots.txt" {
+    if !path.starts_with("/assets/")
+        && path != "/robots.txt"
+        && !headers.contains_key(header::CACHE_CONTROL)
+    {
         headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
     response
@@ -281,6 +277,7 @@ mod tests {
         let c = config(&[
             ("HONGJIA_PROFILES", "alpha, beta,gamma"),
             ("HONGJIA_OWNER", "gamma"),
+            ("HONGJIA_FAMILY_PASSWORD", "x"),
         ])
         .unwrap();
         assert_eq!(c.profiles, vec!["alpha", "beta", "gamma"]);
@@ -305,26 +302,21 @@ mod tests {
     }
 
     #[test]
-    fn shared_dev_refused_on_railway() {
-        let base = [
-            ("HONGJIA_PROFILES", "alpha"),
-            ("HONGJIA_OWNER", "alpha"),
-            ("HONGJIA_AUTH_MODE", "shared-dev"),
-            ("HONGJIA_DEV_PASSWORD", "dev"),
-        ];
-        assert!(config(&base).unwrap().dev_password.is_some());
-        let mut on_railway = base.to_vec();
-        on_railway.push(("RAILWAY_ENVIRONMENT", "production"));
-        on_railway.push(("HONGJIA_PUBLIC_ORIGIN", "https://hongjia.org"));
-        let err = config(&on_railway).unwrap_err();
-        assert!(err.contains("refused on Railway"), "{err}");
+    fn family_password_is_required() {
+        let base = [("HONGJIA_PROFILES", "alpha"), ("HONGJIA_OWNER", "alpha")];
+        let err = config(&base).unwrap_err();
+        assert!(err.contains("HONGJIA_FAMILY_PASSWORD"), "{err}");
+        let mut ok = base.to_vec();
+        ok.push(("HONGJIA_FAMILY_PASSWORD", "family"));
+        assert_eq!(config(&ok).unwrap().family_password, "family");
     }
 
     #[test]
-    fn railway_needs_an_https_public_origin_and_a_long_bootstrap_code() {
+    fn railway_needs_an_https_public_origin() {
         let base = [
             ("HONGJIA_PROFILES", "alpha"),
             ("HONGJIA_OWNER", "alpha"),
+            ("HONGJIA_FAMILY_PASSWORD", "family"),
             ("RAILWAY_ENVIRONMENT", "production"),
         ];
         assert!(config(&base).is_err());
@@ -336,9 +328,6 @@ mod tests {
         let mut http = base.to_vec();
         http.push(("HONGJIA_PUBLIC_ORIGIN", "http://hongjia.org"));
         assert!(config(&http).is_err());
-        let mut short = ok.clone();
-        short.push(("HONGJIA_BOOTSTRAP_CODE", "too short"));
-        assert!(config(&short).is_err());
     }
 
     #[test]

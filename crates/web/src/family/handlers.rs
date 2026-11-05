@@ -96,7 +96,7 @@ fn set_device(state: &FamilyState, response: &mut Response, token: &str) {
     );
 }
 
-/// The pre-session form token (double-submit cookie) for the sign-in and enrolment forms.
+/// The pre-session form token (double-submit cookie) for the sign-in form.
 fn form_token(state: &FamilyState, headers: &HeaderMap) -> (String, bool) {
     match web::cookie(headers, &state.config.cookie_name("hj_form"))
         .filter(|t| auth::valid_token(t))
@@ -121,6 +121,13 @@ fn session_form_ok(
 ) -> bool {
     web::same_origin(headers, &state.expected_origin(headers))
         && auth::ct_eq(session.csrf.as_bytes(), submitted.as_bytes())
+}
+
+pub(super) async fn current_session(
+    state: &FamilyState,
+    headers: &HeaderMap,
+) -> Result<Option<Session>> {
+    current(state, headers).await
 }
 
 async fn current(state: &FamilyState, headers: &HeaderMap) -> Result<Option<Session>> {
@@ -231,24 +238,20 @@ pub async fn signin(
         .await;
     }
 
-    let ok = match (&state.config.dev_password, &profile) {
-        (Some(dev), Some(_)) => auth::ct_eq(dev.as_bytes(), form.passphrase.as_bytes()),
-        (Some(_), None) => false,
-        (None, _) => {
-            let stored = match profile_id {
-                Some(id) => store::credential(&state.pool, id).await?,
-                None => None,
-            };
-            let verified = auth::verify_passphrase(
-                &form.passphrase,
-                stored.as_deref().unwrap_or(auth::dummy_hash()),
-            );
-            verified && stored.is_some()
-        }
-    };
+    let ok = profile.is_some()
+        && auth::ct_eq(
+            &auth::sha256(state.config.family_password.as_bytes()),
+            &auth::sha256(form.passphrase.as_bytes()),
+        );
     store::record_attempt(&state.pool, attempt(if ok { "success" } else { "failure" })).await?;
     let Some(profile) = profile.filter(|_| ok) else {
-        return signin_page(&state, &headers, StatusCode::UNAUTHORIZED, Some("That did not work. Check the profile and passphrase, or ask for a new enrolment code.")).await;
+        return signin_page(
+            &state,
+            &headers,
+            StatusCode::UNAUTHORIZED,
+            Some("That did not work. Check the name and the family password."),
+        )
+        .await;
     };
 
     store::touch_device(&state.pool, &device_hash).await?;
@@ -257,173 +260,6 @@ pub async fn signin(
         .await?
         .is_some_and(|s| s.location_allowed.is_some());
     let mut response = see_other(if has_consent { "/home" } else { "/consent" });
-    add_cookie(
-        &mut response,
-        web::set_cookie(
-            &state.config.cookie_name("hj_sid"),
-            &token,
-            SESSION_MAX_AGE,
-            state.config.secure_cookies(),
-        ),
-    );
-    if new_device {
-        set_device(&state, &mut response, &device_token);
-    }
-    Ok(response)
-}
-
-pub async fn enrol_page(State(state): State<FamilyState>, headers: HeaderMap) -> Result {
-    let (token, new_token) = form_token(&state, &headers);
-    let mut response = page(StatusCode::OK, pages::enrol(&token, None));
-    if new_token {
-        add_cookie(
-            &mut response,
-            web::set_cookie(
-                &state.config.cookie_name("hj_form"),
-                &token,
-                FORM_TOKEN_MAX_AGE,
-                state.config.secure_cookies(),
-            ),
-        );
-    }
-    let (device_token, _, new_device) = device(&state, &headers);
-    if new_device {
-        set_device(&state, &mut response, &device_token);
-    }
-    Ok(response)
-}
-
-#[derive(Deserialize)]
-pub struct EnrolForm {
-    #[serde(default)]
-    code: String,
-    #[serde(default)]
-    passphrase: String,
-    #[serde(default)]
-    confirm: String,
-    #[serde(default)]
-    csrf: String,
-}
-
-pub async fn enrol(
-    State(state): State<FamilyState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
-    Form(form): Form<EnrolForm>,
-) -> Result {
-    if !form_ok(&state, &headers, &form.csrf) {
-        return Ok(refused());
-    }
-    let (device_token, device_hash, new_device) = device(&state, &headers);
-    let net = net_hash(&state, &headers, peer);
-    let ua = web::ua_summary(&headers);
-    let retry = |status, message: String| page(status, pages::enrol(&form.csrf, Some(&message)));
-
-    if store::recent_failures(&state.pool, &net, None).await? >= store::FAILURE_LIMIT {
-        store::record_attempt(
-            &state.pool,
-            Attempt {
-                kind: "enrol",
-                profile_id: None,
-                result: "rate_limited",
-                net_hash: &net,
-                device_hash: Some(&device_hash),
-                ua_summary: &ua,
-            },
-        )
-        .await?;
-        return Ok(retry(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many attempts. Please wait 15 minutes and try again.".into(),
-        ));
-    }
-
-    // Which profile does this code belong to? The bootstrap code works only for the owner, and
-    // only until the owner has a passphrase. Ordinary codes are checked before being used up, so a
-    // passphrase that breaks the rules does not waste the code.
-    let owner = store::owner(&state.pool).await?;
-    let owner_name = owner
-        .as_ref()
-        .map(|o| o.handle.clone())
-        .unwrap_or_else(|| "the owner".into());
-    let mut bootstrap = false;
-    let mut profile = None;
-    if let (Some(code), Some(owner)) = (&state.config.bootstrap_code, &owner)
-        && auth::ct_eq(code.as_bytes(), form.code.trim().as_bytes())
-        && store::credential(&state.pool, owner.id).await?.is_none()
-    {
-        bootstrap = true;
-        profile = Some(owner.clone());
-    }
-    if profile.is_none()
-        && let Some(id) = store::peek_enrolment_code(&state.pool, &form.code).await?
-    {
-        profile = store::profile_by_id(&state.pool, id).await?;
-    }
-    let Some(profile) = profile else {
-        store::record_attempt(
-            &state.pool,
-            Attempt {
-                kind: "enrol",
-                profile_id: None,
-                result: "failure",
-                net_hash: &net,
-                device_hash: Some(&device_hash),
-                ua_summary: &ua,
-            },
-        )
-        .await?;
-        return Ok(retry(
-            StatusCode::UNAUTHORIZED,
-            format!(
-                "That code did not work. It may have expired or been used. Ask {owner_name} for a new one."
-            ),
-        ));
-    };
-    if let Some(problem) =
-        auth::passphrase_problem(&form.passphrase, &form.confirm, &profile.handle)
-    {
-        return Ok(retry(StatusCode::BAD_REQUEST, problem.to_string()));
-    }
-    if !bootstrap && store::use_enrolment_code(&state.pool, &form.code).await? != Some(profile.id) {
-        return Ok(retry(
-            StatusCode::UNAUTHORIZED,
-            format!("That code did not work. Ask {owner_name} for a new one."),
-        ));
-    }
-
-    let had_credential = store::credential(&state.pool, profile.id).await?.is_some();
-    store::set_credential(
-        &state.pool,
-        profile.id,
-        &auth::hash_passphrase(&form.passphrase),
-    )
-    .await?;
-    store::end_profile_sessions(&state.pool, profile.id, "new passphrase").await?;
-    let action = if bootstrap {
-        "owner enrolled with bootstrap code"
-    } else if had_credential {
-        "passphrase reset with code"
-    } else {
-        "enrolled with code"
-    };
-    store::audit(&state.pool, Some(profile.id), action, "").await?;
-    store::record_attempt(
-        &state.pool,
-        Attempt {
-            kind: "enrol",
-            profile_id: Some(profile.id),
-            result: "success",
-            net_hash: &net,
-            device_hash: Some(&device_hash),
-            ua_summary: &ua,
-        },
-    )
-    .await?;
-
-    store::touch_device(&state.pool, &device_hash).await?;
-    let token = store::create_session(&state.pool, profile.id, &device_hash, &ua).await?;
-    let mut response = see_other("/consent");
     add_cookie(
         &mut response,
         web::set_cookie(
@@ -587,35 +423,6 @@ pub struct ProfileForm {
     csrf: String,
     #[serde(default)]
     profile: String,
-}
-
-pub async fn owner_code(
-    State(state): State<FamilyState>,
-    headers: HeaderMap,
-    Form(form): Form<ProfileForm>,
-) -> Result {
-    let session = match owner_session(&state, &headers).await? {
-        Ok(s) => s,
-        Err(response) => return Ok(response),
-    };
-    if !session_form_ok(&state, &headers, &session, &form.csrf) {
-        return Ok(refused());
-    }
-    let Some(profile) = store::profile_by_handle(&state.pool, &form.profile).await? else {
-        return Ok(see_other("/owner"));
-    };
-    let (code, expires) = store::create_enrolment_code(&state.pool, profile.id).await?;
-    store::audit(
-        &state.pool,
-        Some(session.profile_id),
-        "enrolment code created",
-        &profile.handle,
-    )
-    .await?;
-    Ok(page(
-        StatusCode::OK,
-        pages::code_issued(&nav(&session), &profile.handle, &code, &expires),
-    ))
 }
 
 pub async fn owner_end_sessions(
