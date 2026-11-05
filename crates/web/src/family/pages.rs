@@ -41,6 +41,34 @@ fn explorer(contents: &str) -> String {
     )
 }
 
+/// The menu button at the bottom left of every signed-in page (the owner's request, 5 November
+/// 2026): Latest document, the sidebar switch on a document page (Ö on, ø off), Documents (folds
+/// open), Journal, and Settings (folds open) with the owner page and Sign out. It works without
+/// script as nested `<details>`; menu.mjs adds closing, the document list and the sidebar switch.
+fn menu(nav: &Nav, viewer: bool) -> String {
+    let sidebar = if viewer {
+        r##"<a class="menu-item" href="#panel" data-sidebar-toggle aria-pressed="true"><span><span class="menu-glyph" data-sidebar-glyph aria-hidden="true">Ö</span> Sidebar</span><span class="visually-hidden" data-sidebar-state>on</span></a>"##
+    } else {
+        ""
+    };
+    let owner = if nav.is_owner {
+        r#"<a class="menu-sub" href="/owner">Owner</a>"#
+    } else {
+        ""
+    };
+    format!(
+        r#"<nav class="menu-fab" aria-label="Menu" data-menu><details class="menu" data-menu-details><summary class="menu-button glass" title="Menu"><span aria-hidden="true">☰</span><span class="visually-hidden">Menu</span></summary><div class="menu-panel glass">
+<a class="menu-item" href="/documents/latest">Latest document</a>
+{sidebar}
+<details class="menu-group" data-menu-documents><summary class="menu-item">Documents</summary><div class="menu-list" data-menu-docs><a class="menu-sub" href="/documents">All documents</a></div></details>
+<a class="menu-item" href="/journal">Journal</a>
+<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list">{owner}<form method="post" action="/signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="menu-sub">Sign out {handle}</button></form></div></details>
+</div></details></nav>"#,
+        csrf = escape(nav.csrf),
+        handle = escape(nav.handle),
+    )
+}
+
 fn page_shell(
     title: &str,
     nav: Option<&Nav>,
@@ -50,25 +78,28 @@ fn page_shell(
     main: &str,
     contents: Option<&str>,
 ) -> String {
+    // The family's pages are reached from the menu button (bottom left), so the header keeps only
+    // the name; a document page drops it to give the document the whole window.
+    let viewer = body_class.split_whitespace().any(|c| c == "viewer-page");
     let header = match nav {
-        Some(nav) => format!(
-            r#"<header class="bar"><a class="brand" href="/home"><span lang="zh">洪家</span> · hongjia</a><nav><a href="/documents">Documents</a><a href="/journal">Journal</a>{owner}<form method="post" action="/signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="link">Sign out {handle}</button></form></nav></header>"#,
-            owner = if nav.is_owner { r#"<a href="/owner">Owner</a>"# } else { "" },
-            csrf = escape(nav.csrf),
-            handle = escape(nav.handle),
-        ),
+        Some(_) if viewer => String::new(),
+        Some(_) => r#"<header class="bar"><a class="brand" href="/home"><span lang="zh">洪家</span> · hongjia</a></header>"#.to_string(),
         None => r#"<header class="bar"><a class="brand" href="/"><span lang="zh">洪家</span> · hongjia</a></header>"#.to_string(),
     };
     let session_script = if nav.is_some() {
         r#"<script type="module" src="/assets/session.mjs"></script>
-<script type="module" src="/assets/explorer.mjs"></script>"#
+<script type="module" src="/assets/explorer.mjs"></script>
+<script type="module" src="/assets/menu.mjs"></script>"#
     } else {
         ""
     };
-    let explore = if nav.is_some() {
-        explorer(contents.unwrap_or(LIBRARY_CONTENTS))
-    } else {
-        String::new()
+    let explore = match nav {
+        Some(nav) => format!(
+            "{}{}",
+            menu(nav, viewer),
+            explorer(contents.unwrap_or(LIBRARY_CONTENTS))
+        ),
+        None => String::new(),
     };
     format!(
         r#"<!doctype html>
@@ -796,12 +827,12 @@ pub fn document_view(
     let latest = versions.iter().find(|v| v.version_no == doc.version_no);
     let main = format!(
         r##"<div class="viewer-doc">
-<div class="doc-bar"><span class="filing">{label}</span><h1 class="doc-title">{title}</h1><button type="button" class="pill comment-open" data-comment hidden>Comment</button><a class="pill manage-open" href="#panel">Manage</a></div>
+<div class="doc-bar"><span class="filing">{label}</span><h1 class="doc-title">{title}</h1><button type="button" class="pill comment-open" data-comment hidden>Comment</button></div>
 {notice}
 <iframe class="doc-frame" src="/documents/{key}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe>
 </div>
 <aside class="panel" id="panel" aria-label="Manage this document">
-<div class="panel-head"><span class="panel-title">This document</span><a class="pill manage-close" href="#doc">Close</a></div>
+<div class="panel-head"><span class="panel-title">This document</span><a class="panel-close" href="#doc" data-sidebar-close title="Close the sidebar"><span aria-hidden="true">×</span><span class="visually-hidden">Close the sidebar</span></a></div>
 {details}{annotations}{fields}{tags}{version_section}{check}{manage}
 </aside>
 <script type="module" src="/assets/doc-view.mjs"></script>"##,
@@ -876,5 +907,37 @@ mod tests {
         for text in [page, privacy("alpha", 180, 90), signin(&[], "t", Some("m"))] {
             assert!(!text.contains('\u{2013}') && !text.contains('\u{2014}'));
         }
+    }
+
+    #[test]
+    fn the_menu_replaces_the_header_links() {
+        let owner = Nav {
+            handle: "delta",
+            is_owner: true,
+            csrf: "t",
+        };
+        let member = Nav {
+            handle: "beta",
+            is_owner: false,
+            csrf: "t",
+        };
+        let page = home(&owner, "Safari on iPhone", false);
+        assert!(page.contains(r#"<header class="bar"><a class="brand" href="/home">"#));
+        assert!(!page.contains("<header class=\"bar\"><a class=\"brand\" href=\"/home\"><span lang=\"zh\">洪家</span> · hongjia</a><nav>"));
+        for item in [
+            "/documents/latest",
+            "data-menu-documents",
+            r#"href="/journal""#,
+            r#"href="/owner""#,
+            "Sign out delta",
+        ] {
+            assert!(page.contains(item), "{item}");
+        }
+        assert!(
+            !page.contains("data-sidebar-toggle"),
+            "the sidebar switch is for documents only"
+        );
+        let other = home(&member, "Safari on iPhone", false);
+        assert!(!other.contains(r#"href="/owner""#) && other.contains("Sign out beta"));
     }
 }

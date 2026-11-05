@@ -197,6 +197,7 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             ),
         )
         .route("/documents/new", get(documents::new_form))
+        .route("/documents/latest", get(documents::latest))
         .route("/documents/{key}", get(documents::view))
         .route("/documents/{key}/raw", get(documents::raw))
         .route("/documents/{key}/rename", post(documents::rename))
@@ -247,6 +248,10 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route(
             "/assets/doc-view.mjs",
             get(|| async { crate::asset("doc-view.mjs") }),
+        )
+        .route(
+            "/assets/menu.mjs",
+            get(|| async { crate::asset("menu.mjs") }),
         )
         .fallback(|| async { crate::plain(StatusCode::NOT_FOUND, "Not found\n") })
         .with_state(state.clone())

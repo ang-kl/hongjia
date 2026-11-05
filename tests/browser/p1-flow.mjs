@@ -157,7 +157,8 @@ if (shots) {
   const phone = await browser.newContext({ viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, storageState: await setup.storageState() });
   const pp = await phone.newPage();
   await openDoc(pp);
-  await pp.click('.manage-open');
+  await pp.click('[data-menu-details] > summary');
+  await pp.click('[data-sidebar-toggle]');
   await pp.waitForTimeout(400);
   await pp.locator('#annotations').scrollIntoViewIfNeeded();
   await pp.screenshot({ path: `${shots}/phone-annotations.png` });
@@ -187,10 +188,11 @@ async function checkFabs(p, label, width, height, problems, shot) {
   if (folder.x + folder.width > width + 1 || globe.y + globe.height > height + 1) problems.push('buttons outside the window');
   for (const b of [sat, globe, folder]) if (b.width < 44 || b.height < 44) problems.push(`button smaller than 44px (${Math.round(b.width)}x${Math.round(b.height)})`);
   if (await p.isDisabled('[data-fab-globe]')) problems.push('buttons not enabled');
-  if (label === 'document' && await p.isVisible('.manage-open')) {
-    const m = await box('.manage-open');
+  {
+    const m = await box('[data-menu-details] > summary');
     const g = await box('[data-fab-group]');
-    if (m && g && m.x < g.x + g.width && m.x + m.width > g.x && m.y < g.y + g.height && m.y + m.height > g.y) problems.push('buttons cover Manage');
+    if (!m) problems.push('menu button missing');
+    else if (g && m.x < g.x + g.width && m.x + m.width > g.x && m.y < g.y + g.height && m.y + m.height > g.y) problems.push('the right buttons cover the menu button');
   }
   if (!['documents', 'document'].includes(label)) return;
   const hidden = sel => p.$eval(sel, el => el.hidden || getComputedStyle(el).display === 'none');
@@ -247,8 +249,33 @@ async function checkFabs(p, label, width, height, problems, shot) {
 
 const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
 
+// The menu button (bottom left) on every signed-in page: inside the window, at least 44px, and its
+// panel lists Latest document, Documents (which folds open to the documents), Journal and Settings
+// (which folds open to Sign out); Escape closes it.
+async function checkMenu(p, label, width, height, problems) {
+  const button = p.locator('[data-menu-details] > summary');
+  const b = await button.boundingBox();
+  if (!b) { problems.push('menu button missing'); return; }
+  if (b.x < 0 || b.y + b.height > height + 1 || b.width < 44 || b.height < 44) problems.push('menu button outside the window or too small');
+  if (await p.locator('header.bar nav').count()) problems.push('the header still has its own links');
+  if (!['documents', 'document', 'home'].includes(label)) return;
+  await button.click();
+  const panel = await p.locator('.menu-panel').boundingBox();
+  if (!panel || panel.x < 0 || panel.y < 0 || panel.x + panel.width > width + 1) problems.push('menu panel outside the window');
+  const text = (await p.textContent('.menu-panel')).replace(/\s+/g, ' ');
+  for (const item of ['Latest document', 'Documents', 'Journal', 'Settings']) if (!text.includes(item)) problems.push(`menu has no ${item}`);
+  if ((label === 'document') !== text.includes('Sidebar')) problems.push('the Sidebar switch belongs to document pages only');
+  await p.click('[data-menu-documents] > summary');
+  await p.waitForSelector('[data-menu-docs] .menu-doc', { timeout: 3000 }).catch(() => problems.push('Documents did not list the documents'));
+  await p.click('.menu-group:not([data-menu-documents]) > summary');
+  if (!(await p.isVisible('text=Sign out delta'))) problems.push('Settings did not show Sign out');
+  await p.keyboard.press('Escape');
+  if (await p.isVisible('.menu-panel')) problems.push('Escape did not close the menu');
+}
+
 // The document page: the frame fills the window; the panel is beside it (landscape or square and at
-// least 720px wide) or a sheet that Manage opens and Close shuts (portrait).
+// least 720px wide), closes with × and comes back with the menu's Sidebar switch (Ö on, ø off); in
+// portrait it is a sheet that the Sidebar switch opens and × shuts.
 async function checkViewer(p, width, height, problems, shot) {
   const box = sel => p.locator(sel).first().boundingBox();
   const visible = () => p.$eval('#panel', el => getComputedStyle(el).visibility === 'visible' && el.getBoundingClientRect().top < innerHeight - 40);
@@ -262,18 +289,30 @@ async function checkViewer(p, width, height, problems, shot) {
     if (!(await visible())) problems.push('panel not visible beside the document');
     if (panel.x < frame.x + frame.width - 1) problems.push('panel not beside the frame');
     if (frame.width < width * 0.55) problems.push(`frame only ${Math.round(frame.width)}px wide`);
-    if (await p.isVisible('.manage-open')) problems.push('Manage button shown in beside mode');
+    await p.click('[data-sidebar-close]');
+    await p.waitForTimeout(300);
+    if (await p.isVisible('#panel')) problems.push('× did not close the sidebar');
+    const wide = await box('.doc-frame');
+    if (!wide || wide.width < width * 0.9) problems.push('the document did not take the freed space');
+    await p.click('[data-menu-details] > summary');
+    if ((await p.textContent('[data-sidebar-glyph]')) !== 'ø') problems.push('the switch does not show ø when the sidebar is off');
+    await p.click('[data-sidebar-toggle]');
+    await p.waitForTimeout(300);
+    if (!(await visible())) problems.push('the Sidebar switch did not bring the sidebar back');
+    if ((await p.textContent('[data-sidebar-glyph]')) !== 'Ö') problems.push('the switch does not show Ö when the sidebar is on');
   } else {
-    if (await visible()) problems.push('sheet open before Manage was tapped');
+    if (await visible()) problems.push('sheet open before the Sidebar switch was used');
     if (frame.width < width * 0.85) problems.push(`frame only ${Math.round(frame.width)}px wide`);
-    await p.click('.manage-open');
+    await p.click('[data-menu-details] > summary');
+    await p.click('[data-sidebar-toggle]');
     await p.waitForTimeout(400);
-    if (!(await visible())) problems.push('Manage did not open the sheet');
+    if (!(await visible())) problems.push('the Sidebar switch did not open the sheet');
     if (await p.isVisible('[data-fab-globe]')) problems.push('the buttons cover the open sheet');
+    if (await p.isVisible('[data-menu-details] > summary')) problems.push('the menu button covers the open sheet');
     if (shot) await p.screenshot({ path: shot });
-    await p.click('.manage-close');
+    await p.click('[data-sidebar-close]');
     await p.waitForTimeout(400);
-    if (await visible()) problems.push('Close did not shut the sheet');
+    if (await visible()) problems.push('× did not shut the sheet');
   }
   const ran = await p.frameLocator('.doc-frame').locator('body').getAttribute('data-ran');
   if (ran !== 'yes') problems.push('document script did not run in the frame');
@@ -313,6 +352,14 @@ for (const scheme of ['light', 'dark']) {
       if (shots && scheme === 'light' && ['notebook', 'phone-small'].includes(name)) await p.screenshot({ path: `${shots}/${name}-${label}.png`, fullPage: label !== 'document' });
       if (label === 'document') await checkViewer(p, width, height, problems, shots && scheme === 'light' ? `${shots}/${name}-document-panel.png` : '');
       if (signedIn) await checkFabs(p, label, width, height, problems, shots && scheme === 'light' && label === 'documents' && ['notebook', 'phone-small'].includes(name) ? `${shots}/${name}-globe.png` : '');
+      if (signedIn) await checkMenu(p, label, width, height, problems);
+      if (signedIn && shots && scheme === 'light' && label === 'document' && ['notebook', 'phone-small'].includes(name)) {
+        await p.click('[data-menu-details] > summary');
+        await p.click('[data-menu-documents] > summary');
+        await p.waitForTimeout(500);
+        await p.screenshot({ path: `${shots}/${name}-menu.png` });
+        await p.keyboard.press('Escape');
+      }
       const tag = `${scheme} ${name} ${label}`;
       console.log(`${problems.length ? 'FAIL' : 'ok  '} ${tag}`);
       for (const problem of problems) console.log(`     ${problem}`);

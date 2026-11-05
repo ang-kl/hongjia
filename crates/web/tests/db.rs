@@ -1792,3 +1792,32 @@ async fn annotations_by_any_member_deleted_by_author_or_owner(pool: PgPool) {
         .unwrap();
     assert_eq!(left, 0);
 }
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn latest_document_opens_the_newest_filing(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let day = today(&pool).await;
+    let mut b = member(port, "beta").await;
+    let empty = b.get("/documents/latest").await;
+    assert_eq!(empty.status, 303);
+    assert_eq!(empty.header("location"), Some("/documents"));
+    let csrf = b.csrf().await;
+    upload(&mut b, &csrf, "One", Some(("one.html", SAMPLE))).await;
+    upload(&mut b, &csrf, "Two", Some(("two.html", SAMPLE))).await;
+    let latest = b.get("/documents/latest").await;
+    assert_eq!(
+        latest.header("location"),
+        Some(format!("/documents/{day}_2").as_str())
+    );
+    assert_eq!(
+        Client::new(port).get("/documents/latest").await.status,
+        303,
+        "strangers go to sign in"
+    );
+    let menu = b.get("/documents").await.body;
+    assert!(
+        menu.contains("/documents/latest")
+            && menu.contains("Sign out beta")
+            && !menu.contains(r#"href="/owner""#)
+    );
+}

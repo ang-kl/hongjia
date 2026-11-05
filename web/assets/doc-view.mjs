@@ -123,7 +123,16 @@ function start() {
     composer.querySelector('[data-composer-clear]').hidden = !chosen;
   };
   const openPanel = () => {
-    if (!beside.matches && location.hash !== '#panel') location.hash = 'panel';
+    if (beside.matches) {
+      // The sidebar may have been closed with ×; Comment brings it back.
+      if (body.dataset.sidebar === 'off') {
+        body.dataset.sidebar = 'on';
+        try { localStorage.setItem('hj:sidebar', 'on'); } catch { /* storage may be blocked */ }
+      }
+    } else if (location.hash !== '#panel') {
+      location.hash = 'panel';
+    }
+    document.dispatchEvent(new Event('hj:sidebar'));
   };
 
   commentButton.addEventListener('click', () => {

@@ -241,7 +241,7 @@ body.viewer-page {
   height: 100dvh;
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   --gutter: 10px;
   padding:
     max(8px, env(safe-area-inset-top))
@@ -296,7 +296,8 @@ button.danger { background: #a3321f; border-color: #a3321f; color: #fff; }
 
 @media (min-aspect-ratio: 1/1) and (min-width: 720px) {
   .viewer { grid-template-columns: minmax(0, 1fr) var(--panel-width, clamp(280px, 28vw, 380px)); }
-  .manage-open, .manage-close { display: none !important; }
+  body[data-sidebar="off"] .viewer { grid-template-columns: minmax(0, 1fr); }
+  body[data-sidebar="off"] .panel { display: none; }
 }
 [data-form-factor="desktop"] .viewer { --panel-width: clamp(320px, 26vw, 400px); }
 [data-form-factor="tablet"] .viewer { --panel-width: 300px; }
@@ -566,3 +567,94 @@ button.pill[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) {
   button.pill, .annotation { transition: none !important; }
 }
+
+/* The sidebar's ×, in both layouts. */
+.panel-close {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 1.35rem;
+  line-height: 1;
+  transition: background-color 150ms var(--ease);
+}
+.panel-close:hover, .panel-close:focus-visible { background: var(--soft); }
+
+/* The menu button, bottom left (the owner's request, 5 November 2026). It sits under the globe
+   (z-index 50) and over the sheet (20); the open sheet hides it, as it hides the right buttons. */
+.menu-fab {
+  position: fixed;
+  left: max(14px, env(safe-area-inset-left));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 45;
+}
+.menu > summary { list-style: none; }
+.menu > summary::-webkit-details-marker, .menu-group > summary::-webkit-details-marker { display: none; }
+.menu-button {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 1.45rem;
+  line-height: 1;
+  user-select: none;
+}
+.menu-button:focus-visible { outline: 2px solid var(--globe-accent, var(--ink)); outline-offset: 3px; }
+.menu[open] > .menu-button { transform: scale(1.04); }
+.menu-panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  width: min(300px, calc(100vw - 28px));
+  max-height: min(72dvh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 18px;
+  padding: 8px;
+  display: grid;
+  gap: 2px;
+  color: var(--ink);
+}
+.menu-panel form { margin: 0; }
+.menu-item, .menu-sub, .menu-panel a.menu-item, .menu-panel a.menu-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 400;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 150ms var(--ease);
+}
+.menu-item:hover, .menu-sub:hover, .menu-item:focus-visible, .menu-sub:focus-visible { background: var(--soft); outline: none; }
+.menu-group > summary { list-style: none; }
+.menu-group > summary::after { content: "▼"; font-size: 0.75rem; color: var(--muted); }
+.menu-group[open] > summary::after { content: "▲"; }
+.menu-list { display: grid; gap: 2px; padding: 0 0 4px 10px; }
+.menu-sub { font-size: 0.95rem; }
+.menu-doc { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; padding-top: 6px; padding-bottom: 6px; }
+.menu-doc-label { font: 600 0.78rem/1.3 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
+.menu-glyph { display: inline-block; width: 1.4em; font-weight: 600; }
+@media not all and (min-aspect-ratio: 1/1) and (min-width: 720px) {
+  body:has(.panel:target) .menu-fab { visibility: hidden; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-item, .menu-sub, .panel-close { transition: none !important; }
+}
+@media print { .menu-fab { display: none !important; } }

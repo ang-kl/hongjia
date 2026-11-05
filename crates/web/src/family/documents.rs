@@ -459,6 +459,26 @@ pub async fn index(
     ))
 }
 
+/// "Latest document" in the menu: the newest filing, or the list when there is none.
+pub async fn latest(
+    State(state): State<FamilyState>,
+    headers: HeaderMap,
+) -> Result<Response, super::handlers::Fail> {
+    if signed_in(&state, &headers).await?.is_none() {
+        return Ok(see_other("/"));
+    }
+    let key: Option<String> = sqlx::query_scalar(
+        "SELECT to_char(filed_on, 'YYYY-MMDD') || '_' || day_no FROM documents
+         WHERE deleted_at IS NULL ORDER BY filed_on DESC, day_no DESC LIMIT 1",
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+    Ok(see_other(&match key {
+        Some(key) => format!("/documents/{key}"),
+        None => "/documents".to_string(),
+    }))
+}
+
 pub async fn new_form(
     State(state): State<FamilyState>,
     headers: HeaderMap,
