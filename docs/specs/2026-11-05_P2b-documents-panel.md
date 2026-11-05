@@ -197,3 +197,17 @@ Owner request in chat: "Don't show the following as the landing page, it should 
 - **Location:** the one approximate location a device allowed used to be requested only on the old home page. A page now asks for it whenever one is still wanted this session (`Nav.locate`), so it is still collected once after signing in, now on the landing document. Nothing else about location changes: same consent, same rounding, once per session.
 - **Not changed:** what "Mentioned you" shows. It now sits on About; moving it somewhere more visible is for the owner to decide.
 - **Checks:** unit tests cover the About page, the menu's About link and `data-location` only while a location is wanted. A database test covers `/`, `/home` and sign-in landing on `/documents/latest`, and the list when there is none. The existing tests now read the greeting, the mentions and the signed-in checks from `/about`. The browser check signs in to the documents list (no documents yet), reads the greeting at `/about`, lands later sign-ins on a document, and checks that Settings shows About in all 7 device classes.
+
+## Owner follow-up: Instagram and TikTok inside documents (5 November 2026, night)
+
+Owner decision in chat: "APPROVE embeds", after being told that YouTube, Instagram, TikTok and Facebook embeds would each be tried inside the document sandbox and allowed only if they work there.
+
+- **Tried in the sandbox:** a stand-in page used the same iframe sandbox and the same document policy, with `frame-src` widened for the four candidates. A control run without the sandbox followed.
+  - **Instagram:** its account embed (`/name/embed/`) showed the account's latest photos in both runs.
+  - **TikTok:** its account embed (`/embed/@name`) showed the account's videos in the sandbox. Repeated loads from one address later got TikTok's "ratelimit triggered" page.
+  - **YouTube:** the no-cookie player stayed black in the sandbox and played in the control run. It needs `allow-same-origin`, which documents never get.
+  - **Facebook:** the page plugin showed its header but never its posts in the sandbox. In the control run it sent the frame to facebook.com's home page.
+- **Frame policy:** `frame-src` adds `https://www.instagram.com/` and `https://www.tiktok.com/embed/`. Instagram is allowed by host because its embed pages sit under each account or post. Its other pages refuse to be framed. Frames inside the document inherit its sandbox, so they never get `allow-same-origin`. YouTube and Facebook stay blocked.
+- **Upload check:** it now lists "Instagram (embedded)" and "TikTok (embedded)". An Instagram frame counts only when its address ends in `/embed` or `/embed/captioned`. A TikTok frame counts only under `/embed/`. Any other frame is reported, with a note that YouTube players cannot run inside a document, so the video should be linked instead. `CHECK_VERSION` goes to 3, so every version is checked again at the next start.
+- **Privacy:** when a document shows one of these embeds, Instagram or TikTok receives the viewer's internet address, as Google does for maps.
+- **Checks:** a unit test covers allowed Instagram account, post and reel embeds and TikTok account and video embeds. It also covers refused addresses: a profile page, a look-alike host, `tiktok.com/embedx`, a TikTok profile page, YouTube and Facebook. The policy unit tests pin `frame-src` to `FRAME_SOURCES`. A local release build was checked in the real viewer: the Instagram embed rendered its photos, and the YouTube frame was refused by the policy and reported by the check.
