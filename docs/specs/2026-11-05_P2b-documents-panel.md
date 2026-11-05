@@ -218,3 +218,16 @@ Owner choice in chat, option (a): "sign-in lands on the newest web-page document
 
 - **Rule:** `/documents/latest` is used both for the landing after sign-in and for the menu's Latest document. It now opens the newest document whose latest version is a web page. With no web page at all, it opens the newest document of any kind, and with none at all, the list. Filing numbers and the documents list are unchanged.
 - **Checks:** the database test files a text document first and gets it back as the latest, since no web page exists yet. It then files two web pages and a newer text file, and gets the second web page back.
+
+## Owner follow-up: Markdown documents as formatted pages (5 November 2026, night)
+
+Owner request in chat: "make .md files display as formatted pages".
+
+- **Rendering:** a `.md` version (the only Markdown name uploads accept) is turned into a formatted page as it is sent to the document frame. The stored file never changes, and its download (org) is the file as uploaded. The page has headings, paragraphs, lists, tables, task lists, quotes, code, links and pictures, on a white page. Headings are serif and step down by level, and tables wrap long web addresses. `.txt` files stay as plain text. The renderer is `pulldown-cmark` 0.13 (CommonMark), with only its HTML writer enabled.
+- **Safety:** raw HTML in a Markdown file is shown as text and never runs. Links keep only `https:`, `http:`, `mailto:` and same-page `#` addresses, and web links open in a new tab. Pictures load only from `https:` addresses. The page is served with the same document policy and sandbox as every document.
+- **Marking up:** the in-frame helper is added to Markdown pages as it is to web pages, so right-click marks, comments and drawings now work on them. Before, a text file was sent as plain text, which has no helper.
+- **Checks:**
+  - Unit tests cover recognising Markdown names, formatting headings, tables, links and task lists, raw HTML shown as text, unsafe link and picture addresses dropped, and the page title escaped.
+  - A database test uploads a Markdown file and checks that the frame gets a formatted page with the helper and the document policy, that raw `<script>` appears as text, and that the download is the file as uploaded. It also checks that a `.txt` file is still sent as plain text.
+  - The sources list was viewed locally on iPad and phone sizes: 1 top heading, 7 section headings and 5 tables, nothing wider than the screen, and no script except the helper.
+- **Review fix (Codex):** only `.md` is treated as Markdown, because uploads do not accept `.markdown`. On a Markdown document, a redaction mark whose words cannot be found in the stored file is refused when it is made, with the message "these words cross formatting (bold, a link or a table)". This happens, for example, when the words cross bold text. Before, such a mark could be saved and then failed when the redactions were applied. A database test covers both a plain passage, which is accepted, and a passage across bold, which is refused.

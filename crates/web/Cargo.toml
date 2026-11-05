@@ -15,6 +15,7 @@ db-tests = []
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio", "form", "multipart"] }
 getrandom = "0.4.3"
 hmac = "0.13.0"
+pulldown-cmark = { version = "0.13.6", default-features = false, features = ["html"] }
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.11.1"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-none", "postgres", "migrate", "macros", "derive"] }

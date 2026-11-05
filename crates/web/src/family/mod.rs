@@ -8,6 +8,7 @@ pub mod documents;
 mod explore;
 mod handlers;
 pub mod json;
+pub mod markdown;
 mod pages;
 pub mod picture;
 pub mod redact;

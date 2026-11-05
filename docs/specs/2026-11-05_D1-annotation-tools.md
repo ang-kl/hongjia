@@ -117,3 +117,63 @@ Owner report in chat: "right click menu doesn't have the "Esc" to close it".
 - **Esc button:** the menu now has a small **Esc** button at its top right. It closes the menu on a touch screen or with the Pencil, where there is no Escape key. It sits beside the Highlight label, clear of the colours, and is at least 44 px wide.
 - **Escape key:** it already closed the menu when the menu had the keyboard. After a mouse right-click, the keyboard can stay inside the document frame, which sits apart from the page. The frame's helper now tells the page when Escape is pressed (`hj:escape`, a message with no data), and the page closes the menu. The document still receives the key, so its own Escape handling (a lightbox, for example) keeps working. Escape anywhere else on the page also closes the menu.
 - **Checks:** a JS unit test covers `hj:escape` being accepted with any extra fields dropped. The browser check right-clicks and closes the menu with the Esc button. It then right-clicks again, puts the keyboard in the document and presses Escape. It also checks that the button is at least 44 px wide and does not cover a highlight colour.
+
+## Owner follow-up: a short, grouped menu with pop-up submenus (6 November 2026)
+
+Owner request in chat: the menu "should be short and categorised and contextualise to the document type and capabilities limitation. If cannot add document or features cannot be done should be grey off. Its width and height of menu should be dynamically size but minimal to the device's limitation, device's orientation mode and current window size". The owner pointed to Apple's guidance on context menus. Owner choices, 6 November 2026:
+- grey out everything unavailable (option (b));
+- submenus pop up in place of the main menu, with "◀ ▼ × …" buttons that work on every menu, and "▲▼ (expand, flow)";
+- a "✎ Mark Up" button beside touch selections;
+- submenus one font size smaller.
+
+**Research.** Apple Human Interface Guidelines, read 6 November 2026: Context menus, Menus, Edit menus, Apple Pencil and Scribble.
+- Followed:
+  - Keep context menus short, with the most-used items first.
+  - Use no more than about three groups, with separators.
+  - Keep submenus one level deep and about five items.
+  - Put destructive items last, in red.
+  - Use short, title-style labels, with an ellipsis when more input follows.
+  - Keep the menu no taller than the window.
+- Departed from, by owner choice: Apple advises hiding unavailable items in a context menu. Here they are greyed out and say why.
+
+**Design.**
+- **Main menu, 8 rows in three groups:** the highlight colours, Text ›, Comment…; Note ›, Stamp ›, Signature ›, Draw ›; Redact, last and in red.
+- **Submenus:**
+  - Text: Underline, Strikethrough, Replace…, Insert Text…, Copy.
+  - Note: Sticky Note…, Text Box…, Attach File….
+  - Stamp: the five stamps.
+  - Signature: Place My Signature, Change My Signature….
+  - Draw: Pen, Sketch, Rectangle, Oval, Line, Arrow, Eraser.
+  - Loupe is under … on the main menu.
+- **Popping up:** a submenu, the … panel and the forms (Insert, Replace, Sticky Note, Text Box) take the main menu's place, so the menu never grows.
+- **The bar on every menu:**
+  - **◀** goes back; it is greyed on the main menu.
+  - **▼** folds the menu to its bar and **▲** unfolds it.
+  - **…** shows the menu's less-used items and why items are grey; it is greyed when there is nothing more.
+  - **×** closes. Esc still closes, ← goes back and → opens a submenu.
+- **Greyed items:** unavailable items are greyed (`aria-disabled`) and stay readable. Tapping one shows its reason under the list. The reasons (`unavailable()` in `doc-view.mjs`) are:
+  - "Select words first";
+  - "Not on pictures";
+  - "Press inside the text first";
+  - "Press on the document first";
+  - "Only the person who added this document, or the owner" (Redact);
+  - "Not on pictures yet" (Redact);
+  - "This document already has 100 files";
+  - "No signature yet: Place My Signature draws one first".
+  Redact is now shown, greyed, to members who did not add the document. Before, it was hidden from them.
+- **Size and place:** the width fits the longest label, from 200 to 300 px and never wider than the window minus 16 px. The height fits the rows and is never taller than the window minus 16 px; the list scrolls inside if needed. Submenu items are 0.875 rem against 1 rem on the main menu. On touch screens every row and bar button is at least 44 px. The menu opens beside the finger, Pencil or pointer, flips to stay inside the window, and is placed again when the window is resized or the device is rotated.
+- **✎ Mark Up:**
+  - When words are selected with a finger or the Pencil, the helper reports where they are (`hj:selection` gains `input` and `box`, both validated). The page shows a ✎ Mark Up button below them, or above them near the bottom of the window. This is clear of iPadOS's own Copy bar, which a web page cannot change.
+  - Tapping the button asks the helper to open the menu for those words (`hj:menu-at`).
+  - The button hides when the selection ends, the menu opens, the window changes or anything else is touched.
+- **Checks:**
+  - Node tests cover the menu's shape (main menu at most 8 rows; at most three groups and seven items per menu; submenus one level; Redact last and destructive), every reason, and the new selection fields.
+  - The browser check covers:
+    - the bar's four buttons, ◀ greyed on the main menu, and the main menu at most 8 rows;
+    - the Text submenu replacing the main menu, with a smaller font;
+    - ▼ folding and ▲ unfolding, ◀ going back and × closing;
+    - grey colours and a reason with nothing selected, and … showing Loupe and the reasons;
+    - ✎ Mark Up appearing beside a touch selection and opening the menu with the words;
+    - Redact greyed for another member and on pictures.
+    Every earlier menu step now reaches its item through its submenu.
+- **Not verifiable here:** whether iPadOS shows its own Copy bar and ✎ Mark Up together without overlap on a real iPad. Apple Pencil Pro's squeeze is not available to web pages.

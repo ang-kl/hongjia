@@ -40,9 +40,18 @@ export function validMessage(data) {
       if (data.op === 'set' && !isText(data.value, LIMITS.storage)) return null;
       return { type: data.type, op: data.op, key: data.op === 'clear' ? '' : data.key, value: data.op === 'set' ? data.value : '' };
     }
-    case 'hj:selection':
+    case 'hj:selection': {
       if (!isText(data.quote, LIMITS.quote) || !isText(data.prefix ?? '', LIMITS.around) || !isText(data.suffix ?? '', LIMITS.around)) return null;
-      return { type: data.type, quote: data.quote, prefix: data.prefix ?? '', suffix: data.suffix ?? '' };
+      const out = { type: data.type, quote: data.quote, prefix: data.prefix ?? '', suffix: data.suffix ?? '' };
+      // Where the selected words are in the frame, and how they were selected (for ✎ Mark Up).
+      if (data.input !== undefined) { if (!INPUTS.has(data.input)) return null; out.input = data.input; }
+      if (data.box !== undefined) {
+        const b = data.box;
+        if (!b || !isNumber(b.x, -1e5, 1e5) || !isNumber(b.y, -1e5, 1e5) || !isNumber(b.w, 0, 1e5) || !isNumber(b.h, 0, 1e5)) return null;
+        out.box = { x: b.x, y: b.y, w: b.w, h: b.h };
+      }
+      return out;
+    }
     case 'hj:focus':
       if (!isText(data.key, LIMITS.key) || !isText(data.label ?? '', LIMITS.label)) return null;
       return { type: data.type, key: data.key, label: data.label ?? '' };
@@ -151,11 +160,67 @@ const TYPE_WORDS = { jpeg: 'JPEG picture', png: 'PNG picture', webp: 'WebP pictu
 /// What an attached file's type is called in the panel.
 export const typeWords = kind => TYPE_WORDS[kind] || 'Plain text';
 
-/// The Redact item in the menu (D4): offered only to the uploader and the owner, and greyed out
-/// on a picture. Null when the item is not shown at all.
-export function redactItem(manager, canRedact) {
-  if (!manager) return null;
-  return canRedact ? { label: 'Redact', needs: 'quote' } : { label: 'Redact (not for pictures yet)', needs: 'never' };
+/// The annotation menu (the owner's design, 6 November 2026): a short main menu whose submenus pop up
+/// in its place, at most three groups per menu, Redact last. `needs` names the rule in `unavailable`.
+export const MENU = {
+  main: {
+    title: 'Mark Up',
+    groups: [
+      [{ swatches: true, needs: 'quote' }, { label: 'Text', open: 'text' }, { label: 'Comment…', act: 'comment' }],
+      [{ label: 'Note', open: 'note' }, { label: 'Stamp', open: 'stamp' }, { label: 'Signature', open: 'signature' }, { label: 'Draw', open: 'draw' }],
+      [{ label: 'Redact', act: 'redaction', needs: 'redact', destructive: true }]
+    ],
+    more: [{ label: 'Loupe', act: 'loupe' }]
+  },
+  text: {
+    title: 'Text',
+    groups: [
+      [{ label: 'Underline', act: 'underline', needs: 'quote' }, { label: 'Strikethrough', act: 'strike', needs: 'quote' }, { label: 'Replace…', act: 'replace', needs: 'quote' }],
+      [{ label: 'Insert Text…', act: 'insert', needs: 'point' }],
+      [{ label: 'Copy', act: 'copy', needs: 'quote' }]
+    ]
+  },
+  note: {
+    title: 'Note',
+    groups: [
+      [{ label: 'Sticky Note…', act: 'note', needs: 'place' }, { label: 'Text Box…', act: 'textbox', needs: 'place' }],
+      [{ label: 'Attach File…', act: 'attach', needs: 'attach' }]
+    ]
+  },
+  stamp: { title: 'Stamp', groups: [STAMPS.map(([stamp, label]) => ({ label, act: 'stamp', needs: 'place', data: { stamp } }))] },
+  signature: {
+    title: 'Signature',
+    groups: [[{ label: 'Place My Signature', act: 'signature', needs: 'place' }, { label: 'Change My Signature…', act: 'mysignature', needs: 'signature' }]]
+  },
+  draw: {
+    title: 'Draw',
+    groups: [
+      [{ label: 'Pen', act: 'ink', data: { tool: 'draw' } }, { label: 'Sketch', act: 'ink', data: { tool: 'sketch' } }],
+      [{ label: 'Rectangle', act: 'ink', data: { tool: 'rectangle' } }, { label: 'Oval', act: 'ink', data: { tool: 'oval' } },
+        { label: 'Line', act: 'ink', data: { tool: 'line' } }, { label: 'Arrow', act: 'ink', data: { tool: 'arrow' } }],
+      [{ label: 'Eraser', act: 'ink', data: { tool: 'eraser' } }]
+    ]
+  }
+};
+/// Most files a document may have attached (as on the server).
+export const MAX_ATTACHMENTS = 100;
+/// Why a menu item cannot be used right now, or '' when it can. Unavailable items are greyed out
+/// and show this reason (the owner's choice (b), 6 November 2026).
+export function unavailable(needs, s) {
+  switch (needs) {
+    case 'quote': return s.picture ? 'Not on pictures' : s.quote ? '' : 'Select words first';
+    case 'point': return s.picture ? 'Not on pictures' : s.point ? '' : 'Press inside the text first';
+    case 'place': return s.place ? '' : 'Press on the document first';
+    case 'redact':
+      if (!s.manager) return 'Only the person who added this document, or the owner';
+      if (s.picture) return 'Not on pictures yet';
+      return s.quote ? '' : 'Select words first';
+    case 'attach':
+      if (!s.place) return 'Press on the document first';
+      return s.attachments >= MAX_ATTACHMENTS ? `This document already has ${MAX_ATTACHMENTS} files` : '';
+    case 'signature': return s.signature === false ? 'No signature yet: Place My Signature draws one first' : '';
+    default: return '';
+  }
 }
 
 const KIND_WORDS = { comment: 'Comment', highlight: 'Highlight', underline: 'Underline', strike: 'Strikethrough', insert: 'Insert', replace: 'Replace', note: 'Sticky note', textbox: 'Text box', stamp: 'Stamp', ink: 'Drawing', shape: 'Shape', signature: 'Signature', redaction: 'Redaction', attachment: 'Attachment' };
@@ -208,6 +273,7 @@ function start() {
   const listFor = kind => lists[kind] || list;
   const manager = body.dataset.manager === 'true';
   const canRedact = body.dataset.canRedact === 'true';
+  const docKind = body.dataset.docKind || '';
   const composer = document.querySelector('[data-composer]');
   const commentButton = document.querySelector('[data-comment]');
   const overlay = document.querySelector('[data-doc-overlay]');
@@ -679,55 +745,156 @@ function start() {
     });
   }
 
-  // The annotation menu, opened by right-click, a long press or two Pencil taps in the frame.
+  // The annotation menu, opened by right-click, a long press or two Pencil taps in the frame (and by
+  // ✎ Mark Up beside a touch selection). The owner's design, 6 November 2026: a short main menu whose
+  // submenus pop up in its place; the same bar on every menu (◀ back, ▼/▲ fold and unfold, … more
+  // and why items are grey, × close); everything unavailable greyed out with its reason; submenus in
+  // a font one size smaller; the size fits the rows and never the whole window.
   let color = 'yellow';
   let context = null;
+  let stack = ['main'];
+  let folded = false;
+  let signatureSaved;
   const menu = element('div', { className: 'anno-menu glass', role: 'menu', ariaLabel: 'Mark up', tabIndex: -1, hidden: true });
-  // A visible way to close it (the owner's request, 5 November 2026), for touch screens and the
-  // Pencil, where there is no Escape key; the key itself also closes it, wherever the focus is.
-  const escButton = element('button', { type: 'button', className: 'anno-esc', textContent: 'Esc', title: 'Close (Esc)', ariaLabel: 'Close this menu (Esc)', dataset: { annoClose: '' } });
-  const swatches = element('div', { className: 'anno-row', role: 'group', ariaLabel: 'Highlight' }, element('span', { className: 'anno-label', textContent: 'Highlight' }));
-  for (const c of COLORS) swatches.append(element('button', { type: 'button', className: 'swatch', role: 'menuitem', ariaLabel: `Highlight ${c}`, title: `Highlight ${c}`, dataset: { act: 'highlight', color: c, needs: 'quote' } }));
-  const item0 = (label, act, needs = '') => element('button', { type: 'button', className: 'anno-item', role: 'menuitem', textContent: label, dataset: { act, needs } });
-  const stampButton = element('button', { type: 'button', className: 'anno-item', role: 'menuitem', ariaHasPopup: 'true', ariaExpanded: 'false', textContent: 'Stamp ▸', dataset: { act: 'stamps', needs: 'place' } });
-  const stampGroup = element('div', { className: 'anno-sub', role: 'group', ariaLabel: 'Stamps', hidden: true });
-  for (const [name, label] of STAMPS) stampGroup.append(element('button', { type: 'button', className: 'anno-item anno-stamp', role: 'menuitem', textContent: label, dataset: { act: 'stamp', stamp: name, needs: 'place' } }));
-  const shapesButton = element('button', { type: 'button', className: 'anno-item', role: 'menuitem', ariaHasPopup: 'true', ariaExpanded: 'false', textContent: 'Shapes ▸', dataset: { act: 'shapes' } });
-  const shapesGroup = element('div', { className: 'anno-sub', role: 'group', ariaLabel: 'Shapes', hidden: true });
-  for (const [name, label] of Object.entries(SHAPE_WORDS)) shapesGroup.append(element('button', { type: 'button', className: 'anno-item', role: 'menuitem', textContent: label, dataset: { act: 'ink', tool: name } }));
-  const form = element('form', { className: 'anno-form', hidden: true });
-  const formLabel = element('span', { className: 'anno-label' });
+  // The bar's symbols are drawn, all in one 16 by 16 box, so ◀ ▼ ▲ … × are the same size everywhere.
+  const SVG = 'http://www.w3.org/2000/svg';
+  const ICONS = {
+    back: '<path d="M11 2.5 3.5 8l7.5 5.5z"/>',
+    down: '<path d="M2.5 5h11L8 12.5z"/>',
+    up: '<path d="M2.5 11h11L8 3.5z"/>',
+    more: '<circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/>',
+    close: '<path d="M3.5 3.5l9 9M12.5 3.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>'
+  };
+  const icon = name => {
+    const svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('class', 'anno-icon');
+    svg.innerHTML = ICONS[name];
+    return svg;
+  };
+  const navButton = (nav, shape, label) => {
+    const b = element('button', { type: 'button', className: 'anno-nav', title: label, ariaLabel: label, dataset: { nav, icon: shape } });
+    b.append(icon(shape));
+    return b;
+  };
+  const backButton = navButton('back', 'back', 'Back');
+  const titleText = element('span', { className: 'anno-title' });
+  const foldButton = navButton('fold', 'down', 'Fold the menu');
+  const moreButton = navButton('more', 'more', 'More, and why items are grey');
+  const closeButton = navButton('close', 'close', 'Close (Esc)');
+  const head = element('div', { className: 'anno-head' }, backButton, titleText, foldButton, moreButton, closeButton);
+  const bodyBox = element('div', { className: 'anno-body' });
+  const why = element('p', { className: 'anno-why', role: 'status', dataset: { annoWhy: '' } });
+  const form = element('form', { className: 'anno-form' });
   const formColors = element('div', { className: 'anno-row anno-colors', role: 'radiogroup', ariaLabel: 'Colour' });
   for (const c of COLORS) formColors.append(element('label', { className: 'swatch-choice' }, element('input', { type: 'radio', name: 'color', value: c, ariaLabel: c }), element('span', { className: 'swatch', dataset: { color: c } })));
   const formInput = element('textarea', { rows: 3, maxLength: LIMITS.body, required: true, dataset: { annoInput: '' } });
-  form.append(formLabel, formInput, formColors, element('div', { className: 'composer-actions' },
+  form.append(formInput, formColors, element('div', { className: 'composer-actions' },
     element('button', { type: 'submit', textContent: 'Add' }),
     element('button', { type: 'button', className: 'secondary', textContent: 'Cancel', dataset: { annoCancel: '' } })),
   element('p', { className: 'small', role: 'status', dataset: { annoStatus: '' } }));
   attachMentions(formInput);
-  const inkItem = (label, tool) => { const b = item0(label, 'ink'); b.dataset.tool = tool; return b; };
-  menu.append(escButton, swatches, item0('Underline', 'underline', 'quote'), item0('Strikethrough', 'strike', 'quote'), item0('Insert text…', 'insert', 'point'),
-    item0('Replace…', 'replace', 'quote'), item0('Comment…', 'comment'), item0('Sticky note…', 'note', 'place'), item0('Text box…', 'textbox', 'place'),
-    stampButton, stampGroup, item0('Signature…', 'signature', 'place'), item0('My signature…', 'mysignature'), item0('Attach file…', 'attach', 'place'),
-    inkItem('Draw', 'draw'), inkItem('Sketch', 'sketch'), shapesButton, shapesGroup, inkItem('Eraser', 'eraser'),
-    item0('Loupe', 'loupe'), item0('Copy', 'copy', 'quote'), form);
-  const redact = redactItem(manager, canRedact);
-  if (redact) menu.querySelector('[data-act="replace"]').after(item0(redact.label, 'redaction', redact.needs));
+  menu.append(head, bodyBox, why);
   document.body.append(menu);
-  const menuItems = () => [...menu.querySelectorAll('[role=menuitem]')].filter(el => !el.disabled && !el.closest('[hidden]'));
+  // ✎ Mark Up: beside words selected with a finger or the Pencil, where iPadOS shows its own Copy bar.
+  const pill = element('button', { type: 'button', className: 'anno-pill glass', textContent: '✎ Mark Up', ariaLabel: 'Mark up the selected words', hidden: true });
+  document.body.append(pill);
+  let pillAt = null;
+  const hidePill = () => { pill.hidden = true; pillAt = null; };
+
+  const attachmentCount = () => entries().filter(li => li.dataset.kind === 'attachment').length;
+  const situation = () => ({
+    quote: Boolean(context?.quote.trim()),
+    point: Boolean(context && (context.quote.trim() || context.ppre || context.psuf)),
+    place: Boolean(context?.path),
+    picture: docKind === 'picture',
+    manager,
+    attachments: attachmentCount(),
+    signature: signatureSaved
+  });
+  const viewTitle = name => (name === 'form' ? formTitle : name === 'more' ? 'More' : MENU[name].title);
+  const itemButton = (spec, reason) => {
+    const b = element('button', { type: 'button', className: `anno-item${spec.open ? ' anno-open' : ''}${spec.destructive ? ' anno-danger' : ''}`, role: 'menuitem' });
+    b.append(element('span', { textContent: spec.label }));
+    if (spec.open) { b.dataset.open = spec.open; b.setAttribute('aria-haspopup', 'menu'); b.append(element('span', { className: 'anno-chev', textContent: '›', ariaHidden: 'true' })); }
+    for (const [k, v] of Object.entries(spec.data || {})) b.dataset[k] = v;
+    if (spec.act) b.dataset.act = spec.act;
+    if (reason) { b.setAttribute('aria-disabled', 'true'); b.dataset.why = reason; b.title = reason; }
+    return b;
+  };
+  const greyedIn = name => {
+    const s = situation();
+    const out = [];
+    for (const group of MENU[name].groups) for (const spec of group) {
+      const reason = unavailable(spec.needs, s);
+      if (reason) out.push([spec.swatches ? 'Highlight' : spec.label, reason]);
+    }
+    return out;
+  };
+  function render() {
+    const name = stack[stack.length - 1];
+    const parent = stack.length > 1 ? stack[stack.length - 2] : null;
+    menu.dataset.view = name;
+    titleText.textContent = viewTitle(name);
+    backButton.setAttribute('aria-disabled', String(stack.length === 1));
+    if (foldButton.dataset.icon !== (folded ? 'up' : 'down')) {
+      foldButton.dataset.icon = folded ? 'up' : 'down';
+      foldButton.replaceChildren(icon(foldButton.dataset.icon));
+    }
+    foldButton.setAttribute('aria-label', folded ? 'Unfold the menu' : 'Fold the menu');
+    foldButton.title = foldButton.getAttribute('aria-label');
+    bodyBox.hidden = folded;
+    why.textContent = '';
+    bodyBox.replaceChildren();
+    const s = situation();
+    if (name === 'form') {
+      bodyBox.append(form);
+      moreButton.setAttribute('aria-disabled', 'true');
+    } else if (name === 'more') {
+      const from = MENU[parent];
+      for (const spec of from.more || []) bodyBox.append(itemButton(spec, unavailable(spec.needs, s)));
+      const grey = greyedIn(parent);
+      if (grey.length) {
+        bodyBox.append(element('p', { className: 'anno-label', textContent: 'Why some items are grey' }));
+        const list = element('ul', { className: 'anno-reasons' });
+        for (const [label, reason] of grey) list.append(element('li', {}, element('b', { textContent: `${label}: ` }), document.createTextNode(reason)));
+        bodyBox.append(list);
+      }
+      moreButton.setAttribute('aria-disabled', 'true');
+    } else {
+      const view = MENU[name];
+      view.groups.forEach((group, i) => {
+        if (i) bodyBox.append(element('div', { className: 'anno-sep', role: 'separator' }));
+        for (const spec of group) {
+          if (spec.swatches) {
+            const reason = unavailable('quote', s);
+            const row = element('div', { className: 'anno-row', role: 'group', ariaLabel: 'Highlight' }, element('span', { className: 'anno-label', textContent: 'Highlight' }));
+            for (const c of COLORS) {
+              const sw = element('button', { type: 'button', className: 'swatch', role: 'menuitem', ariaLabel: `Highlight ${c}`, title: reason || `Highlight ${c}`, dataset: { act: 'highlight', color: c } });
+              if (reason) { sw.setAttribute('aria-disabled', 'true'); sw.dataset.why = reason; }
+              row.append(sw);
+            }
+            bodyBox.append(row);
+          } else bodyBox.append(itemButton(spec, unavailable(spec.needs, s)));
+        }
+      });
+      moreButton.setAttribute('aria-disabled', String(!(view.more?.length || greyedIn(name).length)));
+    }
+    placeOpenMenu(context.px, context.py);
+  }
+  const menuItems = () => [...bodyBox.querySelectorAll('[role=menuitem]')];
+  const go = name => { stack.push(name); folded = false; render(); (menuItems()[0] || moreButton).focus({ preventScroll: true }); };
+  const back = () => { if (stack.length > 1) { stack.pop(); folded = false; render(); (menuItems()[0] || menu).focus({ preventScroll: true }); } };
   let returnFocus = null;
   const closeMenu = (focusBack = true) => {
     if (menu.hidden) return;
     menu.hidden = true;
-    form.hidden = true;
-    stampGroup.hidden = true;
-    stampButton.setAttribute('aria-expanded', 'false');
-    shapesGroup.hidden = true;
-    shapesButton.setAttribute('aria-expanded', 'false');
     if (focusBack && returnFocus) returnFocus.focus({ preventScroll: true });
   };
   const placeOpenMenu = (px, py) => {
     menu.style.maxHeight = `${innerHeight - 16}px`;
+    menu.style.maxWidth = `${Math.min(300, innerWidth - 16)}px`;
     const { left, top } = placeMenu(px, py, menu.offsetWidth, Math.min(menu.offsetHeight, innerHeight - 16), innerWidth, innerHeight);
     menu.style.left = `${left}px`;
     menu.style.top = `${top}px`;
@@ -736,36 +903,33 @@ function start() {
     const r = frame.getBoundingClientRect();
     const off = frameOffset();
     context = { ...message, px: r.left + off.left + message.x, py: r.top + off.top + message.y };
-    const has = { quote: Boolean(message.quote.trim()), point: Boolean(message.quote.trim() || message.ppre || message.psuf), place: Boolean(message.path), never: false };
-    for (const el of menu.querySelectorAll('[data-needs]')) el.disabled = Boolean(el.dataset.needs) && !has[el.dataset.needs];
-    form.hidden = true;
-    stampGroup.hidden = true;
-    stampButton.setAttribute('aria-expanded', 'false');
-    shapesGroup.hidden = true;
-    shapesButton.setAttribute('aria-expanded', 'false');
+    hidePill();
+    stack = ['main'];
+    folded = false;
     returnFocus = message.input === 'keyboard' ? frame : document.activeElement;
     menu.hidden = false;
-    placeOpenMenu(context.px, context.py);
-    (menuItems()[0] || menu).focus({ preventScroll: true });
+    render();
+    (menuItems().find(b => b.getAttribute('aria-disabled') !== 'true') || menuItems()[0] || menu).focus({ preventScroll: true });
+    if (signatureSaved === undefined) savedSignature().then(sig => { signatureSaved = Boolean(sig); if (!menu.hidden && stack.includes('signature')) render(); }).catch(() => {});
   }
   const chooseColor = c => { color = c; toFrame({ type: 'hj:tool', color }); };
   const markFields = kind => ({ kind, color, quote: context.quote, prefix: context.prefix, suffix: context.suffix });
   const placeFields = kind => ({ kind, color, anchor_path: context.path, anchor_x: String(context.fx), anchor_y: String(context.fy) });
   let formKind = '';
+  let formTitle = '';
   const askFor = (kind, label, max, multiline) => {
     formKind = kind;
-    formLabel.textContent = label;
+    formTitle = label;
     formInput.value = '';
     formInput.maxLength = max;
     formInput.rows = multiline ? 3 : 1;
     formColors.hidden = !(kind === 'note' || kind === 'textbox');
     for (const radio of formColors.querySelectorAll('input')) radio.checked = radio.value === color;
     form.querySelector('[data-anno-status]').textContent = '';
-    form.hidden = false;
-    placeOpenMenu(context.px, context.py);
+    go('form');
     formInput.focus();
   };
-  const run = async (fields, done = 'Added.', why = () => 'Not saved; please try again.') => {
+  const run = async (fields, done = 'Added.', reasonFor = () => 'Not saved; please try again.') => {
     // The menu may have been opened again while this was saving; only close the one it came from.
     const session = context;
     try {
@@ -776,15 +940,28 @@ function start() {
       document.querySelector('[data-anno-live]').textContent = done;
     } catch (error) {
       if (context !== session) return;
-      form.hidden = false;
-      form.querySelector('[data-anno-status]').textContent = why(error?.message);
+      const message = reasonFor(error?.message);
+      if (stack[stack.length - 1] === 'form') form.querySelector('[data-anno-status]').textContent = message;
+      else why.textContent = message;
     }
   };
   const redactRefusal = code => code === '403' ? 'Only the person who added this document, or the owner, can redact it.'
-    : code === '422' ? 'Pictures cannot be redacted yet.' : 'Not marked; please try again.';
-  menu.addEventListener('click', event => {
-    const button = event.target.closest('button[data-act]');
-    if (!button || button.disabled || !context) return;
+    : code === '422' ? 'Pictures cannot be redacted yet.'
+    : code === '409' ? 'Not marked: these words cross formatting (bold, a link or a table) in the file. Select plain words, or a shorter piece.'
+    : 'Not marked; please try again.';
+  head.addEventListener('click', event => {
+    const nav = event.target.closest('[data-nav]')?.dataset.nav;
+    if (!nav || event.target.closest('[aria-disabled="true"]')) return;
+    if (nav === 'close') closeMenu();
+    else if (nav === 'back') back();
+    else if (nav === 'fold') { folded = !folded; render(); foldButton.focus({ preventScroll: true }); }
+    else if (nav === 'more') go('more');
+  });
+  bodyBox.addEventListener('click', event => {
+    const button = event.target.closest('button[data-act], button[data-open]');
+    if (!button || !context) return;
+    if (button.getAttribute('aria-disabled') === 'true') { why.textContent = button.dataset.why || ''; return; }
+    if (button.dataset.open) { go(button.dataset.open); return; }
     const act = button.dataset.act;
     switch (act) {
       case 'highlight': chooseColor(button.dataset.color); run(markFields('highlight'), 'Highlighted.'); break;
@@ -806,23 +983,7 @@ function start() {
         startComment(chosen);
         break;
       }
-      case 'stamps': {
-        const open = stampGroup.hidden;
-        stampGroup.hidden = !open;
-        button.setAttribute('aria-expanded', String(open));
-        placeOpenMenu(context.px, context.py);
-        if (open) stampGroup.querySelector('button')?.focus();
-        break;
-      }
       case 'stamp': run({ ...placeFields('stamp'), text: button.dataset.stamp }, 'Stamped.'); break;
-      case 'shapes': {
-        const open = shapesGroup.hidden;
-        shapesGroup.hidden = !open;
-        button.setAttribute('aria-expanded', String(open));
-        placeOpenMenu(context.px, context.py);
-        if (open) shapesGroup.querySelector('button')?.focus();
-        break;
-      }
       case 'ink':
         closeMenu(false);
         ink.enter(button.dataset.tool);
@@ -831,12 +992,12 @@ function start() {
         // Place your own saved signature; with none saved yet, the pad opens first.
         const fields = placeFields('signature');
         closeMenu(false);
-        placeSignature(fields);
+        placeSignature(fields).then(() => { signatureSaved = undefined; }).catch(() => {});
         break;
       }
       case 'mysignature':
         closeMenu(false);
-        changeSignature();
+        Promise.resolve(changeSignature()).then(() => { signatureSaved = undefined; }).catch(() => {});
         break;
       case 'loupe':
         closeMenu(false);
@@ -860,22 +1021,45 @@ function start() {
     } else if (formKind === 'replace') run({ ...markFields('replace'), text: words }, 'Replacement added.');
     else run({ ...placeFields(formKind), body: words }, formKind === 'note' ? 'Note added.' : 'Text box added.');
   });
-  form.querySelector('[data-anno-cancel]').addEventListener('click', () => { form.hidden = true; placeOpenMenu(context.px, context.py); menuItems()[0]?.focus(); });
+  form.querySelector('[data-anno-cancel]').addEventListener('click', back);
   menu.addEventListener('keydown', event => {
     if (event.key === 'Escape') { event.preventDefault(); closeMenu(); return; }
     if (event.target.closest('form')) return;
     const items = menuItems();
     const at = items.indexOf(document.activeElement);
-    const go = i => items[(i + items.length) % items.length]?.focus();
-    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') { event.preventDefault(); go(at + 1); }
-    else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') { event.preventDefault(); go(at - 1); }
-    else if (event.key === 'Home') { event.preventDefault(); go(0); }
-    else if (event.key === 'End') { event.preventDefault(); go(items.length - 1); }
+    const step = i => items[(i + items.length) % items.length]?.focus();
+    if (event.key === 'ArrowDown') { event.preventDefault(); step(at + 1); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); step(at - 1); }
+    else if (event.key === 'ArrowRight' && document.activeElement?.dataset?.open) { event.preventDefault(); go(document.activeElement.dataset.open); }
+    else if (event.key === 'ArrowLeft' && stack.length > 1) { event.preventDefault(); back(); }
+    else if (event.key === 'Home') { event.preventDefault(); step(0); }
+    else if (event.key === 'End') { event.preventDefault(); step(items.length - 1); }
     else if (event.key === 'Tab') closeMenu(false);
   });
-  document.addEventListener('pointerdown', event => { if (!menu.hidden && !menu.contains(event.target)) closeMenu(false); }, true);
-  escButton.addEventListener('click', () => closeMenu());
+  document.addEventListener('pointerdown', event => {
+    if (!menu.hidden && !menu.contains(event.target)) closeMenu(false);
+    if (!pill.hidden && event.target !== pill) hidePill();
+  }, true);
+  addEventListener('resize', () => { if (!menu.hidden && context) placeOpenMenu(context.px, context.py); hidePill(); });
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && !menu.hidden) { event.preventDefault(); closeMenu(); } });
+  const showPill = message => {
+    if (!menu.hidden || !message.box) { hidePill(); return; }
+    const r = frame.getBoundingClientRect();
+    const off = frameOffset();
+    const b = message.box;
+    pillAt = { x: b.x + b.w / 2, y: b.y + b.h };
+    pill.hidden = false;
+    const w = pill.offsetWidth, h = pill.offsetHeight;
+    const cx = r.left + off.left + pillAt.x, below = r.top + off.top + b.y + b.h + 12;
+    const top = below + h + 8 <= innerHeight ? below : r.top + off.top + b.y - h - 12;
+    pill.style.left = `${Math.round(Math.max(8, Math.min(cx - w / 2, innerWidth - w - 8)))}px`;
+    pill.style.top = `${Math.round(Math.max(8, Math.min(top, innerHeight - h - 8)))}px`;
+  };
+  pill.addEventListener('click', () => {
+    if (!pillAt) return;
+    toFrame({ type: 'hj:menu-at', x: Math.round(pillAt.x), y: Math.round(pillAt.y) });
+    hidePill();
+  });
   addEventListener('resize', () => closeMenu(false));
   body.append(element('p', { className: 'visually-hidden', role: 'status', dataset: { annoLive: '' } }));
   const announce = text => { document.querySelector('[data-anno-live]').textContent = text; };
@@ -1052,6 +1236,8 @@ function start() {
       case 'hj:selection':
         target = message.quote ? { quote: message.quote, prefix: message.prefix, suffix: message.suffix } : (target?.field ? target : null);
         showComment();
+        if (message.quote && (message.input === 'touch' || message.input === 'pen')) showPill(message);
+        else hidePill();
         break;
       case 'hj:focus':
         target = message.key ? { field: message.key, label: message.label } : null;

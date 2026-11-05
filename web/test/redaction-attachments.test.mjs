@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fileSize, typeWords, redactItem } from '../assets/doc-view.mjs';
+import { fileSize, typeWords, unavailable, MAX_ATTACHMENTS } from '../assets/doc-view.mjs';
 
 test('file sizes read as the panel shows them', () => {
   assert.equal(fileSize(0), '0 bytes');
@@ -26,11 +26,17 @@ test('attached file types have plain names', () => {
   assert.equal(typeWords('<b>'), 'Plain text', 'unknown types never echo what was sent');
 });
 
-test('Redact is offered only to the uploader and the owner, and never on a picture', () => {
-  assert.equal(redactItem(false, false), null);
-  assert.equal(redactItem(false, true), null, 'a member who did not add the document never sees it');
-  assert.deepEqual(redactItem(true, true), { label: 'Redact', needs: 'quote' });
-  assert.deepEqual(redactItem(true, false), { label: 'Redact (not for pictures yet)', needs: 'never' });
+test('Redact works only for the uploader and the owner, on selected words, never on a picture; otherwise it is greyed with the reason', () => {
+  const words = { quote: true, place: true, picture: false, manager: true };
+  assert.equal(unavailable('redact', words), '');
+  assert.match(unavailable('redact', { ...words, manager: false }), /added this document, or the owner/);
+  assert.equal(unavailable('redact', { ...words, picture: true }), 'Not on pictures yet');
+  assert.equal(unavailable('redact', { ...words, quote: false }), 'Select words first');
+});
+
+test('Attach File is greyed at the file limit', () => {
+  assert.equal(unavailable('attach', { place: true, attachments: MAX_ATTACHMENTS - 1 }), '');
+  assert.match(unavailable('attach', { place: true, attachments: MAX_ATTACHMENTS }), /already has 100 files/);
 });
 
 test('the frame helper draws pending redactions as black boxes and places attachments', async () => {

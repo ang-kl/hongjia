@@ -13,7 +13,7 @@ use super::doccheck::{self, Filing};
 use super::pages::{self, Nav};
 use super::picture;
 use super::store::Session;
-use super::{FamilyState, auth, review, store, web};
+use super::{FamilyState, auth, markdown, review, store, web};
 use axum::{
     Form,
     extract::{Multipart, Path, State},
@@ -887,32 +887,42 @@ pub async fn raw(
     let Some(stored) = content(&state.pool, doc.id, version).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
-    let (content_type, bytes) = match stored.kind.as_str() {
-        "html" | "picture" => {
-            // A picture is shown as a small page with the picture in it, so marks and drawings
-            // work on it. The helper for saved fields, the storage stand-in and annotations is
-            // added as the page is sent; the stored file never changes.
-            let html = if stored.kind == "picture" {
-                picture::page(
-                    &doc.title,
-                    stored.image_type.as_deref().unwrap_or("jpeg"),
-                    stored.image_width.unwrap_or(1) as u32,
-                    stored.image_height.unwrap_or(1) as u32,
-                    &stored.content,
-                )
-                .into_bytes()
-            } else {
-                stored.content
-            };
-            let data = review::frame_data(&state.pool, &doc, &session).await?;
-            (
-                "text/html; charset=utf-8",
-                review::inject(&html, &review::helper_script(&data)),
-            )
+    // A picture is shown as a small page with the picture in it, and a Markdown file as a formatted
+    // page, so marks and drawings work on them. The helper for saved fields, the storage stand-in
+    // and annotations is added as the page is sent; the stored file never changes.
+    let Stored {
+        filename,
+        kind,
+        content,
+        image_type,
+        image_width,
+        image_height,
+    } = stored;
+    let html = match kind.as_str() {
+        "picture" => picture::page(
+            &doc.title,
+            image_type.as_deref().unwrap_or("jpeg"),
+            image_width.unwrap_or(1) as u32,
+            image_height.unwrap_or(1) as u32,
+            &content,
+        )
+        .into_bytes(),
+        "html" => content,
+        "text" if markdown::is_markdown(&filename) => {
+            markdown::page(&doc.title, &String::from_utf8_lossy(&content)).into_bytes()
         }
-        _ => ("text/plain; charset=utf-8", stored.content),
+        _ => return Ok(framed("text/plain; charset=utf-8", content)),
     };
-    Ok((
+    let data = review::frame_data(&state.pool, &doc, &session).await?;
+    Ok(framed(
+        "text/html; charset=utf-8",
+        review::inject(&html, &review::helper_script(&data)),
+    ))
+}
+
+/// A document frame's response: its policy and headers around the body.
+fn framed(content_type: &'static str, bytes: Vec<u8>) -> Response {
+    (
         [
             (header::CONTENT_TYPE, content_type),
             (header::CONTENT_SECURITY_POLICY, DOCUMENT_CSP),
@@ -922,7 +932,7 @@ pub async fn raw(
         ],
         bytes,
     )
-        .into_response())
+        .into_response()
 }
 
 /// Loads the document for a change and checks the form and the person's right to change it.
