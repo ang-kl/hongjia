@@ -711,6 +711,23 @@ button.pill[hidden] { display: none; }
   gap: 2px;
   color: var(--ink);
 }
+.anno-esc {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 44px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.anno-esc:hover, .anno-esc:focus-visible { background: var(--soft); outline: 2px solid var(--ink); outline-offset: 1px; }
 .anno-menu[hidden], .anno-sub[hidden], .anno-form[hidden], .mention-list[hidden], .anno-colors[hidden] { display: none; }
 .anno-item {
   display: flex;
