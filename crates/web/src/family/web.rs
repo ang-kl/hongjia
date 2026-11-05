@@ -127,8 +127,65 @@ pub fn tenths(value: f64, limit: f64) -> Option<i16> {
     Some((value * 10.0).round() as i16)
 }
 
+/// One value from a URL query string, percent-decoded (`+` is a space). Invalid escapes are kept
+/// as they are; invalid UTF-8 becomes the replacement character.
+pub fn query_param(query: Option<&str>, name: &str) -> Option<String> {
+    let query = query?;
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if key == name {
+            return Some(percent_decode(value));
+        }
+    }
+    None
+}
+
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let decoded = (bytes[i] == b'%' && i + 2 < bytes.len())
+            .then(|| std::str::from_utf8(&bytes[i + 1..i + 3]).ok())
+            .flatten()
+            .and_then(|h| u8::from_str_radix(h, 16).ok());
+        match (bytes[i], decoded) {
+            (b'%', Some(b)) => {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+            (b'+', _) => out.push(b' '),
+            (b, _) => out.push(b),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn query_values_are_decoded() {
+        assert_eq!(
+            query_param(Some("q=lake+town&x=1"), "q").as_deref(),
+            Some("lake town")
+        );
+        assert_eq!(
+            query_param(Some("a=1&q=%E7%81%AF%23b"), "q").as_deref(),
+            Some("灯#b")
+        );
+        assert_eq!(
+            query_param(Some("q=100%25&q2=x"), "q").as_deref(),
+            Some("100%")
+        );
+        assert_eq!(query_param(Some("q=%zz%2"), "q").as_deref(), Some("%zz%2"));
+        assert_eq!(query_param(Some("q"), "q").as_deref(), Some(""));
+        assert_eq!(query_param(Some("x=1"), "q"), None);
+        assert_eq!(query_param(None, "q"), None);
+    }
+
     use super::*;
 
     #[test]

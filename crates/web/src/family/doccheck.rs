@@ -653,6 +653,176 @@ fn decode_entities(text: &str) -> String {
     out
 }
 
+/// The most plain text kept per version for search.
+pub const MAX_TEXT_CHARS: usize = 200_000;
+/// The most headings kept per version for 📁 contents.
+pub const MAX_HEADINGS: usize = 200;
+
+/// A heading for 📁 contents: its level (1 to 3), its anchor (empty when it has none) and its text.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Heading {
+    pub level: i16,
+    pub id: String,
+    pub text: String,
+}
+
+/// The plain text of a document for search: for HTML, the title (searched on its own), scripts,
+/// styles and templates removed, tags dropped, entities decoded; whitespace collapsed; at most
+/// 200,000 characters.
+pub fn plain_text(content: &str, kind: &str) -> String {
+    let text = if kind == "html" {
+        let lower = content.to_ascii_lowercase();
+        let mut kept = String::with_capacity(content.len().min(4 * MAX_TEXT_CHARS));
+        let mut from = 0;
+        loop {
+            let next = ["<script", "<style", "<template", "<noscript", "<title"]
+                .iter()
+                .filter_map(|tag| lower[from..].find(tag).map(|i| (from + i, *tag)))
+                .min_by_key(|(i, _)| *i);
+            let Some((start, tag)) = next else {
+                kept.push_str(&content[from..]);
+                break;
+            };
+            kept.push_str(&content[from..start]);
+            let close = format!("</{}", &tag[1..]);
+            from = match lower[start..].find(&close) {
+                Some(end) => {
+                    let after = start + end;
+                    lower[after..]
+                        .find('>')
+                        .map(|g| after + g + 1)
+                        .unwrap_or(lower.len())
+                }
+                None => lower.len(),
+            };
+            kept.push(' ');
+        }
+        decode_entities(&strip_tags(&kept))
+    } else {
+        content.to_string()
+    };
+    let mut out = String::new();
+    for (count, word) in text.split_whitespace().enumerate() {
+        if count > 0 {
+            out.push(' ');
+        }
+        out.push_str(word);
+        if out.len() >= 4 * MAX_TEXT_CHARS {
+            break;
+        }
+    }
+    out.chars().take(MAX_TEXT_CHARS).collect()
+}
+
+/// The headings of a document. An HTML heading's anchor is its own `id`, or else the `id` of a
+/// section, article, div, header or main element that opens between the previous heading and
+/// this one (a section's first heading names the section). Markdown headings have no anchors.
+pub fn headings(content: &str, kind: &str) -> Vec<Heading> {
+    let mut out = Vec::new();
+    if kind != "html" {
+        for line in content.lines().map(str::trim) {
+            let (level, rest) = if let Some(r) = line.strip_prefix("### ") {
+                (3, r)
+            } else if let Some(r) = line.strip_prefix("## ") {
+                (2, r)
+            } else if let Some(r) = line.strip_prefix("# ") {
+                (1, r)
+            } else {
+                continue;
+            };
+            let text: String = rest.trim().chars().take(120).collect();
+            if !text.is_empty() {
+                out.push(Heading {
+                    level,
+                    id: String::new(),
+                    text,
+                });
+            }
+            if out.len() == MAX_HEADINGS {
+                break;
+            }
+        }
+        return out;
+    }
+    let lower = content.to_ascii_lowercase();
+    let mut from = 0;
+    let mut previous_end = 0;
+    while out.len() < MAX_HEADINGS {
+        let next = ["<h1", "<h2", "<h3"]
+            .iter()
+            .filter_map(|tag| {
+                let mut at = from;
+                while let Some(i) = lower[at..].find(tag) {
+                    let start = at + i;
+                    let after = start + tag.len();
+                    if lower[after..]
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_whitespace() || c == '>')
+                    {
+                        return Some((start, *tag));
+                    }
+                    at = after;
+                }
+                None
+            })
+            .min_by_key(|(i, _)| *i);
+        let Some((start, tag)) = next else {
+            break;
+        };
+        let level = i16::from(tag.as_bytes()[2] - b'0');
+        let Some(gt) = lower[start..].find('>').map(|g| start + g) else {
+            break;
+        };
+        let close = format!("</{}", &tag[1..]);
+        let end = lower[gt..]
+            .find(&close)
+            .map(|e| gt + e)
+            .unwrap_or(lower.len());
+        let own = attr(&content[start + 1..gt], "id").unwrap_or_default();
+        let id = if own.trim().is_empty() {
+            enclosing_id(&content[previous_end..start], &lower[previous_end..start])
+        } else {
+            own.trim().to_string()
+        };
+        let inner = content[gt + 1..end].replace("<br", " <br");
+        let text: String = decode_entities(&strip_tags(&inner))
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(120)
+            .collect();
+        if !text.is_empty() {
+            let id = if id.chars().count() <= 200 && !id.contains(char::is_whitespace) {
+                id
+            } else {
+                String::new()
+            };
+            out.push(Heading { level, id, text });
+        }
+        previous_end = end.min(lower.len());
+        from = end.max(gt + 1).min(lower.len());
+    }
+    out
+}
+
+/// The `id` of the last section-like element opened in a stretch of HTML, or empty.
+fn enclosing_id(html: &str, lower: &str) -> String {
+    let mut best: Option<(usize, String)> = None;
+    for name in ["section", "article", "div", "header", "main"] {
+        for tag in start_tags(html, lower, name) {
+            if let Some(id) = attr(tag, "id").filter(|i| !i.trim().is_empty()) {
+                let at = tag.as_ptr() as usize - html.as_ptr() as usize;
+                if best.as_ref().is_none_or(|(b, _)| at > *b) {
+                    best = Some((at, id.trim().to_string()));
+                }
+            }
+        }
+    }
+    best.map(|(_, id)| id).unwrap_or_default()
+}
+
 /// What the upload check found in one HTML file.
 #[derive(Debug, Default, PartialEq)]
 pub struct Check {
@@ -1203,6 +1373,47 @@ localStorage.setItem('k', 'v');
             r#"<script id="__NEXT_DATA__"></script><script src="/_next/static/a.js"></script>"#,
         );
         assert!(next.libraries.contains(&"Next.js".to_string()));
+    }
+
+    #[test]
+    fn plain_text_for_search() {
+        let html = "<html><head><title>T</title><style>p{color:red}</style><script>var secret = 1;</script></head><body><h1>Lake&nbsp;Town &amp; hills</h1>\n\n<p>Boat   <b>hire</b></p><template><p>hidden</p></template><SCRIPT type=module>alert(1)</SCRIPT><p>灯笼 节日</p></body></html>";
+        assert_eq!(
+            plain_text(html, "html"),
+            "Lake Town & hills Boat hire 灯笼 节日"
+        );
+        assert_eq!(plain_text("  a\n\n b\tc ", "text"), "a b c");
+        assert_eq!(plain_text("<script>never closed", "html"), "");
+        let long = "word ".repeat(100_000);
+        assert_eq!(plain_text(&long, "text").chars().count(), MAX_TEXT_CHARS);
+    }
+
+    #[test]
+    fn headings_for_contents() {
+        let html = r#"<h1 id="top">Lake <br>Town</h1>
+<section id="days"><div class="x"><h2>Day by day</h2><h3>Morning</h3></div></section>
+<article class="card" id="stay-1"><h3 class="t">Where to stay</h3></article>
+<h2>No anchor</h2><h4 id="deep">Too deep</h4><h2 id="bad id">Spaced</h2>"#;
+        let found = headings(html, "html");
+        let summary: Vec<(i16, &str, &str)> = found
+            .iter()
+            .map(|h| (h.level, h.id.as_str(), h.text.as_str()))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                (1, "top", "Lake Town"),
+                (2, "days", "Day by day"),
+                (3, "", "Morning"),
+                (3, "stay-1", "Where to stay"),
+                (2, "", "No anchor"),
+                (2, "", "Spaced"),
+            ]
+        );
+        let md = headings("# Garden\ntext\n## Beds\n### Soil\n#### deep", "text");
+        assert_eq!(md.len(), 3);
+        assert!(md.iter().all(|h| h.id.is_empty()));
+        assert!(headings("<p>none</p>", "html").is_empty());
     }
 
     #[test]

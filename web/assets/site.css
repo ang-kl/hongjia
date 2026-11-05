@@ -323,3 +323,201 @@ button.danger { background: #a3321f; border-color: #a3321f; color: #fff; }
 @media (prefers-reduced-motion: reduce) {
   a.pill::before, .row, .panel, .panel:target { transition: none !important; }
 }
+
+/* The 🛰️ satellite, globe and 📁 folder (P2b, pull request B), ported from the owner's michi
+   explorer: a glass button group at the bottom right of every signed-in page and a chromeless
+   glass globe over the page. */
+:root {
+  --glass: rgb(255 255 255 / 0.62);
+  --glass-line: rgb(255 255 255 / 0.78);
+  --glass-shadow: 0 10px 40px rgb(24 58 98 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.9);
+  --globe-ink: #14373e;
+  --globe-accent: #245b96;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass: rgb(21 41 45 / 0.78);
+    --glass-line: rgb(255 255 255 / 0.14);
+    --glass-shadow: 0 10px 40px rgb(0 0 0 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.08);
+    --globe-accent: #8fb8e8;
+  }
+}
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--glass-shadow);
+}
+body.app:not(.viewer-page) { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+/* Beside a document, the panel's last lines can scroll clear of the buttons. */
+@media (min-aspect-ratio: 1/1) and (min-width: 720px) {
+  .viewer-page .panel { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+}
+
+.fab-group {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fab-globe { position: relative; width: 64px; height: 64px; padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; isolation: isolate; flex: none; min-height: 0; }
+.fab-globe svg { width: 64px; height: 64px; display: block; filter: drop-shadow(0 6px 14px rgb(24 58 98 / 0.18)); }
+.fab-globe::before {
+  content: "";
+  position: absolute;
+  inset: -26px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(255 255 255 / 1) 0, rgb(176 204 240 / 0.8) 38%, rgb(176 204 240 / 0) 72%);
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.25s, transform 0.25s;
+  z-index: -1;
+  pointer-events: none;
+}
+.fab-globe:hover:enabled::before { opacity: 0.7; transform: scale(0.9); }
+.fab-globe.is-lit::before { opacity: 1; transform: scale(1.3); transition: opacity 0.18s, transform 0.18s; }
+.fab-globe.is-lit { transform: scale(1.06); }
+.fab-globe[aria-expanded="true"]::before { opacity: 0.5; transform: scale(1); }
+.fab-globe:focus-visible { outline: 2px solid var(--globe-accent); outline-offset: 4px; }
+.fab-satellite, .fab-folder {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  border-radius: 50%;
+  cursor: pointer;
+  flex: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  filter: drop-shadow(0 3px 8px rgb(24 58 98 / 0.22));
+  transition: transform 0.18s;
+}
+.fab-satellite { align-self: flex-start; margin-top: -6px; }
+.fab-folder { align-self: flex-end; margin-bottom: -2px; }
+.fab-satellite:hover:enabled, .fab-folder:hover:enabled { transform: scale(1.12); }
+.fab-satellite[aria-expanded="true"], .fab-folder[aria-expanded="true"] { transform: scale(1.12) rotate(-8deg); }
+.fab-satellite:focus-visible, .fab-folder:focus-visible { outline: 2px solid var(--globe-accent); outline-offset: 3px; }
+.fab-group button:disabled { opacity: 0.55; cursor: default; }
+
+.fab-search { display: flex; align-items: center; gap: 4px; border-radius: 999px; padding: 4px 5px 4px 14px; max-width: min(70vw, 380px); }
+.fab-search[hidden] { display: none; }
+.fab-search::before { content: "🛰️"; font-size: 1.1rem; line-height: 1; margin-right: 2px; }
+.fab-search label { display: block; min-width: 0; flex: 1; }
+.fab-search input { font: inherit; font-size: 1rem; border: 0; background: none; color: var(--ink); min-width: 0; width: 240px; max-width: 100%; min-height: 42px; outline: none; }
+.fab-search input::placeholder { color: var(--muted); }
+.fab-search button { color: #fff; background: var(--globe-ink); border: 0; border-radius: 999px; min-width: 44px; min-height: 44px; padding: 0; }
+.fab-search:focus-within { outline: 2px solid var(--globe-accent); outline-offset: 2px; }
+.fab-search.is-docked { position: absolute; left: 50%; top: 0; transform: translate(-50%, -115%); width: min(440px, 92vw); max-width: none; z-index: 2; }
+
+.fab-contents {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: min(360px, calc(100vw - 28px));
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  border-radius: 16px;
+  padding: 8px;
+  overscroll-behavior: contain;
+}
+.fab-contents[hidden] { display: none; }
+.fab-contents-head, .fab-month { margin: 4px 8px 6px; font: 400 1rem/1.3 Georgia, "Songti SC", "Noto Serif CJK SC", serif; color: var(--muted); }
+.fab-month { font-size: 0.92rem; margin-top: 10px; }
+.fab-contents .small { margin: 6px 8px; color: var(--muted); font-size: 0.85rem; }
+.fab-contents .small a { color: inherit; }
+.fab-contents-list { list-style: none; padding: 0; margin: 0; }
+.fab-contents-list li { margin: 0; }
+.fab-contents-list a { display: flex; align-items: baseline; gap: 10px; min-height: 44px; padding: 9px 10px; border-radius: 10px; color: var(--ink); text-decoration: none; font-size: 0.92rem; line-height: 1.35; overflow-wrap: anywhere; }
+.fab-contents-list a:hover { background: var(--soft); }
+.fab-contents-list a:focus-visible { outline: 2px solid var(--globe-accent); outline-offset: 1px; }
+.fab-contents-list b { font: 600 0.75rem/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); flex: none; }
+.fab-contents-list .level-2 a { padding-left: 22px; }
+.fab-contents-list .level-3 a { padding-left: 36px; font-size: 0.88rem; }
+
+html.globe-open { overflow: hidden; }
+.globe-dialog { position: fixed; inset: 0; z-index: 50; }
+.globe-dialog[hidden] { display: none !important; }
+.globe-backdrop { position: absolute; inset: 0; background: rgb(236 242 250 / 0.22); -webkit-backdrop-filter: blur(6px) saturate(1.2); backdrop-filter: blur(6px) saturate(1.2); }
+@media (prefers-color-scheme: dark) { .globe-backdrop { background: rgb(8 18 20 / 0.45); } }
+.globe-x { position: absolute; top: max(14px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right)); z-index: 3; font: inherit; font-size: 1.5rem; line-height: 1; color: var(--ink); border-radius: 50%; width: 48px; height: 48px; min-height: 48px; padding: 0; cursor: pointer; }
+.globe-x:focus-visible { outline: 2px solid var(--globe-accent); outline-offset: 2px; }
+.globe-box { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; padding: calc(64px + env(safe-area-inset-top)) 8px calc(96px + env(safe-area-inset-bottom)); }
+.globe-stage { position: relative; flex: none; max-width: 100%; pointer-events: auto; }
+.globe-canvas { display: block; max-width: 100%; touch-action: none; cursor: grab; filter: drop-shadow(0 30px 60px rgb(24 58 98 / 0.22)); }
+.globe-canvas.is-dragging { cursor: grabbing; }
+.globe-canvas:focus { outline: none; }
+.globe-canvas:focus-visible { filter: drop-shadow(0 30px 60px rgb(24 58 98 / 0.22)) drop-shadow(0 0 6px rgb(36 91 150 / 0.7)); }
+.globe-grid { fill: none; stroke: #6f86a8; stroke-opacity: 0.3; stroke-width: 0.7; stroke-dasharray: 2 6; }
+.globe-island { fill-opacity: 0.82; stroke-width: 1.1; stroke-linejoin: round; }
+.globe-island.is-back, .globe-island-name.is-back { display: none; }
+.globe-island-name { font-family: system-ui, sans-serif; font-weight: 700; letter-spacing: 0.04em; paint-order: stroke; stroke: #fff; stroke-width: 3; stroke-opacity: 0.9; pointer-events: none; }
+.globe-node { text-decoration: none; outline: none; cursor: pointer; }
+.globe-node-hit { fill: transparent; stroke: transparent; pointer-events: all; }
+.globe-node-dot { fill: #fff; stroke: #5f8fcc; stroke-width: 2.5; }
+.globe-node.is-here .globe-node-dot { stroke: #3f8f67; fill: #e4f3ea; stroke-width: 3; }
+.globe-node text { fill: #14373e; stroke: #fff; stroke-width: 4; paint-order: stroke; font-family: system-ui, sans-serif; font-weight: 500; pointer-events: none; }
+.globe-node text.is-quiet { opacity: 0; }
+.globe-node:hover text, .globe-node:focus-visible text, .globe-node[aria-current] text, .globe-node.is-match text { opacity: 1; }
+.globe-node:hover .globe-node-dot, .globe-node:focus-visible .globe-node-dot, .globe-node[aria-current] .globe-node-dot { fill: #14373e; stroke: #fff; }
+.globe-node[aria-current] text, .globe-node.is-match text { font-weight: 750; }
+.globe-node:focus-visible .globe-node-hit { stroke: #245b96; stroke-width: 1.5; }
+.globe-node.is-dim { opacity: 0.16 !important; }
+.globe-node.is-back { display: none; }
+.globe-node.is-match .globe-node-dot { fill: #ffe79a; stroke: #c99a1c; stroke-width: 3.5; }
+
+.globe-card { position: absolute; z-index: 4; width: min(340px, calc(100vw - 16px)); max-height: min(52vh, 360px); overflow: auto; border-radius: 16px; color: var(--ink); overscroll-behavior: contain; }
+.globe-card[hidden] { display: none !important; }
+.globe-card::after { content: ""; position: absolute; left: var(--arrow-x, 50%); bottom: -7px; width: 12px; height: 12px; background: var(--glass); border-right: 1px solid var(--glass-line); border-bottom: 1px solid var(--glass-line); transform: translateX(-6px) rotate(45deg); }
+.globe-card.is-below::after { bottom: auto; top: -7px; transform: translateX(-6px) rotate(225deg); }
+.globe-card-x { position: sticky; top: 6px; float: right; margin: 6px 6px 0 0; font: inherit; font-size: 1.2rem; line-height: 1; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 50%; width: 44px; height: 44px; min-height: 44px; padding: 0; cursor: pointer; z-index: 1; }
+.globe-panel { padding: 14px 16px 16px; overflow-wrap: anywhere; }
+.globe-panel p { margin: 0 0 8px; color: var(--ink); font-size: 0.9rem; line-height: 1.55; }
+.globe-kind { color: var(--muted) !important; font: 600 0.8rem/1.4 ui-monospace, "SF Mono", Menlo, monospace !important; }
+.globe-title { margin: 0 0 8px; padding-right: 44px; font: 400 1.15rem/1.3 Georgia, "Songti SC", "Noto Serif CJK SC", serif; }
+.globe-title:focus { outline: none; }
+.globe-tags, .globe-here { color: var(--muted) !important; }
+.globe-snippet { border-left: 3px solid var(--line); padding-left: 10px; }
+.globe-also { font-size: 0.85rem !important; border-top: 1px solid var(--line); padding-top: 8px; }
+.globe-also a { color: inherit; }
+
+/* Phones: the card docks as a sheet above the buttons. */
+@media (max-width: 540px) {
+  .fab-satellite, .fab-folder { width: 44px; height: 44px; font-size: 1.4rem; }
+  .fab-globe, .fab-globe svg { width: 58px; height: 58px; }
+  .fab-search input { width: 100%; }
+  .fab-search:not(.is-docked) { position: absolute; right: 0; bottom: calc(100% + 10px); width: calc(100vw - 28px); max-width: none; }
+  .globe-box { padding: calc(68px + env(safe-area-inset-top)) 4px calc(88px + env(safe-area-inset-bottom)); }
+  .fab-search.is-docked { width: calc(100vw - 16px); }
+  .globe-card { --docked: 1; position: fixed; left: 0 !important; right: 0; bottom: 0; top: auto !important; width: auto; max-height: 46dvh; border-radius: 16px 16px 0 0; padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .globe-card::after { display: none; }
+}
+/* Short landscape screens: the card docks on the right and the buttons move left. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .globe-box { padding: 56px min(44vw, 340px) 4px 4px; }
+  .fab-search.is-docked { width: min(360px, 50vw); }
+  .globe-card { --docked: 1; position: fixed; right: 0; top: 0 !important; left: auto !important; bottom: 0; width: min(44vw, 340px); max-height: none; border-radius: 0; border-width: 0 0 0 1px; }
+  .globe-card::after { display: none; }
+  .globe-x { top: 6px; right: auto; left: 8px; }
+  .fab-group.is-open { right: auto; left: max(14px, env(safe-area-inset-left)); }
+  .fab-group.is-open .fab-contents { right: auto; left: 0; }
+}
+/* On a document page the buttons stay clear of the panel's last controls, and the open sheet
+   hides them (it is the thing being used). */
+@media (min-aspect-ratio: 1/1) and (min-width: 720px) {
+  .viewer-page .panel { padding-bottom: 96px; }
+}
+@media not all and (min-aspect-ratio: 1/1) and (min-width: 720px) {
+  body:has(.panel:target) .fab-group { visibility: hidden; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fab-globe::before, .fab-globe, .fab-satellite, .fab-folder { transition: none !important; }
+}
+@media print { .fab-group, .globe-dialog { display: none !important; } }

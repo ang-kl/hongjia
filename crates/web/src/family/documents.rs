@@ -101,9 +101,12 @@ pub struct VersionRow {
     pub style_guess: Option<String>,
     pub warnings: Vec<String>,
     pub field_count: i32,
+    pub heading_levels: Vec<i16>,
+    pub heading_ids: Vec<String>,
+    pub heading_texts: Vec<String>,
 }
 
-async fn list(pool: &PgPool) -> sqlx::Result<Vec<DocumentRow>> {
+pub(super) async fn list(pool: &PgPool) -> sqlx::Result<Vec<DocumentRow>> {
     sqlx::query_as(
         "SELECT d.id, to_char(d.filed_on, 'YYYY-MMDD') || '_' || d.day_no AS key,
                 to_char(d.filed_on, 'FMMonth YYYY') AS month, d.title, d.created_by, c.handle AS added_by,
@@ -154,7 +157,8 @@ async fn versions(pool: &PgPool, document_id: i64) -> sqlx::Result<Vec<VersionRo
     sqlx::query_as(
         "SELECT v.version_no, v.filename, v.kind, v.size_bytes, p.handle AS uploaded_by,
                 to_char(v.uploaded_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') AS uploaded_at,
-                v.libraries, v.style_guess, v.warnings, v.field_count
+                v.libraries, v.style_guess, v.warnings, v.field_count,
+                v.heading_levels, v.heading_ids, v.heading_texts
          FROM document_versions v LEFT JOIN profiles p ON p.id = v.uploaded_by
          WHERE v.document_id = $1 ORDER BY v.version_no DESC",
     )
@@ -177,6 +181,25 @@ async fn content(
     .bind(version)
     .fetch_optional(pool)
     .await
+}
+
+/// What is kept for 🛰️ search and 📁 contents: the plain text and the headings.
+struct Index {
+    text: String,
+    levels: Vec<i16>,
+    ids: Vec<String>,
+    texts: Vec<String>,
+}
+
+fn index_for(kind: &str, bytes: &[u8]) -> Index {
+    let content = String::from_utf8_lossy(bytes);
+    let headings = doccheck::headings(&content, kind);
+    Index {
+        text: doccheck::plain_text(&content, kind),
+        levels: headings.iter().map(|h| h.level).collect(),
+        ids: headings.iter().map(|h| h.id.clone()).collect(),
+        texts: headings.into_iter().map(|h| h.text).collect(),
+    }
 }
 
 /// The upload check for a file, or an empty one for text.
@@ -202,10 +225,12 @@ async fn insert_version(
     file: &NewFile<'_>,
 ) -> sqlx::Result<()> {
     let check = check_for(file.kind, file.bytes);
+    let index = index_for(file.kind, file.bytes);
     sqlx::query(
         "INSERT INTO document_versions (document_id, version_no, filename, kind, size_bytes, sha256, content, uploaded_by,
-                                        libraries, style_guess, warnings, field_count, checked)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true)",
+                                        libraries, style_guess, warnings, field_count, checked,
+                                        text_content, heading_levels, heading_ids, heading_texts, indexed)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, $13, $14, $15, $16, true)",
     )
     .bind(document_id)
     .bind(version_no)
@@ -219,6 +244,10 @@ async fn insert_version(
     .bind(&check.style_guess)
     .bind(&check.warnings)
     .bind(check.field_count)
+    .bind(&index.text)
+    .bind(&index.levels)
+    .bind(&index.ids)
+    .bind(&index.texts)
     .execute(tx)
     .await?;
     Ok(())
@@ -278,23 +307,31 @@ async fn insert(
     ))
 }
 
-/// Checks versions uploaded before the upload check existed. Runs once at start.
-pub async fn backfill_checks(pool: &PgPool) -> sqlx::Result<u64> {
+/// Checks and indexes versions uploaded before the upload check, search or contents existed.
+/// Runs when the server starts; returns how many versions were brought up to date.
+pub async fn backfill_versions(pool: &PgPool) -> sqlx::Result<u64> {
     let pending: Vec<(i64, String, Vec<u8>)> = sqlx::query_as(
-        "SELECT id, kind, content FROM document_versions WHERE NOT checked ORDER BY id LIMIT 500",
+        "SELECT id, kind, content FROM document_versions WHERE NOT checked OR NOT indexed ORDER BY id LIMIT 500",
     )
     .fetch_all(pool)
     .await?;
     for (id, kind, bytes) in &pending {
         let check = check_for(kind, bytes);
+        let index = index_for(kind, bytes);
         sqlx::query(
-            "UPDATE document_versions SET libraries = $2, style_guess = $3, warnings = $4, field_count = $5, checked = true WHERE id = $1",
+            "UPDATE document_versions SET libraries = $2, style_guess = $3, warnings = $4, field_count = $5, checked = true,
+                    text_content = $6, heading_levels = $7, heading_ids = $8, heading_texts = $9, indexed = true
+             WHERE id = $1",
         )
         .bind(id)
         .bind(&check.libraries)
         .bind(&check.style_guess)
         .bind(&check.warnings)
         .bind(check.field_count)
+        .bind(&index.text)
+        .bind(&index.levels)
+        .bind(&index.ids)
+        .bind(&index.texts)
         .execute(pool)
         .await?;
     }

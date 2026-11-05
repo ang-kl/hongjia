@@ -3,10 +3,14 @@ flow: spec
 title: "P2b - Filing numbers, the management panel, hashtags, the upload check and the full-window viewer"
 act: "directive"
 force: "MUST"
-status: "Pull request A of three, built on the owner's instruction \"execute\" (5 November 2026). Merge needs the owner's go-ahead."
+status: "Pull requests A and B of three, built on the owner's instruction \"execute\" (5 November 2026). Each merge needs the owner's go-ahead."
 scope:
   - "crates/web/**"
   - "db/migrations/0003_p2b_documents_panel.sql"
+  - "db/migrations/0004_p2b_search_contents.sql"
+  - "web/assets/explorer.mjs"
+  - "web/assets/globe-layout.mjs"
+  - "web/test/globe-layout.test.mjs"
   - "web/assets/site.css"
   - "tests/browser/p1-flow.mjs"
   - "docs/specs/2026-11-05_P2b-documents-panel.md"
@@ -59,3 +63,41 @@ Version 0.1 · 5 November 2026 · Asia/Singapore · parent plan: sections 5.4, 5
 
 - 🛰️ satellite search, the globe and 📁 contents (pull request B).
 - Annotations, saved form fields and the storage stand-in for documents that use browser storage (pull request C).
+
+## Pull request B: 🛰️ satellite search, the globe and 📁 contents
+
+Version 0.2 · 5 November 2026 · Asia/Singapore. Built on the owner's instruction "execute" (№ 26 and № 27); merge needs the owner's go-ahead.
+
+### What pull request B builds
+
+- **Buttons.** Every signed-in page has the michi button group at the bottom right, in the michi 0.9.1 order: 🛰️ satellite, globe, 📁 folder. They are plain JavaScript modules (`web/assets/explorer.mjs`, `web/assets/globe-layout.mjs`) with no build step, served by the Rust binary. The family pages' CSP is unchanged (`script-src 'self'`, `style-src 'self'`, `connect-src 'self'`). Positions are set through the CSSOM, never with style attributes.
+- **🛰️ Satellite.** It searches the title, the hashtags and the plain text of every document's latest version on the server (`GET /api/search?q=`; signed-in members only; at most 100 characters; at most 20 results). Ranking puts title matches first, then hashtag matches, then PostgreSQL `simple` text rank, then the newest; an `ILIKE` match is also accepted, so Chinese text is found. Each result carries a plain-text snippet around the first match, which the browser inserts with `textContent` only. The field stays closed until the satellite is pressed; while the globe is open it docks above the globe. Typing lights matching pins; Enter opens the first result's card, which lists up to five other results.
+- **Globe.** A library globe ported from michi's globe (`GET /api/library`). Islands are the most common hashtags shared by two or more documents, up to six; documents without a shared hashtag go to an "Other" island, which takes one of the six places. Each document is a pin. The card shows the filing label, title, hashtags, the snippet when searching, and an Open link. On a document page the globe turns to that document's pin and shows its card. The globe turns by drag, by the arrow keys or with an idle turn (double-tap or a long press starts or stops it; never under reduced motion). Wheel, pinch and plus and minus zoom it. Escape closes the field, then the card, then the globe. Tab stays inside the globe and its buttons, focus returns to the button that opened it, and a status line speaks to screen readers.
+- **📁 Contents.** On a document page it lists that document's headings that have anchors; choosing one moves the frame to `/documents/{key}/raw#anchor` by fragment navigation, with no script added to the frame. Headings without an anchor are counted, with a note that jumping to them comes with annotations. On every other page it lists all documents by the month they were filed.
+- **Index.** Migration `0004` adds `text_content` (HTML without title, scripts, styles and templates; tags dropped; entities decoded; whitespace collapsed; at most 200,000 characters) and the headings (levels, anchors and texts as parallel arrays) to each version. Versions uploaded earlier are indexed when the server starts, together with the upload check.
+- **Layout.** The buttons never cover Manage. Beside a document, the panel leaves room for them at its end. The open sheet hides them, and every other page leaves room for them at the bottom. On phones, the slide-out search field opens above the buttons, so it stays inside the window.
+
+### Decisions made while building (not specified by the owner)
+
+- A heading's anchor is its own `id`, or else the `id` of a section, article, div, header or main element that opens between the previous heading and this one (a section's first heading names the section). Headings of levels 1 to 3 are listed.
+- When no hashtag is shared by two or more documents, each document's first hashtag names its island, so a library of one document still shows named land rather than only "Other".
+- The page's `<title>` is left out of the indexed text because the title is searched on its own; otherwise every snippet would start with it.
+
+### Invariants and checks (pull request B)
+
+| Invariant | Check |
+|---|---|
+| Search and the library are for signed-in members only | `search_finds_titles_hashtags_and_text` (401 for a stranger, nothing leaked) |
+| Search finds titles, hashtags, body text and Chinese text, never script text; `%` is literal; at most 100 characters and 20 results | `search_finds_titles_hashtags_and_text`, `search_returns_at_most_twenty`, `like_patterns_are_literal` |
+| JSON is escaped (quotes, backslashes, control characters, `<`, `>`, `&`, line separators) and inserted with `textContent` only | `strings_are_escaped`, `lists_and_objects`; `explorer.mjs` uses no `innerHTML` |
+| Contents lists anchored headings and moves the frame without reloading it | `headings_for_contents`, `library_and_contents_for_the_globe`; browser walk (hash `#stays`, scrolled, the frame's own script state kept) |
+| Button order and michi rules: field closed until pressed, Enter opens the first result, Escape order, focus return, 44 px targets | browser walk on the documents list and the document page, 7 device classes, light and dark |
+| No CSP breach, no sideways scroll, buttons never cover Manage or the open sheet | `tests/browser/p1-flow.mjs` |
+| Islands: at most six, every document on the globe once | `web/test/globe-layout.test.mjs` |
+| No family names or document text in the repository | invented test data; grep of the staged diff before committing |
+
+### Evidence (local, 5 November 2026)
+
+- `cargo test --locked --features db-tests`: 32 unit, 18 database (3 new), 2 Dockerfile and 12 placeholder parity tests pass. `cargo clippy --all-targets --all-features -- -D warnings` and `cargo fmt --check` are clean.
+- `node --test "web/test/**/*.test.mjs"`: 21 of 21 (6 new for the globe layout).
+- `tests/browser/p1-flow.mjs`: 126 of 126 checks pass (9 pages × 7 device classes × light and dark). The button walk runs on the documents list and the document page in all 28 of those combinations, and the button presence and order check runs on every signed-in page.
