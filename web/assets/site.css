@@ -738,7 +738,7 @@ button.pill[hidden] { display: none; }
 .anno-reasons { margin: 0; padding: 0 10px 4px 26px; font-size: 0.8rem; color: var(--ink); }
 .anno-reasons li { margin: 2px 0; }
 .anno-chev { margin-left: auto; padding-left: 16px; color: var(--muted); }
-.anno-danger { color: #a3261b; }
+.anno-item.anno-danger:not([aria-disabled="true"]) { color: #a3261b; }
 .anno-pill { position: fixed; z-index: 54; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
 .anno-pill[hidden] { display: none; }
 .anno-menu[hidden], .anno-form[hidden], .mention-list[hidden], .anno-colors[hidden] { display: none; }
