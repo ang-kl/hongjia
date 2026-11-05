@@ -351,6 +351,10 @@ button.danger { background: #a3321f; border-color: #a3321f; color: #fff; }
   box-shadow: var(--glass-shadow);
 }
 body.app:not(.viewer-page) { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+/* Beside a document, the panel's last lines can scroll clear of the buttons. */
+@media (min-aspect-ratio: 1/1) and (min-width: 720px) {
+  .viewer-page .panel { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+}
 
 .fab-group {
   position: fixed;
