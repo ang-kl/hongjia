@@ -20,7 +20,15 @@ async fn main() -> io::Result<()> {
         .filter(|v| !v.trim().is_empty())
     {
         None => (hongjia_web::app(&commit), "placeholder"),
-        Some(url) => (family(&url, &commit).await?, "family"),
+        // Until the family settings are complete (for example the family password is not set
+        // yet), keep serving the placeholder rather than failing the deployment.
+        Some(url) => match hongjia_web::family::Config::from_env(|key| env::var(key).ok()) {
+            Err(e) => {
+                eprintln!("family mode off: {e}");
+                (hongjia_web::app(&commit), "placeholder")
+            }
+            Ok(_) => (family(&url, &commit).await?, "family"),
+        },
     };
 
     let (stop_tx, stop_rx) = watch::channel(false);
@@ -91,9 +99,9 @@ async fn family(url: &str, commit: &str) -> io::Result<Router> {
         tokio::time::sleep(Duration::from_secs(60)).await;
         loop {
             match hongjia_web::family::store::run_retention(&pool).await {
-                Ok((sessions, locations, attempts, codes)) => {
+                Ok((sessions, locations, attempts)) => {
                     println!(
-                        "retention: sessions {sessions}, locations {locations}, attempts {attempts}, codes {codes}"
+                        "retention: sessions {sessions}, locations {locations}, attempts {attempts}"
                     )
                 }
                 Err(e) => eprintln!("retention failed: {e}"),

@@ -1,4 +1,4 @@
-// P1 browser check: enrol with a bootstrap code, consent, then every family page at the owner's
+// P1 browser check: sign in with the family password, consent, then every family page at the owner's
 // seven device-class viewports (light and dark). Needs a release build and a PostgreSQL database.
 // Run: DATABASE_URL=postgres://... node tests/browser/p1-flow.mjs [screenshot-folder]
 import { createRequire } from 'node:module';
@@ -21,12 +21,12 @@ const freePort = () => new Promise((done, fail) => {
   probe.listen(0, '127.0.0.1', () => { const { port } = probe.address(); probe.close(() => done(port)); });
 });
 
-const BOOTSTRAP = 'browser-bootstrap-code-0123456789';
+const FAMILY = 'browser test family password';
 const port = await freePort();
 const server = spawn(resolve('target/release/hongjia-web'), [], {
   env: {
     ...process.env, PORT: String(port), HONGJIA_ALSO_LISTEN: '', RAILWAY_GIT_COMMIT_SHA: '',
-    HONGJIA_PROFILES: 'alpha,beta,gamma,delta', HONGJIA_OWNER: 'delta', HONGJIA_BOOTSTRAP_CODE: BOOTSTRAP
+    HONGJIA_PROFILES: 'alpha,beta,gamma,delta', HONGJIA_OWNER: 'delta', HONGJIA_FAMILY_PASSWORD: FAMILY
   },
   stdio: ['ignore', 'inherit', 'inherit']
 });
@@ -45,14 +45,13 @@ if (shots) await mkdir(shots, { recursive: true });
 const browser = await chromium.launch();
 const failures = [];
 
-// 1. Enrol the owner and give consent, at notebook size.
+// 1. Sign in as the owner with the family password and give consent, at notebook size.
 const setup = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 const page = await setup.newPage();
-await page.goto(base + '/enrol');
-await page.fill('input[name=code]', BOOTSTRAP);
-await page.fill('input[name=passphrase]', 'river lantern cobalt sparrow');
-await page.fill('input[name=confirm]', 'river lantern cobalt sparrow');
-await page.click('button[type=submit]');
+await page.goto(base + '/');
+await page.check('input[name=profile][value=delta]');
+await page.fill('input[name=passphrase]', FAMILY);
+await page.click('form[action="/signin"] button[type=submit]');
 await page.waitForURL(base + '/consent');
 await page.fill('input[name=device_label]', 'browser test');
 await page.click('form[action="/consent"] button[type=submit]');
@@ -70,7 +69,7 @@ const CLASSES = [
   ['phone-small', 375, 667, 'phone-standard'],
   ['phone-small-compact', 360, 740, 'phone-compact']
 ];
-const PAGES = [['signin', '/', false], ['enrol', '/enrol', false], ['privacy', '/privacy', false], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
+const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
 
 for (const scheme of ['light', 'dark']) {
   for (const [name, width, height, tier] of CLASSES) {

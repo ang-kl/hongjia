@@ -77,34 +77,10 @@ pub fn signin(profiles: &[Profile], csrf: &str, message: Option<&str>) -> String
 <form method="post" action="/signin" class="stack">
 <input type="hidden" name="csrf" value="{csrf}">
 <fieldset class="choices"><legend>Who is signing in?</legend>{choices}</fieldset>
-<label>Passphrase <input type="password" name="passphrase" autocomplete="current-password" required maxlength="256"></label>
+<label>Family password <input type="password" name="passphrase" autocomplete="current-password" required maxlength="256"></label>
 <button type="submit">Sign in</button>
 </form>
-<p class="small">First time, or given a new code? <a href="/enrol">Enrol with a code</a>. <a href="/privacy">What we collect</a>.</p>"#,
-            notice = notice(message),
-            csrf = escape(csrf)
-        ),
-    )
-}
-
-pub fn enrol(csrf: &str, message: Option<&str>) -> String {
-    layout(
-        "Enrol",
-        None,
-        "",
-        &format!(
-            r#"<h1>Enrol with a code</h1>
-<p>Use the one-time code you were given in person. It works once and expires after 24 hours.</p>
-{notice}
-<form method="post" action="/enrol" class="stack">
-<input type="hidden" name="csrf" value="{csrf}">
-<label>Code <input type="text" name="code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required maxlength="80"></label>
-<label>New passphrase <input type="password" name="passphrase" autocomplete="new-password" required minlength="16" maxlength="256"></label>
-<label>New passphrase again <input type="password" name="confirm" autocomplete="new-password" required minlength="16" maxlength="256"></label>
-<p class="small">At least 16 characters. Four unrelated words work well. Leave your name out.</p>
-<button type="submit">Set passphrase and sign in</button>
-</form>
-<p class="small"><a href="/">Back to sign in</a>.</p>"#,
+<p class="small"><a href="/privacy">What we collect</a>.</p>"#,
             notice = notice(message),
             csrf = escape(csrf)
         ),
@@ -290,13 +266,11 @@ pub fn owner(
         .iter()
         .map(|s| {
             format!(
-                r#"<tr><td>{h}{owner}</td><td>{enrolled}</td><td>{last}</td><td><form method="post" action="/owner/code"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="profile" value="{h}"><button type="submit" class="secondary">{code_label}</button></form></td><td><form method="post" action="/owner/end-sessions"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="profile" value="{h}"><button type="submit" class="secondary">End sessions</button></form></td></tr>"#,
+                r#"<tr><td>{h}{owner}</td><td>{last}</td><td><form method="post" action="/owner/end-sessions"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="profile" value="{h}"><button type="submit" class="secondary">End sessions</button></form></td></tr>"#,
                 h = escape(&s.handle),
                 owner = if s.is_owner { " (owner)" } else { "" },
-                enrolled = if s.enrolled { "yes" } else { "not yet" },
                 last = escape(s.last_signin.as_deref().unwrap_or("never")),
                 csrf = escape(nav.csrf),
-                code_label = if s.enrolled { "New code (resets passphrase)" } else { "Enrolment code" },
             )
         })
         .collect();
@@ -319,8 +293,7 @@ pub fn owner(
         &format!(
             r#"<h1>Owner</h1>
 <h2>Profiles</h2>
-<p class="small">An enrolment code is shown once, works once and expires in 24 hours. Give it in person. A new code for an enrolled profile replaces that passphrase when used.</p>
-<div class="scroll"><table><thead><tr><th>Profile</th><th>Enrolled</th><th>Last sign-in</th><th>Code</th><th>Sessions</th></tr></thead><tbody>{rows}</tbody></table></div>
+<div class="scroll"><table><thead><tr><th>Profile</th><th>Last sign-in</th><th>Sessions</th></tr></thead><tbody>{rows}</tbody></table></div>
 <h2>Retention</h2>
 <form method="post" action="/owner/settings" class="stack narrow">
 <input type="hidden" name="csrf" value="{csrf}">
@@ -331,23 +304,6 @@ pub fn owner(
 <h2>Recent owner and system actions</h2>
 <div class="scroll"><table><thead><tr><th>When</th><th>By</th><th>Action</th><th>Detail</th></tr></thead><tbody>{audit_rows}</tbody></table></div>"#,
             csrf = escape(nav.csrf)
-        ),
-    )
-}
-
-pub fn code_issued(nav: &Nav, handle: &str, code: &str, expires: &str) -> String {
-    layout(
-        "Enrolment code",
-        Some(nav),
-        "",
-        &format!(
-            r#"<h1>Enrolment code for {handle}</h1>
-<p class="code">{code}</p>
-<p>Valid until {expires} (SGT). It works once. Give it to {handle} in person; this page will not show it again.</p>
-<p><a href="/owner">Back to Owner</a></p>"#,
-            handle = escape(handle),
-            code = escape(code),
-            expires = escape(expires)
         ),
     )
 }
@@ -490,12 +446,7 @@ mod tests {
         let page = home(&nav, "Safari on iPhone", false);
         assert!(page.contains("&lt;x&gt;") && !page.contains("<x>"));
         assert!(page.contains("&quot;q&quot;"));
-        for text in [
-            page,
-            privacy("alpha", 180, 90),
-            enrol("t", None),
-            signin(&[], "t", Some("m")),
-        ] {
+        for text in [page, privacy("alpha", 180, 90), signin(&[], "t", Some("m"))] {
             assert!(!text.contains('\u{2013}') && !text.contains('\u{2014}'));
         }
     }

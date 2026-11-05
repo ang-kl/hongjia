@@ -3,7 +3,7 @@ flow: spec
 title: "P2a - Upload, list and view documents in a sandboxed frame"
 act: "directive"
 force: "MUST"
-status: "Built on the owner's instruction \"upload the html to see\" (5 November 2026). Merge needs the owner's go-ahead."
+status: "Built on the owner's instruction \"upload the html to see\" (5 November 2026); shipped together with the one-family-password change. Merge needs the owner's go-ahead."
 scope:
   - "crates/web/**"
   - "db/migrations/0002_p2a_documents.sql"

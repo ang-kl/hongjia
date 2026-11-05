@@ -172,4 +172,4 @@ td form { margin: 0; }
   background: #fff;
 }
 [data-form-factor="phone"] .doc-frame { height: calc(100dvh - 190px); border-radius: 10px; }
-input[type="file"] { font: inherit; min-height: 44px; }
+input[type="file"] { font: inherit; min-height: 44px; width: 100%; max-width: 100%; min-width: 0; }

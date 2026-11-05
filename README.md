@@ -3,7 +3,7 @@
 
 A private family review site for hongjia.org. Updated 5 November 2026.
 
-**Status: phase P1.** Without a database the site shows the placeholder page. With one (`DATABASE_URL`), it offers individual sign-in, sessions, consent and the login journal. Documents and review come next.
+**Status: phase P1.** Without a database the site shows the placeholder page. With one (`DATABASE_URL`) and a family password, family members tap their name and type the family password; the site then offers documents (HTML and text, viewed in a locked-down frame), the login journal and location consent. Comments and review come next.
 
 ## Plan and specs
 
@@ -14,7 +14,7 @@ A private family review site for hongjia.org. Updated 5 November 2026.
 
 ## Layout
 
-- `crates/web`: the Rust web server (`hongjia-web`: axum, tokio, sqlx, Argon2id).
+- `crates/web`: the Rust web server (`hongjia-web`: axum, tokio, sqlx).
 - `db/migrations`: PostgreSQL schema, applied by the server at start.
 - `web`: browser files (plain JavaScript, no build step). They are compiled into the server binary.
 - `web/test`: tests for the browser JavaScript, run with Node.js (a test tool only, never shipped).
@@ -46,7 +46,7 @@ cargo run --release
 
 The server listens on `$PORT` and on 8080 (`HONGJIA_ALSO_LISTEN` changes or, if empty, disables the second port).
 
-Family mode settings (environment variables, never committed): `DATABASE_URL`, `HONGJIA_PROFILES` (comma-separated lowercase names), `HONGJIA_OWNER`, `HONGJIA_PUBLIC_ORIGIN` (required on Railway, for example `https://hongjia.org`), and `HONGJIA_BOOTSTRAP_CODE` (24 or more characters; lets the owner enrol once). `HONGJIA_AUTH_MODE=shared-dev` with `HONGJIA_DEV_PASSWORD` is for local development only and is refused on Railway.
+Family mode settings (Railway variables, never committed): `DATABASE_URL`, `HONGJIA_PROFILES` (comma-separated lowercase names), `HONGJIA_OWNER`, `HONGJIA_PUBLIC_ORIGIN` (required on Railway, for example `https://hongjia.org`) and `HONGJIA_FAMILY_PASSWORD` (the one family password). Sign-in is: tap your name, type the family password. If the family password is not set, the site keeps showing the placeholder.
 
 ## Deploying
 
