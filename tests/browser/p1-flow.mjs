@@ -267,6 +267,16 @@ async function checkMenu(p, label, width, height, problems) {
   if ((label === 'document') !== text.includes('Sidebar')) problems.push('the Sidebar switch belongs to document pages only');
   await p.click('[data-menu-documents] > summary');
   await p.waitForSelector('[data-menu-docs] .menu-doc', { timeout: 3000 }).catch(() => problems.push('Documents did not list the documents'));
+  // The owner's table: name and last change (hh:mmAM/PM DD-MM) | org, which downloads the original.
+  const when = await p.textContent('[data-menu-docs] .menu-doc-when').catch(() => '');
+  if (!/^\d\d:\d\d[AP]M \d\d-\d\d$/.test(when || '')) problems.push(`last change not in hh:mmAM/PM DD-MM form: "${when}"`);
+  const org = p.locator('[data-menu-docs] a.menu-org').first();
+  if ((await org.textContent()) !== 'org') problems.push('no org link');
+  if (label === 'document' && width >= 720) {
+    const [download] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), org.click()]);
+    if (!download) problems.push('org did not download');
+    else if (download.suggestedFilename() !== 'sample-trip.html') problems.push(`download named ${download.suggestedFilename()}`);
+  }
   await p.click('.menu-group:not([data-menu-documents]) > summary');
   if (!(await p.isVisible('text=Sign out delta'))) problems.push('Settings did not show Sign out');
   await p.keyboard.press('Escape');
@@ -355,7 +365,7 @@ for (const scheme of ['light', 'dark']) {
       if (signedIn) await checkMenu(p, label, width, height, problems);
       if (signedIn && shots && scheme === 'light' && label === 'document' && ['notebook', 'phone-small'].includes(name)) {
         await p.click('[data-menu-details] > summary');
-        await p.click('[data-menu-documents] > summary');
+        await p.$$eval('.menu-group', groups => groups.forEach(g => { g.open = g.matches('[data-menu-documents]'); }));
         await p.waitForTimeout(500);
         await p.screenshot({ path: `${shots}/${name}-menu.png` });
         await p.keyboard.press('Escape');

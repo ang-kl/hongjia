@@ -36,20 +36,35 @@ if (menu) {
       const response = await fetch('/api/library', { credentials: 'same-origin' });
       if (!response.ok) return;
       const { documents = [] } = await response.json();
-      const links = documents.slice(0, 12).map(doc => {
-        const link = document.createElement('a');
-        link.className = 'menu-sub menu-doc';
-        link.href = `/documents/${encodeURIComponent(doc.key)}`;
-        const label = document.createElement('span');
-        label.className = 'menu-doc-label';
-        label.textContent = doc.label;
-        const title = document.createElement('span');
-        title.textContent = doc.title;
-        link.append(label, title);
-        return link;
+      // A two-column table (the owner's request): the document's name with its last change
+      // (hh:mmAM/PM DD-MM, Singapore time), and "org" to download the original file.
+      const cell = (tag, ...children) => {
+        const node = document.createElement(tag);
+        node.append(...children);
+        return node;
+      };
+      const head = cell('thead', cell('tr', cell('th', 'Document'), cell('th', 'Original')));
+      for (const th of head.querySelectorAll('th')) th.scope = 'col';
+      const rows = documents.slice(0, 12).map(doc => {
+        const open = document.createElement('a');
+        open.className = 'menu-doc';
+        open.href = `/documents/${encodeURIComponent(doc.key)}`;
+        const title = cell('span', doc.title);
+        title.className = 'menu-doc-title';
+        const when = cell('span', doc.changed || '');
+        when.className = 'menu-doc-when';
+        open.append(title, when);
+        const org = document.createElement('a');
+        org.className = 'menu-org';
+        org.href = `/documents/${encodeURIComponent(doc.key)}/original`;
+        org.setAttribute('download', '');
+        org.setAttribute('aria-label', `Download the original of ${doc.title}`);
+        org.textContent = 'org';
+        return cell('tr', cell('td', open), cell('td', org));
       });
-      // Newest first, then "All documents".
-      list.replaceChildren(...links, list.querySelector('a[href="/documents"]'));
+      const table = cell('table', head, cell('tbody', ...rows));
+      table.className = 'menu-table';
+      list.replaceChildren(...(rows.length ? [table] : []), list.querySelector('a[href="/documents"]'));
     } catch { /* the list stays with "All documents" only */ }
   });
 }

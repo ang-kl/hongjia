@@ -1246,10 +1246,16 @@ async fn library_and_contents_for_the_globe(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
+    let changed: String = sqlx::query_scalar(
+        "SELECT to_char(max(uploaded_at) AT TIME ZONE 'Asia/Singapore', 'HH12:MIAM DD-MM') FROM document_versions",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(
         library.body,
         format!(
-            r#"{{"documents":[{{"key":"{day}_1","label":"{day}_#1","title":"Lake plan","tags":["lake"],"month":"{month}"}}]}}"#
+            r#"{{"documents":[{{"key":"{day}_1","label":"{day}_#1","title":"Lake plan","tags":["lake"],"month":"{month}","changed":"{changed}"}}]}}"#
         )
     );
 
@@ -1819,5 +1825,78 @@ async fn latest_document_opens_the_newest_filing(pool: PgPool) {
         menu.contains("/documents/latest")
             && menu.contains("Sign out beta")
             && !menu.contains(r#"href="/owner""#)
+    );
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn originals_download_unchanged_and_the_library_shows_the_last_change(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let day = today(&pool).await;
+    let mut b = member(port, "beta").await;
+    let csrf = b.csrf().await;
+    upload(&mut b, &csrf, "Trip", Some(("Trip plan.html", SAMPLE))).await;
+    let key = format!("/documents/{day}_1");
+    send_multipart(
+        &mut b,
+        &format!("{key}/version"),
+        &[("csrf", &csrf)],
+        Some(("v2.html", "<p>two</p>")),
+    )
+    .await;
+
+    // Any member downloads the original, exactly as stored, with its own file name.
+    let mut g = member(port, "gamma").await;
+    let latest = g.get(&format!("{key}/original")).await;
+    assert_eq!(latest.status, 200);
+    assert_eq!(
+        latest.body, "<p>two</p>",
+        "the latest version, without the helper"
+    );
+    assert_eq!(
+        latest.header("content-disposition"),
+        Some("attachment; filename=\"v2.html\"; filename*=UTF-8''v2.html")
+    );
+    assert_eq!(
+        latest.header("content-security-policy"),
+        Some(hongjia_web::family::documents::DOCUMENT_CSP)
+    );
+    assert_eq!(latest.header("x-content-type-options"), Some("nosniff"));
+    let first = g.get(&format!("{key}/original?v=1")).await;
+    assert_eq!(first.body, SAMPLE, "byte for byte");
+    assert!(
+        first
+            .header("content-disposition")
+            .unwrap()
+            .contains("Trip%20plan.html")
+    );
+    assert_eq!(
+        Client::new(port)
+            .get(&format!("{key}/original"))
+            .await
+            .status,
+        303,
+        "strangers go to sign in"
+    );
+    assert_eq!(g.get("/documents/2026-0101_9/original").await.status, 404);
+
+    // The library carries the last change as hh:mmAM/PM DD-MM in Singapore time.
+    let expected: String = sqlx::query_scalar(
+        "SELECT to_char(max(uploaded_at) AT TIME ZONE 'Asia/Singapore', 'HH12:MIAM DD-MM') FROM document_versions",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let library = g.get("/api/library").await.body;
+    assert!(
+        library.contains(&format!(r#""changed":"{expected}""#)),
+        "{library}"
+    );
+    let shape = expected.as_bytes();
+    assert!(
+        shape.len() == 13
+            && shape[2] == b':'
+            && (&expected[5..7] == "AM" || &expected[5..7] == "PM")
+            && shape[10] == b'-',
+        "{expected}"
     );
 }

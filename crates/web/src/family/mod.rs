@@ -200,6 +200,7 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route("/documents/latest", get(documents::latest))
         .route("/documents/{key}", get(documents::view))
         .route("/documents/{key}/raw", get(documents::raw))
+        .route("/documents/{key}/original", get(documents::original))
         .route("/documents/{key}/rename", post(documents::rename))
         .route("/documents/{key}/tags", post(documents::tags))
         .route(
