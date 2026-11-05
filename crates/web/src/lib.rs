@@ -37,6 +37,7 @@ static EXPLORER_MJS: &[u8] = include_bytes!("../../../web/assets/explorer.mjs");
 static GLOBE_LAYOUT_MJS: &[u8] = include_bytes!("../../../web/assets/globe-layout.mjs");
 static DOC_VIEW_MJS: &[u8] = include_bytes!("../../../web/assets/doc-view.mjs");
 static MENU_MJS: &[u8] = include_bytes!("../../../web/assets/menu.mjs");
+static INK_MJS: &[u8] = include_bytes!("../../../web/assets/ink.mjs");
 
 /// A compiled-in browser file (served in placeholder mode except session.mjs, explorer.mjs,
 /// globe-layout.mjs and doc-view.mjs, which are family-only).
@@ -50,6 +51,7 @@ pub(crate) fn asset(name: &str) -> Response {
         "globe-layout.mjs" => file(GLOBE_LAYOUT_MJS, JAVASCRIPT, ASSET_CACHE),
         "doc-view.mjs" => file(DOC_VIEW_MJS, JAVASCRIPT, ASSET_CACHE),
         "menu.mjs" => file(MENU_MJS, JAVASCRIPT, ASSET_CACHE),
+        "ink.mjs" => file(INK_MJS, JAVASCRIPT, ASSET_CACHE),
         _ => plain(StatusCode::NOT_FOUND, "Not found\n"),
     }
 }

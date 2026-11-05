@@ -18,6 +18,13 @@
 //! author edits or moves it; its author or the owner deletes it. @mentions are listed inside the
 //! site only. Text people write (comments, notes, text boxes, inserted and replacement text) never
 //! enters the document frame: the page draws it over the frame.
+//!
+//! D2 (owner's request, 5 November 2026): drawings. Kind `ink` is a freehand stroke (Draw, or a
+//! Sketch that was not recognised as a shape) and kind `shape` a clean rectangle, oval, line or
+//! arrow (Shapes, or a recognised Sketch). A drawing is anchored to the element under its first
+//! point; its points are pixels from that element's top-left corner at `ref_width`, scaled by the
+//! element's current width when drawn. Drawings follow the same rules as other marks, and they are
+//! drawn by the page over the frame, never inside it.
 
 use super::documents::{self, DocumentRow};
 use super::store::{self, Session};
@@ -44,7 +51,7 @@ pub const MAX_ANNOTATIONS: i64 = 1000;
 pub const MAX_TEXT: usize = 500;
 pub const MAX_PATH: usize = 400;
 
-pub const KINDS: [&str; 9] = [
+pub const KINDS: [&str; 11] = [
     "comment",
     "highlight",
     "underline",
@@ -54,10 +61,143 @@ pub const KINDS: [&str; 9] = [
     "note",
     "textbox",
     "stamp",
+    "ink",
+    "shape",
 ];
 pub const COLORS: [&str; 5] = ["yellow", "green", "blue", "pink", "orange"];
 pub const STAMPS: [&str; 5] = ["check", "cross", "approved", "reviewed", "signedoff"];
 const PLACED: [&str; 3] = ["note", "textbox", "stamp"];
+/// Drawings (D2): anchored like placed marks, with points instead of words.
+pub const DRAWN: [&str; 2] = ["ink", "shape"];
+pub const INK_TOOLS: [&str; 2] = ["draw", "sketch"];
+pub const SHAPE_TOOLS: [&str; 4] = ["rectangle", "oval", "line", "arrow"];
+/// Points in one stroke, after the page has simplified it.
+pub const MAX_POINTS: usize = 600;
+pub const MAX_POINTS_TEXT: usize = 16000;
+/// The furthest a point may lie from its element's corner, in pixels at the reference width.
+const POINT_RANGE: f64 = 100_000.0;
+
+/// One number of a point: an optional minus sign, up to 6 digits, and up to 2 decimals.
+fn point_number(text: &str) -> Option<f64> {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    let (whole, decimals) = digits.split_once('.').unwrap_or((digits, ""));
+    let ok = (1..=6).contains(&whole.len())
+        && whole.bytes().all(|b| b.is_ascii_digit())
+        && decimals.len() <= 2
+        && decimals.bytes().all(|b| b.is_ascii_digit())
+        && !(digits.contains('.') && decimals.is_empty());
+    if !ok {
+        return None;
+    }
+    text.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// A drawing's points: `x,y` pairs (shapes) or `x,y,p` triples with a pen pressure from 0 to 1
+/// (ink), separated by single spaces. Numbers only, within range, between `min` and `max` points.
+pub fn parse_points(text: &str, pressure: bool, min: usize, max: usize) -> Option<Vec<[f64; 3]>> {
+    if text.is_empty() || text.len() > MAX_POINTS_TEXT {
+        return None;
+    }
+    let mut points = Vec::new();
+    for token in text.split(' ') {
+        let values: Vec<&str> = token.split(',').collect();
+        if values.len() != if pressure { 3 } else { 2 } || points.len() == max {
+            return None;
+        }
+        let x = point_number(values[0]).filter(|v| v.abs() <= POINT_RANGE)?;
+        let y = point_number(values[1]).filter(|v| v.abs() <= POINT_RANGE)?;
+        let p = if pressure {
+            point_number(values[2]).filter(|v| (0.0..=1.0).contains(v))?
+        } else {
+            0.5
+        };
+        points.push([x, y, p]);
+    }
+    (points.len() >= min).then_some(points)
+}
+
+/// Points written back in the one stored form: one decimal for positions, two for pressure.
+pub fn format_points(points: &[[f64; 3]], pressure: bool) -> String {
+    let n = |v: f64, places: usize| {
+        let s = format!("{v:.places$}");
+        let s = if s.contains('.') {
+            s.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else {
+            s
+        };
+        if s == "-0" { "0".to_string() } else { s }
+    };
+    points
+        .iter()
+        .map(|[x, y, p]| {
+            if pressure {
+                format!("{},{},{}", n(*x, 1), n(*y, 1), n(*p, 2))
+            } else {
+                format!("{},{}", n(*x, 1), n(*y, 1))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A drawing's tool, points, line width and the width its element had when it was drawn.
+#[derive(Debug, PartialEq)]
+pub struct Drawing {
+    pub tool: String,
+    pub points: String,
+    pub stroke_width: f32,
+    pub ref_width: f32,
+    pub ref_height: Option<f32>,
+}
+
+/// Checks a drawing for its kind: ink takes Draw or Sketch and 2 to 600 points with pressure; a
+/// shape takes one of the four shape tools and exactly 2 points that are not the same point.
+fn check_drawing(kind: &str, form: &AnnotationForm) -> Result<Drawing, &'static str> {
+    let tool = form.tool.as_str();
+    let ink = kind == "ink";
+    let tool_ok = if ink {
+        INK_TOOLS.contains(&tool)
+    } else {
+        SHAPE_TOOLS.contains(&tool)
+    };
+    if !tool_ok {
+        return Err("unknown drawing tool");
+    }
+    let points = if ink {
+        parse_points(&form.points, true, 2, MAX_POINTS)
+    } else {
+        parse_points(&form.points, false, 2, 2)
+    }
+    .ok_or("the drawing's points are not valid")?;
+    if !ink {
+        let ([x1, y1, _], [x2, y2, _]) = (points[0], points[1]);
+        if (x2 - x1).abs() < 2.0 && (y2 - y1).abs() < 2.0 {
+            return Err("the shape has no size");
+        }
+    }
+    let number = |text: &str, lo: f32, hi: f32| {
+        text.trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|v| v.is_finite() && (lo..=hi).contains(v))
+    };
+    let stroke_width =
+        number(&form.stroke_width, 1.0, 24.0).ok_or("the line width is not valid")?;
+    let ref_width =
+        number(&form.ref_width, 1.0, 100_000.0).ok_or("the reference width is not valid")?;
+    let ref_height = if form.ref_height.trim().is_empty() {
+        None
+    } else {
+        Some(number(&form.ref_height, 1.0, 100_000.0).ok_or("the reference height is not valid")?)
+    };
+    Ok(Drawing {
+        tool: tool.to_string(),
+        points: format_points(&points, ink),
+        stroke_width,
+        ref_width,
+        ref_height,
+    })
+}
 
 /// An element path inside a document, from `<body>`: `tag:index` steps joined by `/`, where the
 /// index counts siblings of the same tag from 1 (for example `section:2/p:3`).
@@ -131,6 +271,8 @@ pub struct Mark {
     pub body: String,
     pub text: String,
     pub anchor: Option<(String, f64, f64)>,
+    /// D2: a drawing's tool, points and widths (ink and shapes only).
+    pub drawing: Option<Drawing>,
 }
 
 /// A placed mark's anchor: all three values or none. Err when some are given but not valid.
@@ -176,10 +318,23 @@ pub fn check_mark(form: &AnnotationForm) -> Result<Mark, &'static str> {
         return Err("too long");
     }
     let anchor = anchor_of(&form.anchor_path, &form.anchor_x, &form.anchor_y)?;
-    let placed = PLACED.contains(&kind);
+    let drawn = DRAWN.contains(&kind);
+    let placed = PLACED.contains(&kind) || drawn;
     if placed != anchor.is_some() {
-        return Err("only notes, text boxes and stamps are placed");
+        return Err("only notes, text boxes, stamps and drawings are placed");
     }
+    let drawing_fields = !(form.tool.is_empty()
+        && form.points.is_empty()
+        && form.stroke_width.is_empty()
+        && form.ref_width.is_empty()
+        && form.ref_height.is_empty());
+    let drawing = if drawn {
+        Some(check_drawing(kind, form)?)
+    } else if drawing_fields {
+        return Err("only drawings have points");
+    } else {
+        None
+    };
     let has_quote = !form.quote.trim().is_empty();
     let ok = match kind {
         "comment" => !body.is_empty() && text.is_empty(),
@@ -190,6 +345,7 @@ pub fn check_mark(form: &AnnotationForm) -> Result<Mark, &'static str> {
         "replace" => has_quote && !text.is_empty(),
         "note" | "textbox" => !body.is_empty() && text.is_empty(),
         "stamp" => STAMPS.contains(&text),
+        "ink" | "shape" => body.is_empty() && text.is_empty() && !has_quote,
         _ => false,
     };
     if !ok {
@@ -212,6 +368,7 @@ pub fn check_mark(form: &AnnotationForm) -> Result<Mark, &'static str> {
         body: body.to_string(),
         text: text.to_string(),
         anchor,
+        drawing,
     })
 }
 
@@ -363,6 +520,11 @@ pub struct AnnotationRow {
     pub anchor_x: Option<f64>,
     pub anchor_y: Option<f64>,
     pub mentions: Vec<String>,
+    pub tool: Option<String>,
+    pub points: Option<String>,
+    pub stroke_width: Option<f32>,
+    pub ref_width: Option<f32>,
+    pub ref_height: Option<f32>,
 }
 
 impl AnnotationRow {
@@ -421,7 +583,8 @@ async fn annotations(pool: &PgPool, document_id: i64) -> sqlx::Result<Vec<Annota
                 to_char(a.created_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY') AS created_date,
                 a.kind, a.color, a.text, a.anchor_path, a.anchor_x, a.anchor_y,
                 COALESCE((SELECT array_agg(mp.handle ORDER BY mp.handle) FROM annotation_mentions m
-                          JOIN profiles mp ON mp.id = m.profile_id WHERE m.annotation_id = a.id), '{}') AS mentions
+                          JOIN profiles mp ON mp.id = m.profile_id WHERE m.annotation_id = a.id), '{}') AS mentions,
+                a.tool, a.points, a.stroke_width, a.ref_width, a.ref_height
          FROM annotations a LEFT JOIN profiles p ON p.id = a.author
          WHERE a.document_id = $1 ORDER BY a.created_at, a.id",
     )
@@ -630,6 +793,7 @@ pub async fn save_field(
 
 fn annotation_json(row: &AnnotationRow, can_delete: bool, can_edit: bool) -> String {
     let number = |v: Option<f64>| v.map(|v| v.to_string()).unwrap_or_else(|| "null".into());
+    let wide = |v: Option<f32>| v.map(|v| v.to_string()).unwrap_or_else(|| "null".into());
     json::object(&[
         ("id", json::string(&row.id.to_string())),
         ("version", row.version_no.to_string()),
@@ -657,6 +821,11 @@ fn annotation_json(row: &AnnotationRow, can_delete: bool, can_edit: bool) -> Str
         ("x", number(row.anchor_x)),
         ("y", number(row.anchor_y)),
         ("mentions", json::strings(&row.mentions)),
+        ("tool", json::string(row.tool.as_deref().unwrap_or(""))),
+        ("points", json::string(row.points.as_deref().unwrap_or(""))),
+        ("width", wide(row.stroke_width)),
+        ("ref", wide(row.ref_width)),
+        ("refh", wide(row.ref_height)),
         ("created", json::string(&row.created)),
         ("can_delete", can_delete.to_string()),
         ("can_edit", can_edit.to_string()),
@@ -715,6 +884,16 @@ pub struct AnnotationForm {
     pub anchor_x: String,
     #[serde(default)]
     pub anchor_y: String,
+    #[serde(default)]
+    pub tool: String,
+    #[serde(default)]
+    pub points: String,
+    #[serde(default)]
+    pub stroke_width: String,
+    #[serde(default)]
+    pub ref_width: String,
+    #[serde(default)]
+    pub ref_height: String,
 }
 
 /// The active family handles, for @mentions.
@@ -802,10 +981,11 @@ pub async fn create_annotation(
         Some((path, x, y)) => (Some(path.as_str()), Some(*x), Some(*y)),
         None => (None, None, None),
     };
+    let drawing = mark.drawing.as_ref();
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO annotations (document_id, version_no, author, quote, prefix, suffix, field_key, field_label, body,
-                                  kind, color, text, anchor_path, anchor_x, anchor_y)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id",
+                                  kind, color, text, anchor_path, anchor_x, anchor_y, tool, points, stroke_width, ref_width, ref_height)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id",
     )
     .bind(doc.id)
     .bind(doc.version_no)
@@ -822,6 +1002,11 @@ pub async fn create_annotation(
     .bind(path)
     .bind(x)
     .bind(y)
+    .bind(drawing.map(|d| d.tool.as_str()))
+    .bind(drawing.map(|d| d.points.as_str()))
+    .bind(drawing.map(|d| d.stroke_width))
+    .bind(drawing.map(|d| d.ref_width))
+    .bind(drawing.and_then(|d| d.ref_height))
     .fetch_one(&state.pool)
     .await?;
     save_mentions(
@@ -954,6 +1139,50 @@ pub async fn update_annotation(
         Some(row) => reply(StatusCode::OK, annotation_json(&row, true, true)),
         None => status(StatusCode::NOT_FOUND),
     })
+}
+
+/// Undo in the drawing toolbar: deletes the person's own most recent drawing on this document
+/// (fetch only, with the form token). Replies with its id, or 404 when there is none.
+pub async fn undo_drawing(
+    State(state): State<FamilyState>,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+) -> Result<Response, super::handlers::Fail> {
+    let (session, doc) = match session_and_doc(&state, &headers, &key).await? {
+        Ok(found) => found,
+        Err(response) => return Ok(response),
+    };
+    if checked(&state, &headers, &session, "") != Some(true) {
+        return Ok(status(StatusCode::FORBIDDEN));
+    }
+    let id: Option<i64> = sqlx::query_scalar(
+        "DELETE FROM annotations WHERE id = (
+             SELECT id FROM annotations
+             WHERE document_id = $1 AND author = $2 AND kind IN ('ink', 'shape')
+             ORDER BY created_at DESC, id DESC LIMIT 1)
+         RETURNING id",
+    )
+    .bind(doc.id)
+    .bind(session.profile_id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let Some(id) = id else {
+        return Ok(status(StatusCode::NOT_FOUND));
+    };
+    store::audit(
+        &state.pool,
+        Some(session.profile_id),
+        "annotation deleted",
+        &format!(
+            "{} annotation {id} (drawing undone)",
+            doccheck::filing_label(&doc.key)
+        ),
+    )
+    .await?;
+    Ok(reply(
+        StatusCode::OK,
+        json::object(&[("id", json::string(&id.to_string()))]),
+    ))
 }
 
 /// The family's handles, for the @mention list. Members only.
@@ -1209,6 +1438,134 @@ mod tests {
         let mut long = form("textbox");
         long.body = "x".repeat(MAX_BODY + 1);
         assert!(check_mark(&long).is_err());
+    }
+
+    fn drawing(kind: &str, tool: &str, points: &str) -> AnnotationForm {
+        AnnotationForm {
+            kind: kind.into(),
+            tool: tool.into(),
+            points: points.into(),
+            stroke_width: "4".into(),
+            ref_width: "640".into(),
+            anchor_path: "body:1/p:2".into(),
+            anchor_x: "0.1".into(),
+            anchor_y: "0.5".into(),
+            ..AnnotationForm::default()
+        }
+    }
+
+    #[test]
+    fn drawing_points_are_numbers_within_limits() {
+        assert_eq!(
+            parse_points("1,2,0.5 -3.5,40.25,1", true, 2, MAX_POINTS),
+            Some(vec![[1.0, 2.0, 0.5], [-3.5, 40.25, 1.0]])
+        );
+        assert_eq!(
+            parse_points("0,0 10.5,-2", false, 2, 2),
+            Some(vec![[0.0, 0.0, 0.5], [10.5, -2.0, 0.5]])
+        );
+        for bad in [
+            "",
+            "1,2,0.5",
+            "1,2 3,4",
+            "1,2,0.5  3,4,0.5",
+            "1,2,1.5 3,4,0.5",
+            "1,2,0.5 3,4,-0.1",
+            "1e3,2,0.5 3,4,0.5",
+            "1,2,0.5 3,4,0.5 ",
+            "0x1,2,0.5 3,4,0.5",
+            "1.,2,0.5 3,4,0.5",
+            "1.234,2,0.5 3,4,0.5",
+            "NaN,2,0.5 3,4,0.5",
+            "1,2,0.5;3,4,0.5",
+            "200000,2,0.5 3,4,0.5",
+        ] {
+            assert_eq!(parse_points(bad, true, 2, MAX_POINTS), None, "{bad:?}");
+        }
+        let many = vec!["1,1,0.5"; MAX_POINTS + 1].join(" ");
+        assert_eq!(
+            parse_points(&many, true, 2, MAX_POINTS),
+            None,
+            "at most 600 points"
+        );
+        assert!(
+            parse_points(&vec!["1,1,0.5"; MAX_POINTS].join(" "), true, 2, MAX_POINTS).is_some()
+        );
+        assert_eq!(
+            parse_points("0,0 1,1 2,2", false, 2, 2),
+            None,
+            "a shape has two points"
+        );
+        assert_eq!(
+            format_points(&[[1.0, -0.04, 0.5], [2.26, 3.0, 1.0]], true),
+            "1,0,0.5 2.3,3,1"
+        );
+        assert_eq!(format_points(&[[10.0, 20.0, 0.5]], false), "10,20");
+    }
+
+    #[test]
+    fn drawings_need_a_tool_points_and_a_place() {
+        let ink = check_mark(&drawing("ink", "draw", "0,0,0.5 10,5,0.6 20,9.96,0.7")).unwrap();
+        let d = ink.drawing.unwrap();
+        assert_eq!(
+            (
+                d.tool.as_str(),
+                d.points.as_str(),
+                d.stroke_width,
+                d.ref_width
+            ),
+            ("draw", "0,0,0.5 10,5,0.6 20,10,0.7", 4.0, 640.0)
+        );
+        assert_eq!(d.ref_height, None, "the height is optional");
+        let mut tall = drawing("ink", "draw", "0,0,0.5 10,5,0.6");
+        tall.ref_height = "48".into();
+        assert_eq!(
+            check_mark(&tall).unwrap().drawing.unwrap().ref_height,
+            Some(48.0)
+        );
+        tall.ref_height = "0".into();
+        assert!(check_mark(&tall).is_err(), "a zero height is refused");
+        let mut stray = AnnotationForm {
+            kind: "note".into(),
+            ..AnnotationForm::default()
+        };
+        stray.ref_height = "48".into();
+        assert!(check_mark(&stray).is_err(), "only drawings carry a height");
+        assert!(check_mark(&drawing("shape", "oval", "0,0 30,20")).is_ok());
+        assert!(
+            check_mark(&drawing("shape", "draw", "0,0 30,20")).is_err(),
+            "ink tools are not shapes"
+        );
+        assert!(
+            check_mark(&drawing("ink", "arrow", "0,0,0.5 3,3,0.5")).is_err(),
+            "shape tools are not ink"
+        );
+        assert!(
+            check_mark(&drawing("shape", "line", "5,5 5.5,5")).is_err(),
+            "a shape needs a size"
+        );
+        assert!(
+            check_mark(&drawing("ink", "draw", "0,0 3,3")).is_err(),
+            "ink carries pressure"
+        );
+        let mut no_place = drawing("ink", "sketch", "0,0,0.5 3,3,0.5");
+        no_place.anchor_path.clear();
+        no_place.anchor_x.clear();
+        no_place.anchor_y.clear();
+        assert!(check_mark(&no_place).is_err(), "a drawing needs a place");
+        let mut wide = drawing("ink", "draw", "0,0,0.5 3,3,0.5");
+        wide.stroke_width = "40".into();
+        assert!(check_mark(&wide).is_err(), "line width 1 to 24");
+        wide.stroke_width = "4".into();
+        wide.ref_width = "0".into();
+        assert!(check_mark(&wide).is_err(), "a reference width");
+        let mut words = drawing("ink", "draw", "0,0,0.5 3,3,0.5");
+        words.body = "hello".into();
+        assert!(check_mark(&words).is_err(), "drawings carry no words");
+        let mut stray = form("highlight");
+        stray.quote = "x".into();
+        stray.points = "0,0 1,1".into();
+        assert!(check_mark(&stray).is_err(), "only drawings have points");
     }
 
     #[test]

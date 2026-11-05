@@ -9,7 +9,10 @@
 //   and the element there so the page can open its annotation menu; it draws coloured highlights,
 //   underlines, strikethroughs and insertion carets, and reports where placed marks sit so the
 //   page can draw notes, text boxes, stamps and inserted words over the frame. Words people write
-//   never enter the frame; only positions and the document's own text are exchanged.
+//   never enter the frame; only positions and the document's own text are exchanged;
+// - D2: it reports the box of the element each drawing is anchored to, so the page can draw and
+//   scale drawings over the frame (their points never enter it), and it scrolls when the page's
+//   drawing surface passes on a wheel or a finger.
 // Messages go only to the parent page, which checks every one; the document's own scripts can
 // send the same messages, so the parent treats them all as untrusted.
 // The placeholder on the last line is replaced by the server with JSON, escaped so it cannot end
@@ -355,6 +358,7 @@
     pink: ['#ffc8e1', '#c2357f'], orange: ['#ffd3a6', '#cf6200']
   };
   var PLACED = { note: 1, textbox: 1, stamp: 1 };
+  var DRAWN = { ink: 1, shape: 1 };
   var anchors = [];
   var style = null;
   function ensureStyle() {
@@ -430,7 +434,7 @@
           if (isField(el) && fieldKey(el) === a.field) el.setAttribute('data-hj-field', a.id);
         });
       }
-      if (PLACED[a.kind]) return;
+      if (PLACED[a.kind] || DRAWN[a.kind]) return;
       var model = textModel();
       if (a.kind === 'insert') {
         var point = -1;
@@ -461,7 +465,13 @@
     var items = [];
     anchors.forEach(function (a) {
       var x, y, r;
-      if (PLACED[a.kind]) {
+      if (DRAWN[a.kind]) {
+        var box = placedTarget(a);
+        if (!box) return;
+        r = box.getBoundingClientRect();
+        if (isFinite(r.left) && isFinite(r.top)) items.push({ id: a.id, x: Math.round(r.left * 10) / 10, y: Math.round(r.top * 10) / 10, w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 });
+        return;
+      } else if (PLACED[a.kind]) {
         var el = placedTarget(a);
         if (!el) return;
         r = el.getBoundingClientRect();
@@ -521,6 +531,23 @@
     if (at < 0) return { prefix: '', suffix: '' };
     return { prefix: model.text.slice(Math.max(0, at - MAX.around), at), suffix: model.text.slice(at, at + MAX.around) };
   }
+  // Text blocks a mark can hold on to. A point in the space between them (a margin, the gap under
+  // a paragraph) belongs to the nearest one, not to the large box around them, so the mark moves
+  // with that text when the page reflows on another screen.
+  var TEXT_BLOCKS = 'p,li,h1,h2,h3,h4,h5,h6,blockquote,pre,td,th,dd,dt,figcaption,caption,label,summary,img,figure';
+  function nearestTextBlock(container, x, y) {
+    var list = container.querySelectorAll(TEXT_BLOCKS);
+    var best = null, bestDistance = Infinity;
+    for (var i = 0; i < list.length && i < 3000; i++) {
+      var r = list[i].getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      var dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      var dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      var distance = dy * 2 + dx; // a mark under a line belongs to that line's block
+      if (distance < bestDistance) { bestDistance = distance; best = list[i]; }
+    }
+    return bestDistance <= 240 ? best : null;
+  }
   function blockAt(x, y) {
     var el = document.elementFromPoint(x, y);
     while (el && el !== document.body && el !== document.documentElement) {
@@ -529,6 +556,7 @@
       el = el.parentElement;
     }
     if (!el || el === document.documentElement) el = document.body;
+    if (!el.matches(TEXT_BLOCKS) && el.querySelector(TEXT_BLOCKS)) el = nearestTextBlock(el, x, y) || el;
     return el;
   }
   function anchorInfo(x, y) {
@@ -538,7 +566,8 @@
     return {
       path: anchorPathOf(el, document.documentElement),
       fx: r.width ? clamp((x - r.left) / r.width, 0, 1) : 0,
-      fy: r.height ? clamp((y - r.top) / r.height, 0, 1) : 0
+      fy: r.height ? clamp((y - r.top) / r.height, 0, 1) : 0,
+      box: { x: r.left, y: r.top, w: r.width, h: r.height }
     };
   }
   function menuAt(x, y, input, target) {
@@ -634,7 +663,7 @@
 
   function text(v, n) { return typeof v === 'string' ? clip(v, n) : ''; }
   function fractionOf(v) { var n = Number(v); return isFinite(n) ? clamp(n, 0, 1) : 0; }
-  var KINDS = { comment: 1, highlight: 1, underline: 1, strike: 1, insert: 1, replace: 1, note: 1, textbox: 1, stamp: 1 };
+  var KINDS = { comment: 1, highlight: 1, underline: 1, strike: 1, insert: 1, replace: 1, note: 1, textbox: 1, stamp: 1, ink: 1, shape: 1 };
   window.addEventListener('message', function (event) {
     if (!framed || event.source !== window.parent) return;
     var d = event.data;
@@ -656,7 +685,7 @@
     } else if (d.type === 'hj:scroll' && typeof d.id === 'string' && /^[0-9]+$/.test(d.id)) {
       var target = document.querySelector('mark[data-hj-id="' + d.id + '"], hj-caret[data-hj-id="' + d.id + '"], [data-hj-field="' + d.id + '"]');
       if (!target) {
-        var placed = anchors.filter(function (a) { return a.id === d.id && PLACED[a.kind]; })[0];
+        var placed = anchors.filter(function (a) { return a.id === d.id && (PLACED[a.kind] || DRAWN[a.kind]); })[0];
         if (placed) target = placedTarget(placed);
       }
       if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -664,7 +693,14 @@
       toolColor = d.color;
     } else if (d.type === 'hj:locate' && typeof d.req === 'string' && /^[0-9]{1,12}$/.test(d.req) && isFinite(d.x) && isFinite(d.y)) {
       var place = anchorInfo(clamp(Number(d.x), 0, window.innerWidth - 1), clamp(Number(d.y), 0, window.innerHeight - 1));
-      send({ type: 'hj:located', req: d.req, path: place.path, fx: Math.round(place.fx * 10000) / 10000, fy: Math.round(place.fy * 10000) / 10000 });
+      var b = place.box || { x: 0, y: 0, w: 0, h: 0 };
+      send({
+        type: 'hj:located', req: d.req, path: place.path, fx: Math.round(place.fx * 10000) / 10000, fy: Math.round(place.fy * 10000) / 10000,
+        bx: Math.round(b.x * 10) / 10, by: Math.round(b.y * 10) / 10, bw: Math.round(b.w * 10) / 10, bh: Math.round(b.h * 10) / 10
+      });
+    } else if (d.type === 'hj:scrollby' && isFinite(d.dx) && isFinite(d.dy)) {
+      // The page's drawing surface covers the frame; a wheel or a finger there scrolls the document.
+      window.scrollBy(clamp(Number(d.dx), -5000, 5000), clamp(Number(d.dy), -5000, 5000));
     }
   });
 
