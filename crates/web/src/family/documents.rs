@@ -26,7 +26,7 @@ pub const MAX_BYTES: usize = 10 * 1024 * 1024;
 
 /// The policy for uploaded documents: sandboxed; inline scripts and styles; scripts, styles and
 /// fetches only from the library sites in `doccheck`; pictures and media from https sites.
-pub const DOCUMENT_CSP: &str = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals; default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://cdn.tailwindcss.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; img-src https: data: blob:; media-src https: blob:; font-src https: data:; connect-src https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; form-action 'none'; frame-src 'none'; base-uri 'none'; frame-ancestors 'self'";
+pub const DOCUMENT_CSP: &str = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals; default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://cdn.tailwindcss.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; img-src https: data: blob:; media-src https: blob:; font-src https: data:; connect-src https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; form-action 'none'; frame-src https://maps.google.com/maps https://www.google.com/maps/; base-uri 'none'; frame-ancestors 'self'";
 
 /// The iframe's own sandbox, matching the policy above. `allow-same-origin` is never given.
 pub const IFRAME_SANDBOX: &str =
@@ -1063,7 +1063,9 @@ mod tests {
         assert!(DOCUMENT_CSP.starts_with("sandbox allow-scripts"));
         assert!(
             DOCUMENT_CSP.contains("form-action 'none'")
-                && DOCUMENT_CSP.contains("frame-src 'none'")
+                && DOCUMENT_CSP.contains(
+                    "frame-src https://maps.google.com/maps https://www.google.com/maps/;"
+                )
         );
         assert!(
             !IFRAME_SANDBOX.contains("allow-top-navigation")
@@ -1099,5 +1101,10 @@ mod tests {
         assert_eq!(sources("style-src"), styles);
         assert_eq!(sources("connect-src"), with_https(&doccheck::CONNECT_HOSTS));
         assert!(!directive("script-src").contains("unsafe-eval"));
+        assert_eq!(
+            sources("frame-src"),
+            doccheck::FRAME_SOURCES.map(String::from).to_vec(),
+            "Google Maps only"
+        );
     }
 }
