@@ -217,6 +217,10 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             get(review::list_annotations).post(review::create_annotation),
         )
         .route(
+            "/documents/{key}/annotations/undo",
+            post(review::undo_drawing),
+        )
+        .route(
             "/documents/{key}/annotations/{id}/delete",
             post(review::delete_annotation),
         )
@@ -259,6 +263,7 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             "/assets/menu.mjs",
             get(|| async { crate::asset("menu.mjs") }),
         )
+        .route("/assets/ink.mjs", get(|| async { crate::asset("ink.mjs") }))
         .fallback(|| async { crate::plain(StatusCode::NOT_FOUND, "Not found\n") })
         .with_state(state.clone())
         .layer(middleware::from_fn_with_state(state, guard)))

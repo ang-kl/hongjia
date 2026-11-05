@@ -214,7 +214,20 @@ fn kind_word(kind: &str) -> &'static str {
         "note" => "Sticky note",
         "textbox" => "Text box",
         "stamp" => "Stamp",
+        "ink" => "Drawing",
+        "shape" => "Shape",
         _ => "Comment",
+    }
+}
+
+/// What a drawing is called in the panel: Drawing for ink, the shape's own name for a shape.
+fn drawing_word(row: &AnnotationRow) -> &'static str {
+    match (row.kind.as_str(), row.tool.as_deref()) {
+        ("shape", Some("rectangle")) => "Rectangle",
+        ("shape", Some("oval")) => "Oval",
+        ("shape", Some("line")) => "Line",
+        ("shape", Some("arrow")) => "Arrow",
+        _ => "Drawing",
     }
 }
 
@@ -735,6 +748,11 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) 
             r#"<p class="annotation-quote" data-annotation-jump>{tag} {}</p>"#,
             escape(&row.label())
         ),
+        "ink" | "shape" => format!(
+            r#"<p class="annotation-quote" data-annotation-jump><span class="kind-tag" data-color="{color}">{word}</span> in {color}</p>"#,
+            color = escape(&row.color),
+            word = drawing_word(row)
+        ),
         _ => format!(r#"<p class="annotation-quote" data-annotation-jump>{tag}</p>"#),
     };
     let body = if row.body.is_empty() {
@@ -761,7 +779,7 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) 
     let mentions_me = row.mentions.contains(&review.viewer_handle);
     let number = |v: Option<f64>| v.map(|v| v.to_string()).unwrap_or_default();
     format!(
-        r#"<li class="annotation{me}" id="annotation-{id}" tabindex="-1" data-annotation-id="{id}" data-kind="{kind}" data-color="{color}" data-quote="{quote}" data-prefix="{prefix}" data-suffix="{suffix}" data-field="{field}" data-text="{text}" data-label="{label}" data-path="{path}" data-x="{x}" data-y="{y}" data-body="{body_attr}" data-can-edit="{can_edit}">{target}{body}<p class="small">{author}, {created} (SGT) · version {version}</p><div class="annotation-actions">{edit}{delete}</div></li>"#,
+        r#"<li class="annotation{me}" id="annotation-{id}" tabindex="-1" data-annotation-id="{id}" data-kind="{kind}" data-color="{color}" data-quote="{quote}" data-prefix="{prefix}" data-suffix="{suffix}" data-field="{field}" data-text="{text}" data-label="{label}" data-path="{path}" data-x="{x}" data-y="{y}" data-body="{body_attr}" data-can-edit="{can_edit}"{drawing}>{target}{body}<p class="small">{author}, {created} (SGT) · version {version}</p><div class="annotation-actions">{edit}{delete}</div></li>"#,
         me = if mentions_me { " mentions-me" } else { "" },
         id = row.id,
         kind = escape(&row.kind),
@@ -777,6 +795,14 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) 
         y = number(row.anchor_y),
         body_attr = escape(&row.body),
         can_edit = review.can_edit(row),
+        drawing = match (&row.tool, &row.points, row.stroke_width, row.ref_width) {
+            (Some(tool), Some(points), Some(width), Some(reference)) => format!(
+                r#" data-tool="{}" data-points="{}" data-width="{width}" data-ref="{reference}""#,
+                escape(tool),
+                escape(points)
+            ),
+            _ => String::new(),
+        },
         author = escape(row.author.as_deref().unwrap_or("someone")),
         created = escape(&row.created),
         version = row.version_no,
@@ -798,7 +824,7 @@ fn annotations_section(key: &str, csrf: &str, review: &Review) -> String {
     };
     format!(
         r#"<section class="panel-section" id="annotations"><div class="section-head"><h2>Annotations</h2><span class="count" data-annotation-count>{n}</span></div>
-<p class="small">Right-click the document (press and hold on a touch screen, or tap twice with the Pencil) to highlight, underline, strike through, insert or replace text, or add a note, a text box or a stamp. Or select text and press Comment. Type @ and a name to mention someone. Everyone can mark up; you can edit, move and delete your own.</p>
+<p class="small">Right-click the document (press and hold on a touch screen, or tap twice with the Pencil) to highlight, underline, strike through, insert or replace text, add a note, a text box or a stamp, or draw: Draw, Sketch (rough circles, boxes, lines and arrows become clean shapes), Shapes and Eraser. Or select text and press Comment. Type @ and a name to mention someone. Everyone can mark up; you can edit, move and delete your own.</p>
 <ol class="annotations" data-annotations>{items}</ol><p class="small" data-annotations-empty{empty}>No annotations yet.</p>
 <form method="post" action="/documents/{key}/annotations" class="stack composer" data-composer><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="quote" value=""><input type="hidden" name="prefix" value=""><input type="hidden" name="suffix" value=""><input type="hidden" name="field_key" value=""><input type="hidden" name="field_label" value="">
 <p class="composer-target" data-composer-target hidden></p>

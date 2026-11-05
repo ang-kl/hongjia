@@ -763,3 +763,64 @@ button.pill[hidden] { display: none; }
 .mentioned-list { padding-left: 1.1em; }
 .mentioned-list li { margin: 0 0 8px; }
 @media print { .anno-menu, .doc-overlay { display: none !important; } }
+
+/* D2 drawings: drawn over the frame in the drawing's colour; only the lines take clicks. */
+[data-color="yellow"] { --ink-c: #b58900; }
+[data-color="green"] { --ink-c: #2e8b3a; }
+[data-color="blue"] { --ink-c: #2f66c8; }
+[data-color="pink"] { --ink-c: #c2357f; }
+[data-color="orange"] { --ink-c: #cf6200; }
+.ink-layer, .ink-live { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.ink-layer g, .ink-live { fill: none; stroke: var(--ink-c, #2f66c8); stroke-linecap: round; stroke-linejoin: round; }
+.ink-layer g { pointer-events: visibleStroke; cursor: pointer; }
+.ink-layer g.flash { animation: ink-flash 0.4s ease-in-out 3; }
+@keyframes ink-flash { 50% { opacity: 0.25; } }
+/* The drawing surface: over the frame while drawing, so strokes never reach the document. */
+.ink-capture { position: absolute; inset: 0; z-index: 3; touch-action: none; cursor: crosshair; border-radius: 10px; box-shadow: inset 0 0 0 2px var(--ink-c, #2f66c8); }
+.ink-capture[hidden] { display: none; }
+.ink-capture[data-tool="eraser"] { cursor: cell; }
+.ink-bar {
+  position: fixed;
+  z-index: 58;
+  top: max(8px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+  padding: 6px;
+  border-radius: 16px;
+}
+.ink-bar[hidden] { display: none; }
+.ink-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.ink-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+}
+.ink-button:hover, .ink-button:focus-visible { background: var(--soft); outline: none; }
+.ink-button[aria-pressed="true"] { border-color: var(--ink); background: var(--soft); }
+.ink-text { font-size: 0.92rem; font-weight: 600; padding: 0 12px; }
+.ink-done { background: var(--ink); color: var(--card); }
+.ink-done:hover, .ink-done:focus-visible { background: var(--ink); opacity: 0.9; }
+.ink-dot { width: 22px; height: 22px; border-radius: 50%; background: var(--fill); border: 2px solid var(--ink-c); }
+.ink-line { width: 24px; border-radius: 4px; background: var(--ink); }
+.ink-line.w2 { height: 2px; }
+.ink-line.w4 { height: 4px; }
+.ink-line.w8 { height: 8px; }
+@media (prefers-reduced-motion: reduce) { .ink-layer g.flash { animation: none; outline: 2px solid var(--ink-c); } }
+@media print { .ink-bar, .ink-capture { display: none !important; } }

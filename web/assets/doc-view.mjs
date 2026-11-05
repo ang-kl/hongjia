@@ -4,7 +4,9 @@
 // and form token, so a document cannot write anything by itself except into its own saved fields,
 // and it can never create, change, move or delete a mark: a person chooses in the menu or the
 // panel drawn by this page. Words people write (comments, notes, text boxes, inserted and
-// replacement text, stamps) are drawn here, over the frame, and never sent into it.
+// replacement text, stamps) and drawings (D2) are drawn here, over the frame, and never sent into it.
+
+import { createInk, drawingNodes, parsePoints, scaleOf } from './ink.mjs';
 
 export const LIMITS = { key: 200, value: 4000, storage: 8000, label: 200, quote: 1000, around: 64, id: 20, text: 500, body: 4000, path: 400 };
 export const COLORS = ['yellow', 'green', 'blue', 'pink', 'orange'];
@@ -55,13 +57,20 @@ export function validMessage(data) {
       const items = [];
       for (const item of data.items) {
         if (!item || !isText(item.id, LIMITS.id) || !/^[0-9]+$/.test(item.id) || !isNumber(item.x, -1e6, 1e6) || !isNumber(item.y, -1e6, 1e6)) return null;
-        items.push({ id: item.id, x: item.x, y: item.y });
+        // Drawings (D2) also carry their element's size, to scale them.
+        if ((item.w !== undefined && !isNumber(item.w, 0, 1e6)) || (item.h !== undefined && !isNumber(item.h, 0, 1e6))) return null;
+        items.push(item.w === undefined ? { id: item.id, x: item.x, y: item.y } : { id: item.id, x: item.x, y: item.y, w: item.w, h: item.h ?? 0 });
       }
       return { type: data.type, items, w: data.w, h: data.h };
     }
-    case 'hj:located':
+    case 'hj:located': {
       if (!isText(data.req, 12) || !/^[0-9]+$/.test(data.req) || !isPath(data.path) || !data.path || !isNumber(data.fx, 0, 1) || !isNumber(data.fy, 0, 1)) return null;
-      return { type: data.type, req: data.req, path: data.path, fx: data.fx, fy: data.fy };
+      const box = ['bx', 'by', 'bw', 'bh'];
+      if (!box.every(k => data[k] === undefined || isNumber(data[k], -1e6, 1e6))) return null;
+      const out = { type: data.type, req: data.req, path: data.path, fx: data.fx, fy: data.fy };
+      for (const k of box) if (data[k] !== undefined) out[k] = data[k];
+      return out;
+    }
   }
   return null;
 }
@@ -116,7 +125,9 @@ export function mentionQuery(text, caret) {
   return match ? match[2].toLowerCase() : null;
 }
 
-const KIND_WORDS = { comment: 'Comment', highlight: 'Highlight', underline: 'Underline', strike: 'Strikethrough', insert: 'Insert', replace: 'Replace', note: 'Sticky note', textbox: 'Text box', stamp: 'Stamp' };
+const KIND_WORDS = { comment: 'Comment', highlight: 'Highlight', underline: 'Underline', strike: 'Strikethrough', insert: 'Insert', replace: 'Replace', note: 'Sticky note', textbox: 'Text box', stamp: 'Stamp', ink: 'Drawing', shape: 'Shape' };
+const SHAPE_WORDS = { rectangle: 'Rectangle', oval: 'Oval', line: 'Line', arrow: 'Arrow' };
+const DRAWN = new Set(['ink', 'shape']);
 const PLACED = new Set(['note', 'textbox', 'stamp']);
 const OVERLAID = new Set(['note', 'textbox', 'stamp', 'insert', 'replace']);
 
@@ -236,6 +247,7 @@ function start() {
       suffix: a.suffix || '', field: a.field || '', text: a.text || '', label: a.label || '', path: a.path || '',
       x: a.x == null ? '' : String(a.x), y: a.y == null ? '' : String(a.y), body: a.body || '', canEdit: String(Boolean(a.can_edit))
     });
+    if (DRAWN.has(a.kind)) Object.assign(li.dataset, { tool: a.tool || '', points: a.points || '', width: String(a.width ?? ''), ref: String(a.ref ?? '') });
     const tag = () => element('span', { className: 'kind-tag', textContent: KIND_WORDS[a.kind] || 'Comment', dataset: { color: a.color || 'yellow' } });
     let head;
     switch (a.kind) {
@@ -249,6 +261,11 @@ function start() {
         head = element('p', { className: 'annotation-quote' }, tag(), ` ${a.label}`); break;
       case 'note': case 'textbox':
         head = element('p', { className: 'annotation-quote' }, tag()); break;
+      case 'ink': case 'shape':
+        head = element('p', { className: 'annotation-quote' },
+          element('span', { className: 'kind-tag', textContent: a.kind === 'shape' ? (SHAPE_WORDS[a.tool] || 'Shape') : 'Drawing', dataset: { color: a.color || 'yellow' } }),
+          ` in ${a.color || 'yellow'}`);
+        break;
       default:
         if (a.field) head = element('p', { className: 'annotation-quote', textContent: `On the field: ${a.field_label || a.field}` });
         else if (a.quote) head = element('blockquote', { className: 'annotation-quote', textContent: `“${a.quote}”` });
@@ -291,6 +308,12 @@ function start() {
     setTimeout(() => li.classList.remove('flash'), 1200);
   };
 
+  const removeEntry = id => {
+    document.getElementById(`annotation-${id}`)?.remove();
+    refreshCount();
+    sendAnchors();
+  };
+
   const create = async fields => {
     const response = await post(`${base}/annotations`, fields);
     if (response.status !== 201) throw new Error(String(response.status));
@@ -323,9 +346,7 @@ function start() {
       try {
         const response = await post(form.action, { csrf });
         if (response.status !== 204) throw new Error(String(response.status));
-        form.closest('li')?.remove();
-        refreshCount();
-        sendAnchors();
+        removeEntry(form.closest('li')?.dataset.annotationId);
       } catch {
         form.querySelector('button').textContent = 'Not deleted; try again';
       }
@@ -369,7 +390,10 @@ function start() {
     if (event.target.closest('[data-editor-cancel]')) { event.target.closest('form')?.remove(); return; }
     const jump = event.target.closest('[data-annotation-jump]');
     const li = jump?.closest('li[data-annotation-id]');
-    if (li) toFrame({ type: 'hj:scroll', id: li.dataset.annotationId });
+    if (li) {
+      toFrame({ type: 'hj:scroll', id: li.dataset.annotationId });
+      flashDrawing(li.dataset.annotationId);
+    }
   });
 
   // @mentions: the family's handles, offered under a text box when @ is typed.
@@ -445,6 +469,60 @@ function start() {
       placeShape(id);
     }
     for (const [id, shape] of shapes) if (!seen.has(id)) { shape.remove(); shapes.delete(id); }
+    drawDrawings();
+  }
+
+  // Drawings (D2): one SVG group each, in the drawing's reference size, scaled and moved to where
+  // its element is now. Only the lines take clicks, which open the drawing's entry.
+  const inkLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  inkLayer.setAttribute('class', 'ink-layer');
+  overlay?.prepend(inkLayer);
+  const groups = new Map();
+  const drawingOf = li => ({
+    kind: li.dataset.kind, tool: li.dataset.tool, width: Number(li.dataset.width) || 4,
+    ref: Number(li.dataset.ref) || 1, points: parsePoints(li.dataset.points || '')
+  });
+  function drawDrawings() {
+    if (!overlay) return;
+    const seen = new Set();
+    for (const li of entries()) {
+      const { annotationId: id, kind } = li.dataset;
+      if (!DRAWN.has(kind)) continue;
+      seen.add(id);
+      const sig = `${li.dataset.points}|${li.dataset.color}|${li.dataset.tool}|${li.dataset.width}`;
+      let group = groups.get(id);
+      if (!group || group.dataset.sig !== sig) {
+        group?.remove();
+        group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        group.dataset.id = id;
+        group.dataset.sig = sig;
+        group.setAttribute('data-color', li.dataset.color || 'yellow');
+        group.setAttribute('class', `ink ink-${kind}`);
+        group.append(...drawingNodes(document, drawingOf(li)));
+        group.addEventListener('click', () => focusEntry(id));
+        groups.set(id, group);
+        inkLayer.append(group);
+      }
+      placeDrawing(id);
+    }
+    for (const [id, group] of groups) if (!seen.has(id)) { group.remove(); groups.delete(id); }
+  }
+  function placeDrawing(id) {
+    const group = groups.get(id);
+    const at = positions.get(id);
+    if (!group) return;
+    if (!at || at.w === undefined) { group.setAttribute('visibility', 'hidden'); return; }
+    const li = document.getElementById(`annotation-${id}`);
+    const s = scaleOf(at.w, Number(li?.dataset.ref) || 1);
+    const off = frameOffset();
+    group.setAttribute('visibility', 'visible');
+    group.setAttribute('transform', `translate(${at.x + off.left} ${at.y + off.top}) scale(${s})`);
+  }
+  function flashDrawing(id) {
+    const group = groups.get(id);
+    if (!group) return;
+    group.classList.add('flash');
+    setTimeout(() => group.classList.remove('flash'), 1200);
   }
   function placeShape(id) {
     const shape = shapes.get(id);
@@ -460,6 +538,16 @@ function start() {
   // Dragging your own placed marks (mouse, touch or Pencil); a click opens the entry instead.
   let requests = 0;
   const located = new Map();
+  // Where a point of the frame's viewport is in the document: an element path, the point as
+  // fractions of that element's box, and the box itself.
+  const askPlace = async (x, y) => {
+    const req = String(++requests);
+    const answer = new Promise(resolve => { located.set(req, resolve); setTimeout(() => resolve(null), 2000); });
+    toFrame({ type: 'hj:locate', req, x, y });
+    const place = await answer;
+    located.delete(req);
+    return place;
+  };
   function wireShape(shape) {
     shape.addEventListener('pointerdown', event => {
       if (!event.isPrimary) return;
@@ -484,11 +572,7 @@ function start() {
         if (!moved) { focusEntry(id); return; }
         if (!own) return;
         const off = frameOffset();
-        const req = String(++requests);
-        const answer = new Promise(resolve => { located.set(req, resolve); setTimeout(() => resolve(null), 2000); });
-        toFrame({ type: 'hj:locate', req, x: (parseFloat(shape.style.left) || 0) - off.left, y: (parseFloat(shape.style.top) || 0) - off.top });
-        const place = await answer;
-        located.delete(req);
+        const place = await askPlace((parseFloat(shape.style.left) || 0) - off.left, (parseFloat(shape.style.top) || 0) - off.top);
         if (!place) { placeShape(id); return; }
         try {
           const response = await post(`${base}/annotations/${id}/update`, { op: 'move', anchor_path: place.path, anchor_x: String(place.fx), anchor_y: String(place.fy) });
@@ -512,6 +596,9 @@ function start() {
   const stampButton = element('button', { type: 'button', className: 'anno-item', role: 'menuitem', ariaHasPopup: 'true', ariaExpanded: 'false', textContent: 'Stamp ▸', dataset: { act: 'stamps', needs: 'place' } });
   const stampGroup = element('div', { className: 'anno-sub', role: 'group', ariaLabel: 'Stamps', hidden: true });
   for (const [name, label] of STAMPS) stampGroup.append(element('button', { type: 'button', className: 'anno-item anno-stamp', role: 'menuitem', textContent: label, dataset: { act: 'stamp', stamp: name, needs: 'place' } }));
+  const shapesButton = element('button', { type: 'button', className: 'anno-item', role: 'menuitem', ariaHasPopup: 'true', ariaExpanded: 'false', textContent: 'Shapes ▸', dataset: { act: 'shapes' } });
+  const shapesGroup = element('div', { className: 'anno-sub', role: 'group', ariaLabel: 'Shapes', hidden: true });
+  for (const [name, label] of Object.entries(SHAPE_WORDS)) shapesGroup.append(element('button', { type: 'button', className: 'anno-item', role: 'menuitem', textContent: label, dataset: { act: 'ink', tool: name } }));
   const form = element('form', { className: 'anno-form', hidden: true });
   const formLabel = element('span', { className: 'anno-label' });
   const formColors = element('div', { className: 'anno-row anno-colors', role: 'radiogroup', ariaLabel: 'Colour' });
@@ -522,9 +609,11 @@ function start() {
     element('button', { type: 'button', className: 'secondary', textContent: 'Cancel', dataset: { annoCancel: '' } })),
   element('p', { className: 'small', role: 'status', dataset: { annoStatus: '' } }));
   attachMentions(formInput);
+  const inkItem = (label, tool) => { const b = item0(label, 'ink'); b.dataset.tool = tool; return b; };
   menu.append(swatches, item0('Underline', 'underline', 'quote'), item0('Strikethrough', 'strike', 'quote'), item0('Insert text…', 'insert', 'point'),
     item0('Replace…', 'replace', 'quote'), item0('Comment…', 'comment'), item0('Sticky note…', 'note', 'place'), item0('Text box…', 'textbox', 'place'),
-    stampButton, stampGroup, item0('Copy', 'copy', 'quote'), form);
+    stampButton, stampGroup, inkItem('Draw', 'draw'), inkItem('Sketch', 'sketch'), shapesButton, shapesGroup, inkItem('Eraser', 'eraser'),
+    item0('Copy', 'copy', 'quote'), form);
   document.body.append(menu);
   const menuItems = () => [...menu.querySelectorAll('[role=menuitem]')].filter(el => !el.disabled && !el.closest('[hidden]'));
   let returnFocus = null;
@@ -534,6 +623,8 @@ function start() {
     form.hidden = true;
     stampGroup.hidden = true;
     stampButton.setAttribute('aria-expanded', 'false');
+    shapesGroup.hidden = true;
+    shapesButton.setAttribute('aria-expanded', 'false');
     if (focusBack && returnFocus) returnFocus.focus({ preventScroll: true });
   };
   const placeOpenMenu = (px, py) => {
@@ -551,6 +642,8 @@ function start() {
     form.hidden = true;
     stampGroup.hidden = true;
     stampButton.setAttribute('aria-expanded', 'false');
+    shapesGroup.hidden = true;
+    shapesButton.setAttribute('aria-expanded', 'false');
     returnFocus = message.input === 'keyboard' ? frame : document.activeElement;
     menu.hidden = false;
     placeOpenMenu(context.px, context.py);
@@ -614,6 +707,18 @@ function start() {
         break;
       }
       case 'stamp': run({ ...placeFields('stamp'), text: button.dataset.stamp }, 'Stamped.'); break;
+      case 'shapes': {
+        const open = shapesGroup.hidden;
+        shapesGroup.hidden = !open;
+        button.setAttribute('aria-expanded', String(open));
+        placeOpenMenu(context.px, context.py);
+        if (open) shapesGroup.querySelector('button')?.focus();
+        break;
+      }
+      case 'ink':
+        closeMenu(false);
+        ink.enter(button.dataset.tool);
+        break;
       case 'copy':
         navigator.clipboard?.writeText(context.quote).catch(() => {});
         closeMenu();
@@ -648,6 +753,40 @@ function start() {
   document.addEventListener('pointerdown', event => { if (!menu.hidden && !menu.contains(event.target)) closeMenu(false); }, true);
   addEventListener('resize', () => closeMenu(false));
   body.append(element('p', { className: 'visually-hidden', role: 'status', dataset: { annoLive: '' } }));
+  const announce = text => { document.querySelector('[data-anno-live]').textContent = text; };
+
+  // Drawing (D2): the toolbar and the drawing surface over the frame.
+  const ink = createInk({
+    frame,
+    layerHost: document.querySelector('[data-doc-stage]') || frame.parentElement,
+    toFrame,
+    askPlace,
+    color: () => color,
+    setColor: chooseColor,
+    announce,
+    save: create,
+    undo: async () => {
+      const response = await post(`${base}/annotations/undo`, {});
+      if (response.status !== 200) return false;
+      removeEntry((await response.json()).id);
+      return true;
+    },
+    erase: async id => {
+      try {
+        const response = await post(`${base}/annotations/${id}/delete`, { csrf });
+        if (response.status !== 204) return false;
+        removeEntry(id);
+        return true;
+      } catch { return false; }
+    },
+    drawings: () => entries().filter(li => DRAWN.has(li.dataset.kind)).map(li => ({
+      id: li.dataset.annotationId,
+      canDelete: Boolean(li.querySelector('form[data-annotation-delete]')),
+      drawing: drawingOf(li),
+      at: positions.get(li.dataset.annotationId)
+    })),
+    onExit: () => frame.focus({ preventScroll: true })
+  });
 
   addEventListener('message', event => {
     if (event.source !== frame.contentWindow) return;
@@ -658,6 +797,7 @@ function start() {
       positions.clear();
       for (const p of message.items) positions.set(p.id, p);
       for (const id of shapes.keys()) placeShape(id);
+      for (const id of groups.keys()) placeDrawing(id);
       return;
     }
     const write = message.type === 'hj:field' || message.type === 'hj:storage';

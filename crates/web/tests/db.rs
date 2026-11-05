@@ -2236,3 +2236,259 @@ async fn mentions_are_listed_for_the_people_named(pool: PgPool) {
         "members only"
     );
 }
+
+/// A drawing's fields, anchored to the document's first section.
+fn drawing_form<'a>(
+    kind: &'a str,
+    tool: &'a str,
+    color: &'a str,
+    points: &'a str,
+) -> Vec<(&'a str, &'a str)> {
+    vec![
+        ("kind", kind),
+        ("tool", tool),
+        ("color", color),
+        ("points", points),
+        ("stroke_width", "4"),
+        ("ref_width", "640"),
+        ("anchor_path", "body:1/section:1"),
+        ("anchor_x", "0.1"),
+        ("anchor_y", "0.2"),
+    ]
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn drawings_round_trip_within_limits(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let key = form_doc(&mut o).await;
+    let path = format!("{key}/annotations");
+    let mut b = member(port, "beta").await;
+
+    let ink = fetch_post(
+        &mut b,
+        &path,
+        &drawing_form("ink", "draw", "blue", "0,0,0.5 10.25,-4,0.75 30,8,1"),
+    )
+    .await;
+    assert_eq!(ink.status, 201, "{}", ink.body);
+    for needle in [
+        r#""kind":"ink""#,
+        r#""tool":"draw""#,
+        r#""color":"blue""#,
+        r#""points":"0,0,0.5 10.2,-4,0.75 30,8,1""#,
+        r#""width":4"#,
+        r#""ref":640"#,
+        r#""path":"body:1/section:1""#,
+    ] {
+        assert!(ink.body.contains(needle), "{needle} in {}", ink.body);
+    }
+    for (tool, points) in [
+        ("oval", "0,0 120,60"),
+        ("rectangle", "-5,0 40,40"),
+        ("line", "0,0 80,10"),
+        ("arrow", "0,0 80,0"),
+    ] {
+        let r = fetch_post(&mut b, &path, &drawing_form("shape", tool, "green", points)).await;
+        assert_eq!(r.status, 201, "{tool}: {}", r.body);
+    }
+    let sketch = fetch_post(
+        &mut b,
+        &path,
+        &drawing_form("ink", "sketch", "pink", "0,0,0.5 5,5,0.5"),
+    )
+    .await;
+    assert_eq!(sketch.status, 201, "an unrecognised sketch is kept as ink");
+
+    let many = vec!["1,1,0.5"; 601].join(" ");
+    let wide_box = "0,0 200000,1";
+    for form in [
+        drawing_form("ink", "draw", "blue", &many),
+        drawing_form("ink", "draw", "blue", "0,0 1,1"),
+        drawing_form("ink", "draw", "blue", "0,0,0.5 1,1,2"),
+        drawing_form("ink", "oval", "blue", "0,0,0.5 1,1,0.5"),
+        drawing_form("shape", "draw", "blue", "0,0 1,1"),
+        drawing_form("shape", "oval", "blue", "0,0 1,1"),
+        drawing_form("shape", "oval", "blue", "0,0 10,10 20,20"),
+        drawing_form("shape", "line", "blue", wide_box),
+        drawing_form("shape", "line", "red", "0,0 50,50"),
+        drawing_form("shape", "line", "blue", "0,0 50,50<b>"),
+    ] {
+        let r = fetch_post(&mut b, &path, &form).await;
+        assert_eq!(r.status, 400, "{form:?}");
+    }
+    let mut no_place = drawing_form("ink", "draw", "blue", "0,0,0.5 1,1,0.5");
+    no_place.retain(|(k, _)| !k.starts_with("anchor"));
+    assert_eq!(
+        fetch_post(&mut b, &path, &no_place).await.status,
+        400,
+        "a drawing needs a place"
+    );
+    let mut thick = drawing_form("ink", "draw", "blue", "0,0,0.5 1,1,0.5");
+    thick.retain(|(k, _)| *k != "stroke_width");
+    thick.push(("stroke_width", "30"));
+    assert_eq!(
+        fetch_post(&mut b, &path, &thick).await.status,
+        400,
+        "line width 1 to 24"
+    );
+    let mut stray = vec![
+        ("kind", "highlight"),
+        ("quote", "Two bedrooms"),
+        ("points", "0,0 1,1"),
+    ];
+    stray.push(("tool", "line"));
+    assert_eq!(
+        fetch_post(&mut b, &path, &stray).await.status,
+        400,
+        "only drawings carry points"
+    );
+
+    // The panel lists drawings by their own names, with the points the page draws from.
+    let page = b.get(&key).await.body;
+    for needle in [
+        r#"data-kind="ink""#,
+        r#"data-tool="oval""#,
+        r#"data-points="0,0 120,60""#,
+        r#"data-ref="640""#,
+        ">Drawing</span> in blue",
+        ">Oval</span> in green",
+        ">Arrow</span> in green",
+    ] {
+        assert!(page.contains(needle), "{needle}");
+    }
+    let stored: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM annotations WHERE kind IN ('ink', 'shape')")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored, 6);
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn undo_and_eraser_follow_the_rules(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let key = form_doc(&mut o).await;
+    let path = format!("{key}/annotations");
+    let undo = format!("{key}/annotations/undo");
+    let mut b = member(port, "beta").await;
+    let mut g = member(port, "gamma").await;
+
+    let first = id_in(
+        &fetch_post(
+            &mut b,
+            &path,
+            &drawing_form("ink", "draw", "blue", "0,0,0.5 9,9,0.5"),
+        )
+        .await
+        .body,
+    );
+    let comment = id_in(
+        &fetch_post(
+            &mut b,
+            &path,
+            &[("kind", "comment"), ("body", "Not a drawing")],
+        )
+        .await
+        .body,
+    );
+    let second = id_in(
+        &fetch_post(
+            &mut b,
+            &path,
+            &drawing_form("shape", "oval", "pink", "0,0 40,20"),
+        )
+        .await
+        .body,
+    );
+    let others = id_in(
+        &fetch_post(
+            &mut g,
+            &path,
+            &drawing_form("shape", "line", "green", "0,0 40,0"),
+        )
+        .await
+        .body,
+    );
+
+    // Undo removes the person's own latest drawing only, never someone else's or a comment.
+    let r = fetch_post(&mut b, &undo, &[]).await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert_eq!(r.body, format!(r#"{{"id":"{second}"}}"#));
+    let r = fetch_post(&mut b, &undo, &[]).await;
+    assert_eq!(r.body, format!(r#"{{"id":"{first}"}}"#));
+    assert_eq!(
+        fetch_post(&mut b, &undo, &[]).await.status,
+        404,
+        "nothing of beta's left to undo"
+    );
+    let left: Vec<i64> = sqlx::query_scalar("SELECT id FROM annotations ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        left.iter().map(|i| i.to_string()).collect::<Vec<_>>(),
+        vec![comment.clone(), others.clone()],
+        "the comment and gamma's line stay"
+    );
+    // Undo is a fetch from the page: a plain form or a stale token is refused.
+    assert_eq!(b.post(&undo, &[("csrf", "x")]).await.status, 403);
+    let mut stranger = Client::new(port);
+    assert_eq!(stranger.post(&undo, &[]).await.status, 401);
+
+    // The eraser deletes through the usual delete: beta cannot erase gamma's line; the owner can.
+    let erase = format!("{key}/annotations/{others}/delete");
+    assert_eq!(fetch_post(&mut b, &erase, &[]).await.status, 403);
+    assert_eq!(fetch_post(&mut o, &erase, &[]).await.status, 204);
+    let audit: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action = 'annotation deleted'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audit, 3, "two undos and one erase are audit-logged");
+
+    // Only the author edits a drawing (its comment); nobody moves one.
+    let mine = id_in(
+        &fetch_post(
+            &mut b,
+            &path,
+            &drawing_form("shape", "rectangle", "blue", "0,0 40,40"),
+        )
+        .await
+        .body,
+    );
+    let update = format!("{key}/annotations/{mine}/update");
+    assert_eq!(
+        fetch_post(&mut g, &update, &[("op", "edit"), ("body", "mine now")])
+            .await
+            .status,
+        403
+    );
+    assert_eq!(
+        fetch_post(
+            &mut b,
+            &update,
+            &[("op", "edit"), ("body", "Box for the car")]
+        )
+        .await
+        .status,
+        200
+    );
+    assert_eq!(
+        fetch_post(
+            &mut b,
+            &update,
+            &[
+                ("op", "move"),
+                ("anchor_path", "body:1"),
+                ("anchor_x", "0"),
+                ("anchor_y", "0")
+            ]
+        )
+        .await
+        .status,
+        400,
+        "drawings are not moved"
+    );
+}

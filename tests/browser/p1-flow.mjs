@@ -189,6 +189,7 @@ const textPoint = async (p, wanted) => {
   return { x: box.x + 1 + at.x, y: box.y + 1 + at.y };
 };
 const noSelection = p => rawFrame(p).evaluate(() => getSelection().removeAllRanges());
+const setupContextCdp = p => p.context().newCDPSession(p);
 const menuOpen = p => p.isVisible('.anno-menu');
 const rightClick = async (p, wanted, select) => {
   if (select) await selectText(p, select); else await noSelection(p);
@@ -327,6 +328,161 @@ if (shots) {
   await pen.close();
 }
 
+// 4. D2 drawing, on a third document: Draw, Sketch (oval and arrow recognised), Shapes, Undo, the
+// Eraser, a Pencil stroke with pressure, fingers scrolling after a Pencil, a finger drawing on a
+// phone, and drawings keeping their place after a reload and at another width.
+const SKETCH = `<!doctype html><html><head><meta charset="utf-8"><title>Sketch</title>
+<style>body{font:16px system-ui;margin:24px}p{margin:0 0 24px;line-height:1.6}section{padding-bottom:900px}</style></head><body>
+<h1>Sketch sample</h1><section><p id="s1">Orchard lantern meadow harbour willow ember thistle juniper saffron quill.</p>
+<p id="s2">Velvet acorn sparrow tundra fennel granite lotus amber prairie copper.</p>
+<p id="s3">Pebble marble cedar lantern river orchard meadow harbour willow ember.</p></section></body></html>`;
+await page.goto(base + '/documents/new');
+await page.setInputFiles('input[name=file]', { name: 'sketch.html', mimeType: 'text/html', buffer: Buffer.from(SKETCH) });
+await page.click('form[action="/documents"] button[type=submit]');
+await page.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
+const sketchPath = new URL(page.url()).pathname;
+await page.waitForTimeout(600);
+const inkCount = (p, selector = 'li[data-kind=ink], li[data-kind=shape]') => p.locator(selector).count();
+const inkAdded = (p, selector, before) => p.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length > n, [selector, before], { timeout: 5000 }).then(() => true, () => false);
+const startInk = async (p, tool, word) => {
+  await rightClick(p, word);
+  await p.click(`.anno-menu [data-act=ink][data-tool=${tool}]`);
+  await p.waitForSelector('[data-ink-bar]:not([hidden])', { timeout: 3000 }).catch(() => failures.push(`${tool} did not open the drawing toolbar`));
+};
+const drag = async (p, points) => {
+  await p.mouse.move(points[0].x, points[0].y);
+  await p.mouse.down();
+  for (const q of points.slice(1)) await p.mouse.move(q.x, q.y);
+  await p.mouse.up();
+};
+const ring = (c, r, n = 40) => Array.from({ length: n + 1 }, (_, i) => ({ x: c.x + r * Math.cos((i / n) * 2 * Math.PI), y: c.y + 0.8 * r * Math.sin((i / n) * 2 * Math.PI) }));
+const groupBox = (p, selector) => p.evaluate(sel => {
+  const li = document.querySelector(sel);
+  const g = li && document.querySelector(`.ink-layer g[data-id="${li.dataset.annotationId}"]`);
+  if (!g) return null;
+  const r = g.getBoundingClientRect();
+  return { x: r.left, y: r.top, w: r.width, h: r.height };
+}, selector);
+const paraBox = async (p, id) => {
+  const box = await p.locator('.doc-frame').boundingBox();
+  const r = await rawFrame(p).evaluate(i => { const b = document.getElementById(i).getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width }; }, id);
+  return { x: box.x + 1 + r.x, y: box.y + 1 + r.y, w: r.w };
+};
+
+await startInk(page, 'draw', 'Orchard');
+const o1 = await textPoint(page, 'Orchard');
+let n = await inkCount(page, 'li[data-kind=ink]');
+await drag(page, Array.from({ length: 25 }, (_, i) => ({ x: o1.x + i * 10, y: o1.y + 12 + Math.sin(i / 2) * 6 })));
+if (!(await inkAdded(page, 'li[data-kind=ink][data-tool=draw]', n))) failures.push('a freehand line was not saved');
+// Sketch: a rough circle becomes an oval; a line with a hook becomes an arrow.
+await page.click('[data-ink-tool=sketch]');
+const v = await textPoint(page, 'Velvet');
+n = await inkCount(page, 'li[data-tool=oval]');
+await drag(page, ring({ x: v.x + 10, y: v.y }, 45));
+if (!(await inkAdded(page, 'li[data-tool=oval]', n))) failures.push('a sketched circle did not become an oval');
+const c3 = await textPoint(page, 'cedar');
+n = await inkCount(page, 'li[data-tool=arrow]');
+await drag(page, [...Array.from({ length: 17 }, (_, i) => ({ x: c3.x + i * 10, y: c3.y + 20 })), { x: c3.x + 150, y: c3.y + 8 }, { x: c3.x + 140, y: c3.y + 2 }]);
+if (!(await inkAdded(page, 'li[data-tool=arrow]', n))) failures.push('a sketched arrow was not recognised');
+// Shapes: a rectangle by dragging; Undo removes it (the latest drawing).
+await page.click('[data-ink-tool=rectangle]');
+n = await inkCount(page, 'li[data-tool=rectangle]');
+await drag(page, [{ x: o1.x - 20, y: o1.y - 40 }, { x: o1.x + 60, y: o1.y - 10 }, { x: o1.x + 120, y: o1.y + 20 }]);
+if (!(await inkAdded(page, 'li[data-tool=rectangle]', n))) failures.push('a rectangle was not drawn');
+await page.click('[data-ink-undo]');
+await page.waitForFunction(() => !document.querySelector('li[data-tool=rectangle]'), null, { timeout: 4000 }).catch(() => failures.push('Undo did not remove the last drawing'));
+// The Eraser removes the freehand line it crosses.
+await page.click('[data-ink-tool=eraser]');
+await drag(page, Array.from({ length: 12 }, (_, i) => ({ x: o1.x + 120, y: o1.y - 20 + i * 6 })));
+await page.waitForFunction(() => !document.querySelector('li[data-kind=ink][data-tool=draw]'), null, { timeout: 4000 }).catch(() => failures.push('the Eraser did not remove the line'));
+// A Pencil stroke: its pressure is kept and varies the line.
+await page.click('[data-ink-tool=draw]');
+{
+  const cdp = await setupContextCdp(page);
+  const m = await textPoint(page, 'marble');
+  n = await inkCount(page, 'li[data-kind=ink]');
+  const pen = (type, x, y, force) => cdp.send('Input.dispatchMouseEvent', { type, x, y, pointerType: 'pen', button: type === 'mouseMoved' ? 'left' : 'left', buttons: type === 'mouseReleased' ? 0 : 1, force, clickCount: 1 });
+  await pen('mousePressed', m.x, m.y + 14, 0.2);
+  for (let i = 1; i <= 12; i++) await pen('mouseMoved', m.x + i * 12, m.y + 14 + (i % 3), Math.min(1, 0.2 + i * 0.07));
+  await pen('mouseReleased', m.x + 150, m.y + 14, 0.9);
+  if (!(await inkAdded(page, 'li[data-kind=ink]', n))) failures.push('a Pencil stroke was not saved');
+  else {
+    const pressures = await page.evaluate(() => [...document.querySelectorAll('li[data-kind=ink]')].at(-1).dataset.points.split(' ').map(t => Number(t.split(',')[2])));
+    if (new Set(pressures).size < 3) failures.push(`the Pencil's pressure was not kept (${pressures.join(' ')})`);
+  }
+}
+const tb = await page.locator('[data-ink-bar]').boundingBox();
+if (!tb || tb.x < 0 || tb.y < 0 || tb.x + tb.width > 1440 || tb.y + tb.height > 900) failures.push('the drawing toolbar is outside the window');
+if (shots) await page.screenshot({ path: `${shots}/notebook-drawing.png` });
+await page.keyboard.press('Escape');
+if (await page.isVisible('[data-ink-bar]')) failures.push('Escape did not leave drawing');
+// The oval keeps its place after a reload, and at another width relative to its paragraph.
+const ovalBefore = await groupBox(page, 'li[data-tool=oval]');
+const paraBefore = await paraBox(page, 's2');
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForTimeout(700);
+const ovalAfter = await groupBox(page, 'li[data-tool=oval]');
+if (!ovalBefore || !ovalAfter || Math.abs(ovalBefore.x - ovalAfter.x) > 3 || Math.abs(ovalBefore.y - ovalAfter.y) > 3) failures.push(`the oval moved after a reload (${JSON.stringify(ovalBefore)} then ${JSON.stringify(ovalAfter)})`);
+{
+  const narrow = await browser.newContext({ viewport: { width: 820, height: 1180 }, deviceScaleFactor: shots ? 2 : 1, storageState: await setup.storageState() });
+  const np = await narrow.newPage();
+  await np.goto(base + sketchPath, { waitUntil: 'networkidle' });
+  await np.waitForTimeout(800);
+  const ovalNarrow = await groupBox(np, 'li[data-tool=oval]');
+  const paraNarrow = await paraBox(np, 's2');
+  const rel = (o, q) => o && q && { x: (o.x - q.x) / q.w, y: (o.y - q.y) / q.w, w: o.w / q.w };
+  const a = rel(ovalBefore, paraBefore), b = rel(ovalNarrow, paraNarrow);
+  if (!a || !b || Math.abs(a.x - b.x) > 0.03 || Math.abs(a.y - b.y) > 0.03 || Math.abs(a.w - b.w) > 0.03) failures.push(`the oval did not keep its place at another width (${JSON.stringify(a)} vs ${JSON.stringify(b)})`);
+  if (shots) await np.screenshot({ path: `${shots}/tablet-portrait-drawings.png` });
+  await narrow.close();
+}
+// After a Pencil, a finger scrolls instead of drawing (touch-capable tablet).
+{
+  const tablet = await browser.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true, storageState: await setup.storageState() });
+  const tp = await tablet.newPage();
+  await tp.goto(base + sketchPath, { waitUntil: 'networkidle' });
+  await tp.waitForTimeout(600);
+  await startInk(tp, 'draw', 'Pebble');
+  const cdp = await tablet.newCDPSession(tp);
+  const at = await textPoint(tp, 'Pebble');
+  let before = await inkCount(tp, 'li[data-kind=ink]');
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y + 16, pointerType: 'pen', button: 'left', buttons: 1, force: 0.5, clickCount: 1 });
+  for (let i = 1; i <= 6; i++) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x + i * 15, y: at.y + 16, pointerType: 'pen', button: 'left', buttons: 1, force: 0.5 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x + 90, y: at.y + 16, pointerType: 'pen', button: 'left', buttons: 0, force: 0.5, clickCount: 1 });
+  if (!(await inkAdded(tp, 'li[data-kind=ink]', before))) failures.push('the tablet Pencil stroke was not saved');
+  before = await inkCount(tp, 'li[data-kind=ink]');
+  const scrolledBefore = await rawFrame(tp).evaluate(() => scrollY);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x + 40, y: at.y + 300 }] });
+  for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: at.x + 40, y: at.y + 300 - i * 25 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await tp.waitForTimeout(600);
+  if ((await inkCount(tp, 'li[data-kind=ink]')) !== before) failures.push('a finger drew after a Pencil was seen');
+  if ((await rawFrame(tp).evaluate(() => scrollY)) <= scrolledBefore) failures.push('a finger did not scroll the document while drawing');
+  await tablet.close();
+}
+// On a phone without a Pencil, one finger draws.
+{
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, storageState: await setup.storageState() });
+  const pp = await phone.newPage();
+  await pp.goto(base + sketchPath, { waitUntil: 'networkidle' });
+  await pp.waitForTimeout(600);
+  await startInk(pp, 'draw', 'Velvet');
+  const cdp = await phone.newCDPSession(pp);
+  const at = await textPoint(pp, 'acorn');
+  const before = await inkCount(pp, 'li[data-kind=ink]');
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x - 60, y: at.y + 30 }] });
+  for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: at.x - 60 + i * 12, y: at.y + 30 + (i % 2) * 6 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  if (!(await inkAdded(pp, 'li[data-kind=ink]', before))) failures.push('a finger did not draw on a phone without a Pencil');
+  const bar = await pp.locator('[data-ink-bar]').boundingBox();
+  if (!bar || bar.x < 0 || bar.x + bar.width > 391) failures.push('the drawing toolbar runs outside the phone screen');
+  if (shots) await pp.screenshot({ path: `${shots}/phone-drawing.png` });
+  await phone.close();
+}
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForTimeout(600);
+const expectedDrawings = await page.locator('.ink-layer g').count();
+
 const state = await setup.storageState();
 await setup.close();
 
@@ -410,7 +566,7 @@ async function checkFabs(p, label, width, height, problems, shot) {
   if (csp.length) problems.push(`CSP after the buttons: ${csp.join('; ')}`);
 }
 
-const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
+const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['sketch', sketchPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
 
 // The menu button (bottom left) on every signed-in page: inside the window, at least 44px, and its
 // panel lists Latest document, Documents (which folds open to the documents), Journal and Settings
@@ -535,6 +691,26 @@ for (const scheme of ['light', 'dark']) {
         if (await p.isVisible('.anno-menu')) problems.push('Escape did not close the annotation menu');
         if ((await p.locator('.ov').count()) !== 5) problems.push(`expected 5 marks over the document, found ${await p.locator('.ov').count()}`);
         if ((await frameMarks(p, 'mark[data-hj-id]')) < 4) problems.push('the coloured marks are not drawn');
+      }
+      if (label === 'sketch') {
+        // The drawings are drawn over the document; the toolbar fits the window with 44px targets.
+        await p.waitForTimeout(400);
+        const drawn = await p.locator('.ink-layer g').count();
+        if (drawn !== expectedDrawings) problems.push(`expected ${expectedDrawings} drawings, found ${drawn}`);
+        await rightClick(p, 'Orchard');
+        await p.click('.anno-menu [data-act=ink][data-tool=sketch]').catch(() => problems.push('no Sketch in the annotation menu'));
+        const bar = await p.locator('[data-ink-bar]').boundingBox();
+        if (!bar) problems.push('the drawing toolbar did not open');
+        else if (bar.x < 0 || bar.y < 0 || bar.x + bar.width > width + 1 || bar.y + bar.height > height + 1) problems.push(`the drawing toolbar runs outside the window (${Math.round(bar.x)},${Math.round(bar.y)} ${Math.round(bar.width)}x${Math.round(bar.height)})`);
+        const small = await p.$$eval('[data-ink-bar] button', bs => bs.filter(b => { const r = b.getBoundingClientRect(); return r.width < 44 || r.height < 44; }).length);
+        if (small) problems.push(`${small} toolbar buttons smaller than 44px`);
+        const capture = await p.locator('[data-ink-capture]').boundingBox();
+        const frameBox = await p.locator('.doc-frame').boundingBox();
+        if (!capture || Math.abs(capture.x - frameBox.x) > 1 || Math.abs(capture.width - frameBox.width) > 1) problems.push('the drawing surface does not cover the document');
+        await p.keyboard.press('Escape');
+        if (await p.isVisible('[data-ink-bar]')) problems.push('Escape did not leave drawing');
+        const after = await p.evaluate(() => window.__csp);
+        if (after.length) problems.push(`CSP while drawing: ${after.join('; ')}`);
       }
       if (label === 'document') await checkViewer(p, width, height, problems, shots && scheme === 'light' ? `${shots}/${name}-document-panel.png` : '');
       if (signedIn) await checkFabs(p, label, width, height, problems, shots && scheme === 'light' && label === 'documents' && ['notebook', 'phone-small'].includes(name) ? `${shots}/${name}-globe.png` : '');
