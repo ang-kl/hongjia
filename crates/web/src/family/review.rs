@@ -30,6 +30,12 @@
 //! (see `signature.rs`) at a point of the document. The server copies it when placed (drawn strokes
 //! in `points`, or the typed name in `text`), so nobody can place someone else's and replacing a
 //! saved signature never changes what was signed. It moves like a note; it cannot be edited.
+//!
+//! D4 (owner's request, 5 November 2026; open choices taken at the owner's defaults): kind
+//! `redaction` marks a passage to black out. Only the document's uploader or the owner marks one,
+//! never on a picture; applying the marks is in `redact.rs`. Kind `attachment` is a file pinned at
+//! a point (see `attach.rs`): it is created only with its file, moves like a note and is never
+//! edited.
 
 use super::documents::{self, DocumentRow};
 use super::store::{self, Session};
@@ -56,7 +62,7 @@ pub const MAX_ANNOTATIONS: i64 = 1000;
 pub const MAX_TEXT: usize = 500;
 pub const MAX_PATH: usize = 400;
 
-pub const KINDS: [&str; 12] = [
+pub const KINDS: [&str; 14] = [
     "comment",
     "highlight",
     "underline",
@@ -69,10 +75,12 @@ pub const KINDS: [&str; 12] = [
     "ink",
     "shape",
     "signature",
+    "redaction",
+    "attachment",
 ];
 pub const COLORS: [&str; 5] = ["yellow", "green", "blue", "pink", "orange"];
 pub const STAMPS: [&str; 5] = ["check", "cross", "approved", "reviewed", "signedoff"];
-const PLACED: [&str; 4] = ["note", "textbox", "stamp", "signature"];
+const PLACED: [&str; 5] = ["note", "textbox", "stamp", "signature", "attachment"];
 /// Drawings (D2): anchored like placed marks, with points instead of words.
 pub const DRAWN: [&str; 2] = ["ink", "shape"];
 pub const INK_TOOLS: [&str; 2] = ["draw", "sketch"];
@@ -287,7 +295,11 @@ pub struct Mark {
 }
 
 /// A placed mark's anchor: all three values or none. Err when some are given but not valid.
-fn anchor_of(path: &str, x: &str, y: &str) -> Result<Option<(String, f64, f64)>, &'static str> {
+pub(super) fn anchor_of(
+    path: &str,
+    x: &str,
+    y: &str,
+) -> Result<Option<(String, f64, f64)>, &'static str> {
     if path.is_empty() && x.is_empty() && y.is_empty() {
         return Ok(None);
     }
@@ -307,6 +319,9 @@ pub fn check_mark(form: &AnnotationForm) -> Result<Mark, &'static str> {
     };
     if !KINDS.contains(&kind) {
         return Err("unknown kind");
+    }
+    if kind == "attachment" {
+        return Err("a file is attached with its own form");
     }
     let color = if form.color.is_empty() {
         "yellow"
@@ -332,7 +347,9 @@ pub fn check_mark(form: &AnnotationForm) -> Result<Mark, &'static str> {
     let drawn = DRAWN.contains(&kind);
     let placed = PLACED.contains(&kind) || drawn;
     if placed != anchor.is_some() {
-        return Err("only notes, text boxes, stamps and drawings are placed");
+        return Err(
+            "only notes, text boxes, stamps, signatures, attachments and drawings are placed",
+        );
     }
     let drawing_fields = !(form.tool.is_empty()
         && form.points.is_empty()
@@ -359,6 +376,8 @@ pub fn check_mark(form: &AnnotationForm) -> Result<Mark, &'static str> {
         "ink" | "shape" => body.is_empty() && text.is_empty() && !has_quote,
         // The server fills in the signer's own saved signature.
         "signature" => body.is_empty() && text.is_empty() && !has_quote,
+        // D4: a passage of the document's own text, and nothing else.
+        "redaction" => has_quote && body.is_empty() && text.is_empty() && form.field_key.is_empty(),
         _ => false,
     };
     if !ok {
@@ -540,6 +559,9 @@ pub struct AnnotationRow {
     pub stroke_width: Option<f32>,
     pub ref_width: Option<f32>,
     pub ref_height: Option<f32>,
+    /// D4: an attachment's type and size in bytes (None for other kinds).
+    pub file_type: Option<String>,
+    pub file_size: Option<i32>,
 }
 
 impl AnnotationRow {
@@ -581,6 +603,11 @@ pub struct Review {
     pub viewer_handle: String,
     pub viewer_is_owner: bool,
     pub can_choose_mode: bool,
+    /// D4: whether this person may mark and apply redactions (the uploader or the owner, and
+    /// the document is not a picture).
+    pub can_redact: bool,
+    /// D4: when the redactions were last applied and by whom (the older versions went then).
+    pub redacted: Option<(String, Option<String>)>,
 }
 
 impl Review {
@@ -603,8 +630,10 @@ async fn annotations(pool: &PgPool, document_id: i64) -> sqlx::Result<Vec<Annota
                 a.kind, a.color, a.text, a.anchor_path, a.anchor_x, a.anchor_y,
                 COALESCE((SELECT array_agg(mp.handle ORDER BY mp.handle) FROM annotation_mentions m
                           JOIN profiles mp ON mp.id = m.profile_id WHERE m.annotation_id = a.id), '{}') AS mentions,
-                a.tool, a.points, a.stroke_width, a.ref_width, a.ref_height
+                a.tool, a.points, a.stroke_width, a.ref_width, a.ref_height,
+                f.file_type, f.size_bytes AS file_size
          FROM annotations a LEFT JOIN profiles p ON p.id = a.author
+         LEFT JOIN document_attachments f ON f.annotation_id = a.id
          WHERE a.document_id = $1 ORDER BY a.created_at, a.id",
     )
     .bind(document_id)
@@ -638,6 +667,14 @@ pub async fn page_data(
     .bind(session.profile_id)
     .fetch_one(pool)
     .await?;
+    let redacted: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT to_char(d.redacted_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI'), p.handle
+         FROM documents d LEFT JOIN profiles p ON p.id = d.redacted_by
+         WHERE d.id = $1 AND d.redacted_at IS NOT NULL",
+    )
+    .bind(doc.id)
+    .fetch_optional(pool)
+    .await?;
     Ok(Review {
         mode: doc.fields_mode.clone(),
         annotations: annotations(pool, doc.id).await?,
@@ -647,6 +684,8 @@ pub async fn page_data(
         viewer_handle: session.handle.clone(),
         viewer_is_owner: session.is_owner,
         can_choose_mode: documents::can_manage(session, doc),
+        can_redact: documents::can_manage(session, doc) && doc.kind != "picture",
+        redacted,
     })
 }
 
@@ -666,7 +705,7 @@ fn status(code: StatusCode) -> Response {
 /// The form token, from the `X-CSRF-Token` header (a fetch from the page) or the `csrf` field (a
 /// plain form), plus the Origin check. Some(true) for a fetch, Some(false) for a form, None when
 /// the check fails.
-fn checked(
+pub(super) fn checked(
     state: &FamilyState,
     headers: &HeaderMap,
     session: &Session,
@@ -681,7 +720,7 @@ fn checked(
 }
 
 /// The signed-in person and the document an address names; None when either is missing.
-async fn session_and_doc(
+pub(super) async fn session_and_doc(
     state: &FamilyState,
     headers: &HeaderMap,
     key: &str,
@@ -845,6 +884,16 @@ fn annotation_json(row: &AnnotationRow, can_delete: bool, can_edit: bool) -> Str
         ("width", wide(row.stroke_width)),
         ("ref", wide(row.ref_width)),
         ("refh", wide(row.ref_height)),
+        (
+            "file_type",
+            json::string(row.file_type.as_deref().unwrap_or("")),
+        ),
+        (
+            "size",
+            row.file_size
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "null".into()),
+        ),
         ("created", json::string(&row.created)),
         ("can_delete", can_delete.to_string()),
         ("can_edit", can_edit.to_string()),
@@ -989,6 +1038,15 @@ pub async fn create_annotation(
             .await;
         }
     };
+    // D4: only the uploader or the owner marks passages for redaction, and never on a picture.
+    if mark.kind == "redaction" {
+        if !documents::can_manage(&session, &doc) {
+            return Ok(status(StatusCode::FORBIDDEN));
+        }
+        if doc.kind == "picture" {
+            return Ok(status(StatusCode::UNPROCESSABLE_ENTITY));
+        }
+    }
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM annotations WHERE document_id = $1")
         .bind(doc.id)
         .fetch_one(&state.pool)
@@ -1050,7 +1108,17 @@ pub async fn create_annotation(
     if !fetch {
         return Ok(documents::back_to_panel(&doc));
     }
-    let row = annotations(&state.pool, doc.id)
+    Ok(created_reply(&state.pool, doc.id, id).await?)
+}
+
+/// The reply to a new mark made from the page: the mark as JSON, which its author may edit and
+/// delete.
+pub(super) async fn created_reply(
+    pool: &PgPool,
+    document_id: i64,
+    id: i64,
+) -> sqlx::Result<Response> {
+    let row = annotations(pool, document_id)
         .await?
         .into_iter()
         .find(|r| r.id == id);
@@ -1132,8 +1200,9 @@ pub async fn update_annotation(
                 "insert" | "replace" => {
                     (1..=MAX_TEXT).contains(&chars(text)) && chars(body) <= MAX_BODY
                 }
-                // What was signed is not edited; delete it and sign again instead.
-                "signature" => false,
+                // What was signed is not edited; delete it and sign again instead. A passage
+                // marked for redaction and an attached file have no words to edit (D4).
+                "signature" | "redaction" | "attachment" => false,
                 _ => chars(body) <= MAX_BODY && text.is_empty(),
             };
             if !ok {
@@ -1471,6 +1540,39 @@ mod tests {
         let mut long = form("textbox");
         long.body = "x".repeat(MAX_BODY + 1);
         assert!(check_mark(&long).is_err());
+    }
+
+    #[test]
+    fn redactions_mark_a_passage_and_attachments_need_their_file() {
+        let mut redaction = form("redaction");
+        assert!(
+            check_mark(&redaction).is_err(),
+            "a redaction needs a passage"
+        );
+        redaction.quote = "12 Fern Road".into();
+        redaction.prefix = "lives at ".into();
+        let mark = check_mark(&redaction).unwrap();
+        assert_eq!(
+            (mark.kind.as_str(), mark.quote.as_str()),
+            ("redaction", "12 Fern Road")
+        );
+        redaction.body = "because".into();
+        assert!(check_mark(&redaction).is_err(), "no words of its own");
+        redaction.body = String::new();
+        redaction.anchor_path = "p:1".into();
+        redaction.anchor_x = "0".into();
+        redaction.anchor_y = "0".into();
+        assert!(check_mark(&redaction).is_err(), "a redaction is not placed");
+
+        // An attachment is never made from the plain mark form, with or without a place.
+        let mut attachment = form("attachment");
+        assert!(check_mark(&attachment).is_err());
+        attachment.anchor_path = "p:1".into();
+        attachment.anchor_x = "0.2".into();
+        attachment.anchor_y = "0.4".into();
+        attachment.text = "ticket.pdf".into();
+        assert!(check_mark(&attachment).is_err());
+        assert!(PLACED.contains(&"attachment"), "but it moves like a note");
     }
 
     fn drawing(kind: &str, tool: &str, points: &str) -> AnnotationForm {

@@ -275,16 +275,16 @@ fn check_for(kind: &str, bytes: &[u8]) -> doccheck::Check {
     }
 }
 
-struct NewFile<'a> {
-    filename: &'a str,
-    kind: &'a str,
-    bytes: &'a [u8],
-    profile_id: i16,
+pub(super) struct NewFile<'a> {
+    pub filename: &'a str,
+    pub kind: &'a str,
+    pub bytes: &'a [u8],
+    pub profile_id: i16,
     /// D3: a picture's type and size, read from its first bytes.
-    image: Option<picture::Info>,
+    pub image: Option<picture::Info>,
 }
 
-async fn insert_version(
+pub(super) async fn insert_version(
     tx: &mut sqlx::PgConnection,
     document_id: i64,
     version_no: i32,
@@ -751,15 +751,43 @@ pub(super) async fn show(
 pub async fn view(
     State(state): State<FamilyState>,
     headers: HeaderMap,
+    uri: Uri,
     Path(key): Path<String>,
 ) -> Result<Response, super::handlers::Fail> {
     let Some(session) = signed_in(&state, &headers).await? else {
         return Ok(see_other("/"));
     };
+    let notice = redaction_notice(uri.query().unwrap_or(""));
     match resolve(&state, &key, "").await? {
-        Ok(doc) => show(&state, &session, &doc, StatusCode::OK, None).await,
+        Ok(doc) => show(&state, &session, &doc, StatusCode::OK, notice.as_deref()).await,
         Err(response) => Ok(response),
     }
+}
+
+/// After redactions were applied (`?redacted=2&remaining=1`): what was done, and what to check.
+pub fn redaction_notice(query: &str) -> Option<String> {
+    let number = |name: &str| {
+        query
+            .split('&')
+            .find_map(|pair| pair.strip_prefix(name)?.strip_prefix('='))
+            .and_then(|v| v.parse::<u32>().ok())
+    };
+    let count = number("redacted").filter(|n| *n > 0)?;
+    let remaining = number("remaining").unwrap_or(0);
+    let mut text = format!(
+        "Redaction applied: {count} {} blacked out in a new version, and every earlier version was deleted for good.",
+        if count == 1 { "passage" } else { "passages" }
+    );
+    if remaining > 0 {
+        text.push_str(&format!(
+            " The same words still appear {remaining} more {} in the document; mark {} too if {} should go.",
+            if remaining == 1 { "time" } else { "times" },
+            if remaining == 1 { "it" } else { "them" },
+            if remaining == 1 { "it" } else { "they" },
+        ));
+    }
+    text.push_str(" A redaction does not change the title, the hashtags or the names of attached files; check them too.");
+    Some(text)
 }
 
 /// The original file exactly as uploaded (the latest version, or `?v=2`), as a download. Members
@@ -896,7 +924,7 @@ pub async fn raw(
 }
 
 /// Loads the document for a change and checks the form and the person's right to change it.
-async fn for_change(
+pub(super) async fn for_change(
     state: &FamilyState,
     headers: &HeaderMap,
     key: &str,
@@ -1126,6 +1154,23 @@ mod tests {
         assert_eq!(kind_for("photo.jpg"), Some("picture"));
         assert_eq!(kind_for("tool.exe"), None);
         assert_eq!(kind_for("no-extension"), None);
+    }
+
+    #[test]
+    fn the_redaction_notice_says_what_was_done() {
+        assert_eq!(redaction_notice(""), None);
+        assert_eq!(redaction_notice("redacted=0"), None);
+        assert_eq!(redaction_notice("redacted=x"), None);
+        let one = redaction_notice("redacted=1&remaining=0").unwrap();
+        assert!(one.starts_with("Redaction applied: 1 passage blacked out"));
+        assert!(!one.contains("still appear"));
+        let two = redaction_notice("redacted=2&remaining=3").unwrap();
+        assert!(
+            two.contains("2 passages")
+                && two.contains("3 more times")
+                && two.contains("mark them too")
+        );
+        assert!(!two.contains('\u{2014}') && !two.contains('\u{2013}'));
     }
 
     #[test]

@@ -2960,3 +2960,561 @@ async fn the_upload_check_runs_again_when_its_rules_change(pool: PgPool) {
             .unwrap();
     assert_eq!(version, hongjia_web::family::documents::CHECK_VERSION);
 }
+
+// D4: redaction and attachments.
+
+const CONTACTS: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Contacts</title></head><body>\n<h1>Contacts</h1><p>Call Ann Lee on 5550 1234 tomorrow.</p><p>Gate code: 4417 &amp; 9921.</p><p>Bring the map.</p>\n</body></html>";
+
+/// How many stored versions, annotation texts, field labels and audit entries still hold `word`.
+async fn traces(pool: &PgPool, word: &str) -> i64 {
+    sqlx::query_scalar(
+        "SELECT (SELECT count(*) FROM document_versions
+                 WHERE position(convert_to($1, 'UTF8') in content) > 0 OR strpos(text_content, $1) > 0
+                    OR EXISTS (SELECT 1 FROM unnest(heading_texts) h WHERE strpos(h, $1) > 0))
+              + (SELECT count(*) FROM annotations
+                 WHERE strpos(quote || prefix || suffix || field_label || body || text, $1) > 0)
+              + (SELECT count(*) FROM document_fields WHERE strpos(label, $1) > 0)
+              + (SELECT count(*) FROM audit_log WHERE strpos(detail, $1) > 0)",
+    )
+    .bind(word)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn redactions_are_marked_and_applied_only_by_the_uploader_or_the_owner(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut b = member(port, "beta").await;
+    let mut g = member(port, "gamma").await;
+    let mut o = owner(port).await;
+    // Beta adds the document, then a second version (so there is history to remove).
+    let csrf = b.csrf().await;
+    let key = upload(&mut b, &csrf, "Contacts", Some(("contacts.html", CONTACTS)))
+        .await
+        .header("location")
+        .unwrap()
+        .to_string();
+    let r = send_multipart(
+        &mut b,
+        &format!("{key}/version"),
+        &[("csrf", &csrf)],
+        Some(("contacts.html", CONTACTS)),
+    )
+    .await;
+    assert_eq!(r.status, 303);
+    let path = format!("{key}/annotations");
+    let address = [
+        ("kind", "redaction"),
+        ("quote", "Ann Lee on 5550 1234"),
+        ("prefix", "Contacts\nCall "),
+        ("suffix", " tomorrow.Gate code: 4417 & 99"),
+    ];
+    let gate = [
+        ("kind", "redaction"),
+        ("quote", "4417 & 9921"),
+        ("prefix", "tomorrow.Gate code: "),
+        ("suffix", ".Bring the map."),
+    ];
+
+    // Only the uploader and the owner mark passages; nobody else, and never without a passage.
+    let r = fetch_post(&mut g, &path, &address).await;
+    assert_eq!(r.status, 403);
+    let r = fetch_post(&mut b, &path, &[("kind", "redaction"), ("body", "why")]).await;
+    assert_eq!(r.status, 400);
+    let r = fetch_post(&mut b, &path, &address).await;
+    assert_eq!(r.status, 201, "{}", r.body);
+    assert!(
+        r.body.contains(r#""kind":"redaction""#)
+            && r.body.contains(r#""quote":"Ann Lee on 5550 1234""#)
+    );
+    let r = fetch_post(&mut o, &path, &gate).await;
+    assert_eq!(r.status, 201, "{}", r.body);
+
+    // Others keep marking up as usual: a highlight next to a redacted passage, a comment that
+    // repeats it, and a saved field whose label carries it.
+    let r = fetch_post(
+        &mut g,
+        &path,
+        &[
+            ("kind", "highlight"),
+            ("quote", "tomorrow"),
+            ("prefix", "Call Ann Lee on 5550 1234 "),
+            ("suffix", ".Gate code: 4417"),
+        ],
+    )
+    .await;
+    assert_eq!(r.status, 201);
+    let highlight = id_in(&r.body);
+    let r = fetch_post(
+        &mut g,
+        &path,
+        &[("body", "Is it Ann Lee on 5550 1234 or someone else?")],
+    )
+    .await;
+    assert_eq!(r.status, 201);
+    let r = fetch_post(
+        &mut g,
+        &format!("{key}/fields"),
+        &[
+            ("kind", "field"),
+            ("op", "set"),
+            ("key", "id:who"),
+            ("value", "yes"),
+            ("label", "Ask Ann Lee on 5550 1234"),
+        ],
+    )
+    .await;
+    assert_eq!(r.status, 204, "{}", r.body);
+
+    // The panel lists the pending passages for everyone; the apply form is for beta and the owner.
+    let page = g.get(&key).await.body;
+    assert!(page.contains("Pending redactions") && page.contains("“Ann Lee on 5550 1234”"));
+    assert!(!page.contains("data-redact-apply") && page.contains(r#"data-can-redact="false""#));
+    let page = b.get(&key).await.body;
+    assert!(page.contains("data-redact-apply") && page.contains(r#"data-can-redact="true""#));
+
+    // Applying: nobody else; and only after typing REDACT.
+    let csrf = g.csrf().await;
+    let apply = format!("{key}/redactions/apply");
+    let r = g
+        .post(&apply, &[("csrf", &csrf), ("confirm", "REDACT")])
+        .await;
+    assert_eq!(r.status, 403);
+    let csrf = b.csrf().await;
+    for word in ["", "redact", "DELETE"] {
+        let r = b.post(&apply, &[("csrf", &csrf), ("confirm", word)]).await;
+        assert_eq!(r.status, 400, "{word}");
+        assert!(r.body.contains("type REDACT in capitals"));
+    }
+    let versions: i64 = sqlx::query_scalar("SELECT count(*) FROM document_versions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(versions, 2, "nothing applied yet");
+
+    let r = b
+        .post(&apply, &[("csrf", &csrf), ("confirm", "REDACT")])
+        .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    assert_eq!(
+        r.header("location"),
+        Some(format!("{key}?redacted=2&remaining=0#panel").as_str())
+    );
+
+    // One version is left, number 3, with the passages blacked out and nothing else changed.
+    let left: Vec<i32> =
+        sqlx::query_scalar("SELECT version_no FROM document_versions ORDER BY version_no")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(left, vec![3]);
+    let (status, _, body) = o
+        .send_bytes("GET", &format!("{key}/original"), b"", &[])
+        .await;
+    assert_eq!(status, 200);
+    let body = String::from_utf8(body).unwrap();
+    assert_eq!(
+        body,
+        CONTACTS
+            .replace("Ann Lee on 5550 1234", "███ ███ ██ ████ ████")
+            .replace("4417 &amp; 9921", "████ █ ████")
+    );
+    // The older versions are gone for good, from the frame and from "org".
+    for old in ["1", "2"] {
+        assert_eq!(o.get(&format!("{key}/original?v={old}")).await.status, 404);
+        assert_eq!(o.get(&format!("{key}/raw?v={old}")).await.status, 404);
+    }
+    // No trace of the words anywhere: files, search text, marks, field labels, the audit log.
+    for word in ["Ann Lee", "5550", "4417", "9921"] {
+        assert_eq!(traces(&pool, word).await, 0, "{word}");
+    }
+    // The other marks keep their place, without the words.
+    let (quote, prefix): (String, String) =
+        sqlx::query_as("SELECT quote, prefix FROM annotations WHERE id = $1")
+            .bind(highlight.parse::<i64>().unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        (quote.as_str(), prefix.as_str()),
+        ("tomorrow", "Call ███ ███ ██ ████ ████ ")
+    );
+    let kinds: Vec<String> = sqlx::query_scalar("SELECT kind FROM annotations ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(kinds, vec!["highlight", "comment"], "pending marks removed");
+    let audit: Vec<String> =
+        sqlx::query_scalar("SELECT detail FROM audit_log WHERE action = 'document redacted'")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audit.len(), 1);
+    assert!(
+        audit[0].ends_with("version 3: 2 passages blacked out, 2 older versions deleted"),
+        "{}",
+        audit[0]
+    );
+
+    // The page says what happened and when.
+    let page = o.get(&format!("{key}?redacted=2&remaining=0")).await.body;
+    assert!(page.contains("Redaction applied: 2 passages blacked out"));
+    assert!(
+        page.contains("Earlier versions were removed by a redaction on")
+            && page.contains("(SGT) by beta.")
+    );
+    // Nothing left to apply.
+    let r = b
+        .post(&apply, &[("csrf", &csrf), ("confirm", "REDACT")])
+        .await;
+    assert_eq!(r.status, 400);
+    assert!(r.body.contains("No passages are marked"));
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn a_passage_that_cannot_be_placed_applies_nothing(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let key = upload(
+        &mut o,
+        &csrf,
+        "Twice",
+        Some(("twice.html", "<body><p>Ann</p><p>Ann</p><p>Bo</p></body>")),
+    )
+    .await
+    .header("location")
+    .unwrap()
+    .to_string();
+    let path = format!("{key}/annotations");
+    let apply = format!("{key}/redactions/apply");
+    let r = fetch_post(
+        &mut o,
+        &path,
+        &[("kind", "redaction"), ("quote", "Bo"), ("prefix", "AnnAnn")],
+    )
+    .await;
+    assert_eq!(r.status, 201);
+    let r = fetch_post(&mut o, &path, &[("kind", "redaction"), ("quote", "Ann")]).await;
+    assert_eq!(r.status, 201);
+    let unclear = id_in(&r.body);
+    let r = o
+        .post(&apply, &[("csrf", &csrf), ("confirm", "REDACT")])
+        .await;
+    assert_eq!(r.status, 400);
+    assert!(
+        r.body
+            .contains("Passage 2 of 2 marked for redaction appears more than once"),
+        "{}",
+        r.body
+    );
+    let r = fetch_post(&mut o, &format!("{path}/{unclear}/delete"), &[]).await;
+    assert_eq!(r.status, 204);
+    let r = fetch_post(&mut o, &path, &[("kind", "redaction"), ("quote", "Cy")]).await;
+    assert_eq!(r.status, 201);
+    let r = o
+        .post(&apply, &[("csrf", &csrf), ("confirm", "REDACT")])
+        .await;
+    assert_eq!(r.status, 400);
+    assert!(r.body.contains("is not in the stored file"));
+    // Nothing changed: one version, the stored file and both marks as they were.
+    let (count, pending): (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM document_versions), (SELECT count(*) FROM annotations WHERE kind = 'redaction')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((count, pending), (1, 2));
+    let (_, _, body) = o
+        .send_bytes("GET", &format!("{key}/original"), b"", &[])
+        .await;
+    assert_eq!(body, b"<body><p>Ann</p><p>Ann</p><p>Bo</p></body>");
+
+    // Pictures cannot be redacted yet.
+    let (status, picture) = upload_bytes(&mut o, "/documents", "pic.png", &png_header(2, 2)).await;
+    assert_eq!(status, 303);
+    let r = fetch_post(
+        &mut o,
+        &format!("{picture}/annotations"),
+        &[("kind", "redaction"), ("quote", "x")],
+    )
+    .await;
+    assert_eq!(r.status, 422);
+    assert!(
+        o.get(&picture)
+            .await
+            .body
+            .contains("Pictures cannot be redacted yet")
+    );
+}
+
+/// A tiny ZIP archive holding the named empty files, as an Office file is laid out.
+fn zip_with(names: &[&str]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for name in names {
+        let offset = out.len() as u32;
+        out.extend_from_slice(b"PK\x03\x04");
+        out.extend_from_slice(&[20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        out.extend_from_slice(&[0; 12]);
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+        out.extend_from_slice(name.as_bytes());
+        central.extend_from_slice(b"PK\x01\x02");
+        central.extend_from_slice(&[20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        central.extend_from_slice(&[0; 12]);
+        central.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        central.extend_from_slice(&[0; 12]);
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name.as_bytes());
+    }
+    let start = out.len() as u32;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(b"PK\x05\x06\0\0\0\0");
+    out.extend_from_slice(&(names.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(names.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    out.extend_from_slice(&start.to_le_bytes());
+    out.extend_from_slice(&[0, 0]);
+    out
+}
+
+/// Attaches a file from the page (the form token in the header), at a place unless `place` is
+/// empty; returns the status and the reply's body.
+async fn attach(
+    c: &mut Client,
+    key: &str,
+    place: &[(&str, &str)],
+    filename: &str,
+    bytes: &[u8],
+) -> (u16, String) {
+    let csrf = c.csrf().await;
+    let mut body = Vec::new();
+    for (name, value) in place {
+        body.extend_from_slice(
+            format!(
+                "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    body.extend_from_slice(
+        format!("--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n").as_bytes(),
+    );
+    body.extend_from_slice(bytes);
+    body.extend_from_slice(format!("\r\n--{BOUNDARY}--\r\n").as_bytes());
+    let content_type = format!("multipart/form-data; boundary={BOUNDARY}");
+    let (status, _, answer) = c
+        .send_bytes(
+            "POST",
+            &format!("{key}/attachments"),
+            &body,
+            &[("Content-Type", &content_type), ("X-CSRF-Token", &csrf)],
+        )
+        .await;
+    (status, String::from_utf8_lossy(&answer).into_owned())
+}
+
+const AT: [(&str, &str); 3] = [
+    ("anchor_path", "body:1/p:1"),
+    ("anchor_x", "0.25"),
+    ("anchor_y", "0.5"),
+];
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn attachments_are_checked_downloaded_only_and_follow_the_rules(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let mut b = member(port, "beta").await;
+    let mut g = member(port, "gamma").await;
+    let key = form_doc(&mut o).await;
+    let pdf = b"%PDF-1.7\n1 0 obj << >> endobj\n%%EOF\n".to_vec();
+    let png = png_header(4, 3);
+
+    // Any member attaches; the reply is the new mark with the file's name, type and size.
+    let (status, body) = attach(&mut b, &key, &AT, "Ferry ticket.pdf", &pdf).await;
+    assert_eq!(status, 201, "{body}");
+    assert!(
+        body.contains(r#""kind":"attachment""#)
+            && body.contains(r#""text":"Ferry ticket.pdf""#)
+            && body.contains(r#""file_type":"pdf""#)
+            && body.contains(&format!(r#""size":{}"#, pdf.len()))
+            && body.contains(r#""path":"body:1/p:1""#)
+    );
+    let ticket = id_in(&body);
+    let (status, body) = attach(&mut g, &key, &AT, "Fähre 渡轮.png", &png).await;
+    assert_eq!(status, 201, "{body}");
+    let photo = id_in(&body);
+    let docx = zip_with(&["[Content_Types].xml", "word/document.xml"]);
+    let (status, _) = attach(&mut g, &key, &AT, "letter.docx", &docx).await;
+    assert_eq!(status, 201);
+
+    // Everything else is refused, with a reason the page can show.
+    let refused: [(&str, &[u8]); 6] = [
+        ("page.html", b"<!doctype html><script>alert(1)</script>"),
+        ("logo.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>"),
+        ("setup.exe", b"MZ\x90\0\x03\0\0\0"),
+        ("page.txt", b"<html><body>hi</body></html>"),
+        ("photo.png", b"MZ\x90\0\x03"),
+        ("archive.zip", b"PK\x03\x04"),
+    ];
+    for (name, bytes) in refused {
+        let (status, body) = attach(&mut b, &key, &AT, name, bytes).await;
+        assert_eq!(status, 400, "{name}");
+        assert!(body.starts_with(r#"{"error":""#), "{body}");
+    }
+    let (status, _) = attach(&mut b, &key, &AT, "fake.docx", &zip_with(&["readme.txt"])).await;
+    assert_eq!(status, 400);
+    let (status, body) = attach(&mut b, &key, &[], "ticket.pdf", &pdf).await;
+    assert_eq!(status, 400, "a place is needed: {body}");
+    let big = vec![b'a'; 10 * 1024 * 1024 + 1];
+    let (status, body) = attach(&mut b, &key, &AT, "big.txt", &big).await;
+    assert_eq!(status, 413);
+    assert!(body.contains("10 MB"));
+    // Not from another site, and not without the form token.
+    b.origin = Some("https://evil.example".into());
+    let (status, _) = attach(&mut b, &key, &AT, "ticket.pdf", &pdf).await;
+    assert_eq!(status, 403);
+    b.origin = Some(format!("http://127.0.0.1:{port}"));
+    // Not as a plain mark either.
+    let r = fetch_post(
+        &mut b,
+        &format!("{key}/annotations"),
+        &[
+            ("kind", "attachment"),
+            ("text", "x.pdf"),
+            ("anchor_path", "p:1"),
+            ("anchor_x", "0"),
+            ("anchor_y", "0"),
+        ],
+    )
+    .await;
+    assert_eq!(r.status, 400);
+    let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM document_attachments")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, 3);
+
+    // Downloads: members only, saved and never shown, byte for byte.
+    let (status, headers, bytes) = g
+        .send_bytes("GET", &format!("{key}/attachments/{ticket}"), b"", &[])
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(bytes, pdf);
+    let header = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default()
+    };
+    assert_eq!(header("content-type"), "application/octet-stream");
+    assert_eq!(
+        header("content-disposition"),
+        "attachment; filename=\"Ferry ticket.pdf\"; filename*=UTF-8''Ferry%20ticket.pdf"
+    );
+    assert_eq!(header("x-content-type-options"), "nosniff");
+    assert_eq!(header("cache-control"), "private, no-store");
+    assert!(header("content-security-policy").starts_with("sandbox;"));
+    let (status, headers, bytes) = b
+        .send_bytes("GET", &format!("{key}/attachments/{photo}"), b"", &[])
+        .await;
+    assert_eq!((status, bytes), (200, png.clone()));
+    let header = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        header("content-type"),
+        "image/png",
+        "a picture keeps its type"
+    );
+    assert!(header("content-disposition").starts_with("attachment;"));
+    assert!(
+        header("content-disposition")
+            .ends_with("filename*=UTF-8''F%C3%A4hre%20%E6%B8%A1%E8%BD%AE.png")
+    );
+    let mut stranger = Client::new(port);
+    let r = stranger.get(&format!("{key}/attachments/{ticket}")).await;
+    assert_eq!((r.status, r.header("location")), (303, Some("/")));
+    let csrf = o.csrf().await;
+    let other = upload(&mut o, &csrf, "Other", Some(("other.html", SAMPLE)))
+        .await
+        .header("location")
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        o.get(&format!("{other}/attachments/{ticket}")).await.status,
+        404
+    );
+
+    // The panel lists them with the name, type, size, who and when.
+    let page = g.get(&key).await.body;
+    assert!(page.contains(r#"<span class="wrap">Ferry ticket.pdf</span>"#));
+    assert!(page.contains(&format!(r#"<a href="{key}/attachments/{ticket}" download data-attachment-link>Download</a> · PDF · {} bytes"#, pdf.len())));
+    assert!(page.contains("beta, ") && page.contains(r#"data-mark-count="attachment">3<"#));
+
+    // Only the attacher moves it; the attacher or the owner deletes it; nobody edits it.
+    let update = format!("{key}/annotations/{ticket}/update");
+    let r = fetch_post(
+        &mut g,
+        &update,
+        &[
+            ("op", "move"),
+            ("anchor_path", "h1:1"),
+            ("anchor_x", "0.1"),
+            ("anchor_y", "0.1"),
+        ],
+    )
+    .await;
+    assert_eq!(r.status, 403);
+    let r = fetch_post(
+        &mut b,
+        &update,
+        &[
+            ("op", "move"),
+            ("anchor_path", "h1:1"),
+            ("anchor_x", "0.1"),
+            ("anchor_y", "0.1"),
+        ],
+    )
+    .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert!(r.body.contains(r#""path":"h1:1""#));
+    let r = fetch_post(&mut b, &update, &[("op", "edit"), ("body", "note")]).await;
+    assert_eq!(r.status, 400);
+    let r = fetch_post(&mut g, &format!("{key}/annotations/{ticket}/delete"), &[]).await;
+    assert_eq!(r.status, 403);
+    let r = fetch_post(&mut o, &format!("{key}/annotations/{ticket}/delete"), &[]).await;
+    assert_eq!(r.status, 204);
+    assert_eq!(
+        g.get(&format!("{key}/attachments/{ticket}")).await.status,
+        404
+    );
+    let r = fetch_post(&mut g, &format!("{key}/annotations/{photo}/delete"), &[]).await;
+    assert_eq!(r.status, 204);
+    let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM document_attachments")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, 1);
+
+    // Deleting the document deletes its attachments.
+    let r = o
+        .post(
+            &format!("{key}/delete"),
+            &[("csrf", &csrf), ("confirm", "DELETE")],
+        )
+        .await;
+    assert_eq!(r.status, 303);
+    let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM document_attachments")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, 0);
+}
