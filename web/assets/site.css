@@ -115,6 +115,7 @@ body.app {
 
 input[type="text"], input[type="password"], input[type="number"] {
   font: inherit;
+  font-weight: 400;
   width: 100%;
   min-height: 44px;
   padding: 8px 12px;
@@ -277,6 +278,7 @@ body.viewer-page {
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; }
 .panel-title { font: 400 1.05rem/1.3 Georgia, serif; color: var(--muted); }
 .panel p { color: var(--ink); margin: 0 0 0.8em; }
+.panel a { color: inherit; text-underline-offset: 3px; }
 .panel .section-head { margin-top: 1.1em; }
 .panel .stack { max-width: none; margin: 0 0 12px; }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0 0 10px; font-size: 0.92rem; }
