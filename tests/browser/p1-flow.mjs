@@ -312,7 +312,7 @@ else {
 await rightClick(page, 'meadow');
 if ((await page.getAttribute('.anno-menu .swatch >> nth=0', 'aria-disabled')) !== 'true') failures.push('highlight colours are not greyed with nothing selected');
 await page.click('.anno-menu [data-open=text]');
-await page.click('.anno-menu [data-act=underline]');
+await page.click('.anno-menu [data-act=underline]', { force: true }); // a grey item still answers a tap with its reason
 if ((await page.textContent('.anno-menu .anno-why')).trim() !== 'Select words first') failures.push('a grey item did not say why');
 await page.click('.anno-menu [data-nav=back]');
 await page.click('.anno-menu [data-nav=more]');
