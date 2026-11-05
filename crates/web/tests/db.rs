@@ -1884,12 +1884,21 @@ async fn latest_document_opens_the_newest_filing(pool: PgPool) {
     assert_eq!(empty.status, 303);
     assert_eq!(empty.header("location"), Some("/documents"));
     let csrf = b.csrf().await;
+    let notes = upload(&mut b, &csrf, "Notes first", Some(("notes.md", "# Notes"))).await;
+    assert_eq!(notes.status, 303, "{}", notes.body);
+    assert_eq!(
+        b.get("/documents/latest").await.header("location"),
+        Some(format!("/documents/{day}_1").as_str()),
+        "with no web page yet, the newest document of any kind"
+    );
     upload(&mut b, &csrf, "One", Some(("one.html", SAMPLE))).await;
     upload(&mut b, &csrf, "Two", Some(("two.html", SAMPLE))).await;
+    upload(&mut b, &csrf, "Sources", Some(("sources.md", "# Sources"))).await;
     let latest = b.get("/documents/latest").await;
     assert_eq!(
         latest.header("location"),
-        Some(format!("/documents/{day}_2").as_str())
+        Some(format!("/documents/{day}_3").as_str()),
+        "the newest web page, not the newer text file"
     );
     assert_eq!(
         Client::new(port).get("/documents/latest").await.status,

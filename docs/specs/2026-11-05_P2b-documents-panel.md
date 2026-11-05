@@ -211,3 +211,10 @@ Owner decision in chat: "APPROVE embeds", after being told that YouTube, Instagr
 - **Upload check:** it now lists "Instagram (embedded)" and "TikTok (embedded)". An Instagram frame counts only when its address ends in `/embed` or `/embed/captioned`. A TikTok frame counts only under `/embed/`. Any other frame is reported, with a note that YouTube players cannot run inside a document, so the video should be linked instead. `CHECK_VERSION` goes to 3, so every version is checked again at the next start.
 - **Privacy:** when a document shows one of these embeds, Instagram or TikTok receives the viewer's internet address, as Google does for maps.
 - **Checks:** a unit test covers allowed Instagram account, post and reel embeds and TikTok account and video embeds. It also covers refused addresses: a profile page, a look-alike host, `tiktok.com/embedx`, a TikTok profile page, YouTube and Facebook. The policy unit tests pin `frame-src` to `FRAME_SOURCES`. A local release build was checked in the real viewer: the Instagram embed rendered its photos, and the YouTube frame was refused by the policy and reported by the check.
+
+## Owner follow-up: landing skips text files (5 November 2026, night)
+
+Owner choice in chat, option (a): "sign-in lands on the newest web-page document, so text files like SOURCES never become the landing page."
+
+- **Rule:** `/documents/latest` is used both for the landing after sign-in and for the menu's Latest document. It now opens the newest document whose latest version is a web page. With no web page at all, it opens the newest document of any kind, and with none at all, the list. Filing numbers and the documents list are unchanged.
+- **Checks:** the database test files a text document first and gets it back as the latest, since no web page exists yet. It then files two web pages and a newer text file, and gets the second web page back.
