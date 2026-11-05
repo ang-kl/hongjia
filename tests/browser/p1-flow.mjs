@@ -1,5 +1,7 @@
-// P1 browser check: sign in with the family password, consent, then every family page at the owner's
-// seven device-class viewports (light and dark). Needs a release build and a PostgreSQL database.
+// P1 and P2b browser check: sign in with the family password, consent, upload a sample document, then
+// every family page at the owner's seven device-class viewports (light and dark). On the document page
+// the management panel must sit beside the document in landscape and open as a sheet in portrait.
+// Needs a release build and a PostgreSQL database.
 // Run: DATABASE_URL=postgres://... node tests/browser/p1-flow.mjs [screenshot-folder]
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -57,6 +59,16 @@ await page.fill('input[name=device_label]', 'browser test');
 await page.click('form[action="/consent"] button[type=submit]');
 await page.waitForURL(base + '/home');
 if (!(await page.textContent('h1')).includes('Hello, delta')) failures.push('home greeting missing');
+const SAMPLE = `<!doctype html><html><head><meta charset="utf-8"><title>Sample</title>
+<style>body{font:16px system-ui;margin:24px}section{min-height:60vh}</style></head><body>
+<h1 id="top">Sample trip</h1><section id="days"><h2>Day by day</h2><label><input type="checkbox"> Book the car</label></section>
+<section id="stays"><h2>Stays</h2><p>Two bedrooms.</p></section>
+<script>document.body.dataset.ran = 'yes';</script></body></html>`;
+await page.goto(base + '/documents/new');
+await page.setInputFiles('input[name=file]', { name: 'sample-trip.html', mimeType: 'text/html', buffer: Buffer.from(SAMPLE) });
+await page.click('form[action="/documents"] button[type=submit]');
+await page.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
+const docPath = new URL(page.url()).pathname;
 const state = await setup.storageState();
 await setup.close();
 
@@ -69,7 +81,38 @@ const CLASSES = [
   ['phone-small', 375, 667, 'phone-standard'],
   ['phone-small-compact', 360, 740, 'phone-compact']
 ];
-const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
+const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
+
+// The document page: the frame fills the window; the panel is beside it (landscape or square and at
+// least 720px wide) or a sheet that Manage opens and Close shuts (portrait).
+async function checkViewer(p, width, height, problems, shot) {
+  const box = sel => p.locator(sel).first().boundingBox();
+  const visible = () => p.$eval('#panel', el => getComputedStyle(el).visibility === 'visible' && el.getBoundingClientRect().top < innerHeight - 40);
+  const frame = await box('.doc-frame');
+  const panel = await box('#panel');
+  if (!frame || !panel) { problems.push('viewer parts missing'); return; }
+  const beside = width >= height && width >= 720;
+  if (frame.height < height * 0.55) problems.push(`frame only ${Math.round(frame.height)}px tall`);
+  if (frame.y + frame.height > height + 1) problems.push('frame runs past the window');
+  if (beside) {
+    if (!(await visible())) problems.push('panel not visible beside the document');
+    if (panel.x < frame.x + frame.width - 1) problems.push('panel not beside the frame');
+    if (frame.width < width * 0.55) problems.push(`frame only ${Math.round(frame.width)}px wide`);
+    if (await p.isVisible('.manage-open')) problems.push('Manage button shown in beside mode');
+  } else {
+    if (await visible()) problems.push('sheet open before Manage was tapped');
+    if (frame.width < width * 0.85) problems.push(`frame only ${Math.round(frame.width)}px wide`);
+    await p.click('.manage-open');
+    await p.waitForTimeout(400);
+    if (!(await visible())) problems.push('Manage did not open the sheet');
+    if (shot) await p.screenshot({ path: shot });
+    await p.click('.manage-close');
+    await p.waitForTimeout(400);
+    if (await visible()) problems.push('Close did not shut the sheet');
+  }
+  const ran = await p.frameLocator('.doc-frame').locator('body').getAttribute('data-ran');
+  if (ran !== 'yes') problems.push('document script did not run in the frame');
+}
 
 for (const scheme of ['light', 'dark']) {
   for (const [name, width, height, tier] of CLASSES) {
@@ -98,7 +141,8 @@ for (const scheme of ['light', 'dark']) {
       if (result.tier !== tier) problems.push(`tier ${result.tier}, expected ${tier}`);
       if (result.scrollWidth > result.clientWidth) problems.push(`sideways scroll ${result.scrollWidth} > ${result.clientWidth}`);
       if (result.csp.length) problems.push(`CSP: ${result.csp.join('; ')}`);
-      if (shots && scheme === 'light' && ['notebook', 'phone-small'].includes(name)) await p.screenshot({ path: `${shots}/${name}-${label}.png`, fullPage: true });
+      if (shots && scheme === 'light' && ['notebook', 'phone-small'].includes(name)) await p.screenshot({ path: `${shots}/${name}-${label}.png`, fullPage: label !== 'document' });
+      if (label === 'document') await checkViewer(p, width, height, problems, shots && scheme === 'light' ? `${shots}/${name}-document-panel.png` : '');
       const tag = `${scheme} ${name} ${label}`;
       console.log(`${problems.length ? 'FAIL' : 'ok  '} ${tag}`);
       for (const problem of problems) console.log(`     ${problem}`);

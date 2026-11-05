@@ -3,7 +3,7 @@
 
 A private family review site for hongjia.org. Updated 5 November 2026.
 
-**Status: phase P1.** Without a database the site shows the placeholder page. With one (`DATABASE_URL`) and a family password, family members tap their name and type the family password; the site then offers documents (HTML and text, viewed in a locked-down frame), the login journal and location consent. Comments and review come next.
+**Status: phase P2b.** Without a database the site shows the placeholder page. With one (`DATABASE_URL`) and a family password, family members tap their name and type the family password; the site then offers documents (HTML and text, viewed in a locked-down frame that fills the window), the login journal and location consent. Each document is filed under a dated number (`2026-1105_#1`) and has a management panel beside it: hashtags, versions, an upload check, rename and permanent delete (the uploader and the owner only). Search, the globe and contents come next, then annotations and saved form fields.
 
 ## Plan and specs
 
@@ -11,6 +11,8 @@ A private family review site for hongjia.org. Updated 5 November 2026.
 - [`docs/specs/2026-11-04_P0-foundations.md`](docs/specs/2026-11-04_P0-foundations.md): phase P0 (done; Node.js placeholder).
 - [`docs/specs/2026-11-05_P0R-rust-server.md`](docs/specs/2026-11-05_P0R-rust-server.md): phase P0R, the Rust server (done).
 - [`docs/specs/2026-11-05_P1-signin-journal.md`](docs/specs/2026-11-05_P1-signin-journal.md): phase P1, sign-in and the login journal.
+- [`docs/specs/2026-11-05_P2a-documents.md`](docs/specs/2026-11-05_P2a-documents.md): phase P2a, upload and view documents.
+- [`docs/specs/2026-11-05_P2b-documents-panel.md`](docs/specs/2026-11-05_P2b-documents-panel.md): phase P2b, filing numbers, the management panel and the full-window viewer.
 
 ## Layout
 

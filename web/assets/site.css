@@ -115,6 +115,7 @@ body.app {
 
 input[type="text"], input[type="password"], input[type="number"] {
   font: inherit;
+  font-weight: 400;
   width: 100%;
   min-height: 44px;
   padding: 8px 12px;
@@ -158,18 +159,167 @@ td form { margin: 0; }
 [data-form-factor="phone"] .page { border-radius: 14px; }
 [data-size-tier="phone-compact"] .page { padding: 16px; }
 
-/* Documents (P2a). */
-.documents { padding-left: 1.1em; }
-.documents li { margin: 0 0 10px; }
-.doc-head h1 { margin-bottom: 0.2em; }
+/* Style D, the owner's choice for the interface (5 November 2026): warm off-white surfaces,
+   1px hairlines, serif section headers with right-aligned count badges, and pill hovers of 150 ms. */
+:root { --ease: cubic-bezier(0.22, 1, 0.36, 1); --soft: color-mix(in srgb, var(--ink) 8%, transparent); }
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 6px;
+  margin: 1.4em 0 0.6em;
+}
+.page .section-head h2, .section-head h2 { margin: 0; font: 400 1.2rem/1.25 Georgia, "Songti SC", "Noto Serif CJK SC", serif; }
+.count {
+  flex: none;
+  font: 600 0.78rem/1 ui-monospace, "SF Mono", Menlo, monospace;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.page a.pill, a.pill {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+a.pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--soft);
+  clip-path: inset(0 100% 0 0 round 999px);
+  transition: clip-path 150ms var(--ease);
+}
+a.pill:hover::before, a.pill:focus-visible::before { clip-path: inset(0 0 0 0 round 999px); }
+.page a.pill.solid, a.pill.solid { background: var(--ink); border-color: var(--ink); color: var(--card); }
+
+.filing { font: 600 0.85rem/1.4 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.02em; color: var(--muted); white-space: nowrap; }
+
+/* Documents list (P2b). */
+.list-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.list-head h1 { margin: 0; }
+.group .section-head { margin-top: 1.2em; }
+.rows { list-style: none; margin: 0; padding: 0; }
+.row {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, auto) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 16px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 8px;
+  transition: background-color 150ms var(--ease);
+}
+.row:hover { background: var(--soft); }
+.page .row-title { display: inline; min-height: 0; font-weight: 600; overflow-wrap: anywhere; }
+.row-meta { grid-column: 3; grid-row: 1; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+.row-tags { grid-column: 2; color: var(--muted); font-size: 0.88rem; overflow-wrap: anywhere; }
+[data-form-factor="phone"] .row { grid-template-columns: minmax(0, 1fr); padding: 10px 6px; }
+[data-form-factor="phone"] .row-meta, [data-form-factor="phone"] .row-tags { grid-column: auto; grid-row: auto; white-space: normal; }
+input[type="file"] { font: inherit; min-height: 44px; width: 100%; max-width: 100%; min-width: 0; }
+
+/* One document filling the window, with its management panel (P2b). The panel sits beside the
+   document when the window is landscape (or square) and at least 720px wide, and is a sheet opened
+   with Manage otherwise. The device tiers from site.mjs set the panel's width. */
+body.viewer-page {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  --gutter: 10px;
+  padding:
+    max(8px, env(safe-area-inset-top))
+    max(var(--gutter), env(safe-area-inset-right))
+    max(8px, env(safe-area-inset-bottom))
+    max(var(--gutter), env(safe-area-inset-left));
+}
+.viewer-page .bar { max-width: none; width: 100%; margin: 0 0 6px; }
+.viewer { display: grid; gap: 10px; min-height: 0; min-width: 0; }
+.viewer-doc { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.doc-bar { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 2px 6px; }
+.doc-title { flex: 1; min-width: 0; margin: 0; font: 400 1.15rem/1.3 Georgia, "Songti SC", "Noto Serif CJK SC", serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.viewer .notice { margin: 0 0 8px; }
 .doc-frame {
   display: block;
+  flex: 1 1 auto;
   width: 100%;
-  height: calc(100dvh - 210px);
-  min-height: 420px;
+  height: auto;
+  min-height: 0;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
   background: #fff;
 }
-[data-form-factor="phone"] .doc-frame { height: calc(100dvh - 190px); border-radius: 10px; }
-input[type="file"] { font: inherit; min-height: 44px; width: 100%; max-width: 100%; min-width: 0; }
+.panel {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 4px 16px 16px;
+  overflow-wrap: anywhere;
+}
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; }
+.panel-title { font: 400 1.05rem/1.3 Georgia, serif; color: var(--muted); }
+.panel p { color: var(--ink); margin: 0 0 0.8em; }
+.panel a { color: inherit; text-underline-offset: 3px; }
+.panel .section-head { margin-top: 1.1em; }
+.panel .stack { max-width: none; margin: 0 0 12px; }
+.facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0 0 10px; font-size: 0.92rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
+.wrap { overflow-wrap: anywhere; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.88rem; }
+.versions, .warnings { margin: 0 0 10px; padding-left: 1.1em; font-size: 0.92rem; }
+.versions li, .warnings li { margin: 0 0 6px; }
+.panel .versions a { display: inline; min-height: 0; }
+.ok { color: var(--muted) !important; }
+.danger-zone { border-top: 1px solid var(--line); padding-top: 12px; }
+button.danger { background: #a3321f; border-color: #a3321f; color: #fff; }
+
+@media (min-aspect-ratio: 1/1) and (min-width: 720px) {
+  .viewer { grid-template-columns: minmax(0, 1fr) var(--panel-width, clamp(280px, 28vw, 380px)); }
+  .manage-open, .manage-close { display: none !important; }
+}
+[data-form-factor="desktop"] .viewer { --panel-width: clamp(320px, 26vw, 400px); }
+[data-form-factor="tablet"] .viewer { --panel-width: 300px; }
+[data-form-factor="phone"] .viewer { --panel-width: 260px; }
+
+@media not all and (min-aspect-ratio: 1/1) and (min-width: 720px) {
+  .panel {
+    position: fixed;
+    z-index: 20;
+    left: max(0px, env(safe-area-inset-left));
+    right: max(0px, env(safe-area-inset-right));
+    bottom: 0;
+    max-height: 78dvh;
+    border-radius: 18px 18px 0 0;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    box-shadow: 0 -10px 30px rgb(0 0 0 / 0.18);
+    transform: translateY(105%);
+    visibility: hidden;
+    transition: transform 220ms var(--ease), visibility 0s linear 220ms;
+  }
+  .panel:target { transform: none; visibility: visible; transition: transform 220ms var(--ease); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  a.pill::before, .row, .panel, .panel:target { transition: none !important; }
+}

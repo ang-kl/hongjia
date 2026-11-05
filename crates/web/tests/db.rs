@@ -631,15 +631,27 @@ fn multipart(fields: &[(&str, &str)], file: Option<(&str, &str)>) -> String {
 }
 
 async fn upload(c: &mut Client, csrf: &str, title: &str, file: Option<(&str, &str)>) -> Reply {
-    let body = multipart(&[("csrf", csrf), ("title", title)], file);
+    send_multipart(c, "/documents", &[("csrf", csrf), ("title", title)], file).await
+}
+
+async fn send_multipart(
+    c: &mut Client,
+    path: &str,
+    fields: &[(&str, &str)],
+    file: Option<(&str, &str)>,
+) -> Reply {
+    let body = multipart(fields, file);
     let content_type = format!("multipart/form-data; boundary={BOUNDARY}");
-    c.send(
-        "POST",
-        "/documents",
-        &body,
-        &[("Content-Type", &content_type)],
-    )
-    .await
+    c.send("POST", path, &body, &[("Content-Type", &content_type)])
+        .await
+}
+
+/// Today's date in Singapore as a filing number starts, for example 2026-1105.
+async fn today(pool: &PgPool) -> String {
+    sqlx::query_scalar("SELECT to_char((now() AT TIME ZONE 'Asia/Singapore')::date, 'YYYY-MMDD')")
+        .fetch_one(pool)
+        .await
+        .unwrap()
 }
 
 const SAMPLE: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Sample</title></head><body><h1>Sample trip</h1><img data-src=\"https://example.org/p.jpg\" alt=\"photo\"><button id=\"retry\">Retry photos</button><script>document.getElementById('retry').onclick=()=>{};</script></body></html>";
@@ -656,7 +668,7 @@ async fn documents_upload_list_view_and_sandboxed_raw(pool: PgPool) {
 
     let list = o.get("/documents").await;
     assert_eq!(list.status, 200);
-    assert!(list.body.contains("sample-trip") && list.body.contains("added by delta"));
+    assert!(list.body.contains("sample-trip") && list.body.contains("v1 · delta"));
 
     let view = o.get(&location).await;
     assert_eq!(view.status, 200);
@@ -744,4 +756,265 @@ async fn document_uploads_are_checked(pool: PgPool) {
         403,
         "Origin must match"
     );
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn documents_are_filed_by_date_and_number(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let day = today(&pool).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let first = upload(&mut o, &csrf, "One", Some(("one.html", SAMPLE))).await;
+    assert_eq!(
+        first.header("location"),
+        Some(format!("/documents/{day}_1").as_str())
+    );
+    let second = upload(&mut o, &csrf, "Two", Some(("two.html", SAMPLE))).await;
+    assert_eq!(
+        second.header("location"),
+        Some(format!("/documents/{day}_2").as_str())
+    );
+
+    let view = o.get(&format!("/documents/{day}_1")).await;
+    assert_eq!(view.status, 200);
+    assert!(
+        view.body.contains(&format!("{day}_#1")),
+        "label shown with #"
+    );
+    let list = o.get("/documents").await;
+    assert!(list.body.contains(&format!("{day}_#2")) && list.body.contains(r#"class="count""#));
+
+    // The old numeric address forwards to the filing number.
+    let id: i64 = sqlx::query_scalar("SELECT id FROM documents WHERE day_no = 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let old = o.get(&format!("/documents/{id}")).await;
+    assert_eq!(old.status, 308);
+    assert_eq!(
+        old.header("location"),
+        Some(format!("/documents/{day}_1").as_str())
+    );
+    let old_raw = o.get(&format!("/documents/{id}/raw")).await;
+    assert_eq!(
+        old_raw.header("location"),
+        Some(format!("/documents/{day}_1/raw").as_str())
+    );
+    for missing in [
+        "/documents/2026-1399_1",
+        "/documents/abc",
+        "/documents/2000-0101_1",
+        "/documents/999999",
+    ] {
+        assert_eq!(o.get(missing).await.status, 404, "{missing}");
+    }
+
+    // A deleted number is never given out again.
+    let r = o
+        .post(
+            &format!("/documents/{day}_2/delete"),
+            &[("csrf", &csrf), ("confirm", "DELETE")],
+        )
+        .await;
+    assert_eq!(r.status, 303);
+    let third = upload(&mut o, &csrf, "Three", Some(("three.html", SAMPLE))).await;
+    assert_eq!(
+        third.header("location"),
+        Some(format!("/documents/{day}_3").as_str())
+    );
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn only_the_uploader_and_the_owner_change_or_delete(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let day = today(&pool).await;
+    let mut b = member(port, "beta").await;
+    let b_csrf = b.csrf().await;
+    upload(&mut b, &b_csrf, "Beta's page", Some(("b.html", SAMPLE))).await;
+    let key = format!("/documents/{day}_1");
+
+    // Another member reads it but cannot change it.
+    let mut g = member(port, "gamma").await;
+    let g_csrf = g.csrf().await;
+    let page = g.get(&key).await;
+    assert_eq!(page.status, 200);
+    assert!(
+        page.body
+            .contains("Only beta or delta can change or delete this document.")
+    );
+    assert!(!page.body.contains("/rename") && !page.body.contains("/delete"));
+    for (action, form) in [
+        (
+            "rename",
+            vec![("csrf", g_csrf.as_str()), ("title", "Mine now")],
+        ),
+        ("tags", vec![("csrf", g_csrf.as_str()), ("tags", "#x")]),
+        (
+            "delete",
+            vec![("csrf", g_csrf.as_str()), ("confirm", "DELETE")],
+        ),
+    ] {
+        assert_eq!(
+            g.post(&format!("{key}/{action}"), &form).await.status,
+            403,
+            "{action}"
+        );
+    }
+    let version = send_multipart(
+        &mut g,
+        &format!("{key}/version"),
+        &[("csrf", &g_csrf)],
+        Some(("g.html", "<p>g</p>")),
+    )
+    .await;
+    assert_eq!(version.status, 403);
+
+    // The uploader can; a stale token cannot.
+    let page = b.get(&key).await;
+    assert!(page.body.contains(&format!(r#"action="{key}/rename""#)));
+    assert_eq!(
+        b.post(
+            &format!("{key}/rename"),
+            &[("csrf", "stale"), ("title", "x")]
+        )
+        .await
+        .status,
+        403
+    );
+    let r = b
+        .post(
+            &format!("{key}/rename"),
+            &[("csrf", &b_csrf), ("title", "Renamed")],
+        )
+        .await;
+    assert_eq!(r.status, 303);
+    assert_eq!(r.header("location"), Some(format!("{key}#panel").as_str()));
+    assert!(b.get(&key).await.body.contains("Renamed"));
+
+    // The owner can too, and a delete needs the word typed exactly.
+    let mut o = owner(port).await;
+    let o_csrf = o.csrf().await;
+    assert_eq!(
+        o.post(
+            &format!("{key}/tags"),
+            &[("csrf", &o_csrf), ("tags", "#Owner")]
+        )
+        .await
+        .status,
+        303
+    );
+    let wrong = o
+        .post(
+            &format!("{key}/delete"),
+            &[("csrf", &o_csrf), ("confirm", "delete")],
+        )
+        .await;
+    assert_eq!(wrong.status, 400);
+    assert!(wrong.body.contains("Nothing was deleted"));
+    assert_eq!(b.get(&key).await.status, 200);
+    let gone = o
+        .post(
+            &format!("{key}/delete"),
+            &[("csrf", &o_csrf), ("confirm", "DELETE")],
+        )
+        .await;
+    assert_eq!(gone.status, 303);
+    assert_eq!(b.get(&key).await.status, 404);
+    assert_eq!(b.get(&format!("{key}/raw")).await.status, 404);
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM document_versions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0, "every version is removed");
+    let audit: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action = 'document deleted'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audit, 1);
+}
+
+const STACK: &str = r#"<!doctype html><html><head><title>Stack</title>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.example.net/x.js"></script></head><body><input type="checkbox"><h1>Stack</h1></body></html>"#;
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn hashtags_versions_and_the_upload_check(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let day = today(&pool).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+
+    // Typed hashtags are kept; without them, the site suggests some.
+    send_multipart(
+        &mut o,
+        "/documents",
+        &[
+            ("csrf", &csrf),
+            ("title", ""),
+            ("tags", "#Trip, #2031 trip"),
+        ],
+        Some(("a.html", SAMPLE)),
+    )
+    .await;
+    let typed = o.get(&format!("/documents/{day}_1")).await.body;
+    assert!(
+        typed.contains(r#"<span class="tag">#trip</span><span class="tag">#2031</span>"#),
+        "order kept"
+    );
+    upload(&mut o, &csrf, "", Some(("sample-trip.html", SAMPLE))).await;
+    let suggested = o.get(&format!("/documents/{day}_2")).await.body;
+    assert!(
+        suggested.contains("#sample"),
+        "suggested from the title and headings"
+    );
+
+    // A new version is shown; the first stays available.
+    let key = format!("/documents/{day}_1");
+    let r = send_multipart(
+        &mut o,
+        &format!("{key}/version"),
+        &[("csrf", &csrf)],
+        Some(("a2.html", "<p>second</p>")),
+    )
+    .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    assert_eq!(o.get(&format!("{key}/raw")).await.body, "<p>second</p>");
+    assert_eq!(o.get(&format!("{key}/raw?v=1")).await.body, SAMPLE);
+    let view = o.get(&key).await.body;
+    assert!(
+        view.contains("Version 2</a> (shown)")
+            && view.contains(r#"<h2>Versions</h2><span class="count">2</span>"#)
+    );
+    let bad = send_multipart(
+        &mut o,
+        &format!("{key}/version"),
+        &[("csrf", &csrf)],
+        Some(("a.exe", "MZ")),
+    )
+    .await;
+    assert_eq!(bad.status, 400);
+
+    // The upload check reports the design stack and what the frame blocks.
+    upload(&mut o, &csrf, "Stack", Some(("stack.html", STACK))).await;
+    let stack = o.get(&format!("/documents/{day}_3")).await.body;
+    assert!(
+        stack.contains("GSAP") && stack.contains("cdn.example.net"),
+        "check shown in the panel"
+    );
+    assert!(stack.contains("Fillable fields"));
+
+    // Versions from before the check are checked when the server starts.
+    sqlx::query("UPDATE document_versions SET checked = false, libraries = '{}'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    start(pool.clone(), config()).await;
+    let libraries: Vec<String> = sqlx::query_scalar(
+        "SELECT v.libraries FROM document_versions v JOIN documents d ON d.id = v.document_id WHERE d.day_no = 3",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(libraries, vec!["GSAP"]);
 }
