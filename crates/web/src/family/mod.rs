@@ -2,6 +2,7 @@
 //! Active only when a database is configured; otherwise the server stays the P0 placeholder.
 
 pub mod auth;
+pub mod doccheck;
 pub mod documents;
 mod handlers;
 mod pages;
@@ -151,6 +152,10 @@ pub fn security_headers() -> [(&'static str, &'static str); 8] {
 /// Prepares the database (profiles from the environment, the internal network key) and builds the router.
 pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, sqlx::Error> {
     store::sync_profiles(&pool, &config.profiles, &config.owner).await?;
+    let checked = documents::backfill_checks(&pool).await?;
+    if checked > 0 {
+        eprintln!("upload check run for {checked} earlier document versions");
+    }
     let net_key = store::net_key(&pool).await?;
     let state = FamilyState {
         pool,
@@ -185,8 +190,17 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             ),
         )
         .route("/documents/new", get(documents::new_form))
-        .route("/documents/{id}", get(documents::view))
-        .route("/documents/{id}/raw", get(documents::raw))
+        .route("/documents/{key}", get(documents::view))
+        .route("/documents/{key}/raw", get(documents::raw))
+        .route("/documents/{key}/rename", post(documents::rename))
+        .route("/documents/{key}/tags", post(documents::tags))
+        .route(
+            "/documents/{key}/version",
+            post(documents::new_version).layer(axum::extract::DefaultBodyLimit::max(
+                documents::MAX_BYTES + 64 * 1024,
+            )),
+        )
+        .route("/documents/{key}/delete", post(documents::delete))
         .route("/healthz", get(handlers::healthz))
         .route("/robots.txt", get(|| async { crate::robots() }))
         .route(

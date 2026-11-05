@@ -1,6 +1,7 @@
 //! Server-rendered pages. Every value from the database or the request is escaped.
 
-use super::documents::{DocumentRow, IFRAME_SANDBOX};
+use super::doccheck::filing_label;
+use super::documents::{DELETE_WORD, DocumentRow, IFRAME_SANDBOX, VersionRow};
 use super::store::{AuditRow, FailureCount, FailureDetail, JournalRow, Profile, ProfileStatus};
 use super::web::escape;
 
@@ -11,6 +12,17 @@ pub struct Nav<'a> {
 }
 
 fn layout(title: &str, nav: Option<&Nav>, body_attrs: &str, main: &str) -> String {
+    page_shell(title, nav, "app", body_attrs, r#"class="page""#, main)
+}
+
+fn page_shell(
+    title: &str,
+    nav: Option<&Nav>,
+    body_class: &str,
+    body_attrs: &str,
+    main_attrs: &str,
+    main: &str,
+) -> String {
     let header = match nav {
         Some(nav) => format!(
             r#"<header class="bar"><a class="brand" href="/home"><span lang="zh">洪家</span> · hongjia</a><nav><a href="/documents">Documents</a><a href="/journal">Journal</a>{owner}<form method="post" action="/signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="link">Sign out {handle}</button></form></nav></header>"#,
@@ -39,9 +51,9 @@ fn layout(title: &str, nav: Option<&Nav>, body_attrs: &str, main: &str) -> Strin
 <script type="module" src="/assets/site.mjs"></script>
 {session_script}
 </head>
-<body class="app"{body_attrs}>
+<body class="{body_class}"{body_attrs}>
 {header}
-<main class="page">
+<main {main_attrs}>
 {main}
 </main>
 </body>
@@ -331,31 +343,71 @@ pub fn privacy(owner: &str, journal_days: i32, location_days: i32) -> String {
     )
 }
 
+fn hashtags(tags: &[String]) -> String {
+    tags.iter()
+        .map(|t| format!("#{}", escape(t)))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn kind_name(kind: &str) -> &'static str {
+    if kind == "html" { "web page" } else { "text" }
+}
+
+fn kilobytes(bytes: i32) -> i32 {
+    (bytes + 1023) / 1024
+}
+
+/// The documents list in the owner's Style D: grouped by the month filed, serif section headers
+/// with count badges, hairline rows.
 pub fn documents(nav: &Nav, rows: &[DocumentRow]) -> String {
-    let items: String = if rows.is_empty() {
+    let mut groups: Vec<(&str, Vec<&DocumentRow>)> = Vec::new();
+    for row in rows {
+        match groups.last_mut() {
+            Some((month, list)) if *month == row.month => list.push(row),
+            _ => groups.push((&row.month, vec![row])),
+        }
+    }
+    let body: String = if rows.is_empty() {
         r#"<p>No documents yet.</p>"#.to_string()
     } else {
-        let list: String = rows
+        groups
             .iter()
-            .map(|d| {
+            .map(|(month, list)| {
+                let items: String = list
+                    .iter()
+                    .map(|d| {
+                        let tags = if d.tags.is_empty() {
+                            String::new()
+                        } else {
+                            format!(r#"<span class="row-tags">{}</span>"#, hashtags(&d.tags))
+                        };
+                        format!(
+                            r#"<li class="row"><span class="filing">{label}</span><a class="row-title" href="/documents/{key}">{title}</a><span class="row-meta">{kind} · v{v} · {by}</span>{tags}</li>"#,
+                            label = escape(&filing_label(&d.key)),
+                            key = escape(&d.key),
+                            title = escape(&d.title),
+                            kind = kind_name(&d.kind),
+                            v = d.version_no,
+                            by = escape(d.added_by.as_deref().unwrap_or("someone")),
+                        )
+                    })
+                    .collect();
                 format!(
-                    r#"<li><a href="/documents/{id}">{title}</a><span class="small"> · version {v} · {kind} · added by {by}, {when} (SGT)</span></li>"#,
-                    id = d.id,
-                    title = escape(&d.title),
-                    v = d.version_no,
-                    kind = if d.kind == "html" { "web page" } else { "text" },
-                    by = escape(d.uploaded_by.as_deref().unwrap_or("someone")),
-                    when = escape(&d.uploaded_at)
+                    r#"<section class="group"><div class="section-head"><h2>{month}</h2><span class="count" aria-label="{n} documents">{n}</span></div><ul class="rows">{items}</ul></section>"#,
+                    month = escape(month),
+                    n = list.len()
                 )
             })
-            .collect();
-        format!(r#"<ul class="documents">{list}</ul>"#)
+            .collect()
     };
     layout(
         "Documents",
         Some(nav),
         &format!(r#" data-csrf="{}""#, escape(nav.csrf)),
-        &format!(r#"<h1>Documents</h1>{items}<p><a href="/documents/new">Add a document</a></p>"#),
+        &format!(
+            r#"<div class="list-head"><h1>Documents</h1><a class="pill solid" href="/documents/new">Add a document</a></div>{body}"#
+        ),
     )
 }
 
@@ -365,38 +417,200 @@ pub fn document_upload(nav: &Nav, message: Option<&str>) -> String {
         Some(nav),
         &format!(r#" data-csrf="{}""#, escape(nav.csrf)),
         &format!(
-            r#"<h1>Add a document</h1>
+            r##"<h1>Add a document</h1>
 {notice}
 <form method="post" action="/documents" enctype="multipart/form-data" class="stack">
 <input type="hidden" name="csrf" value="{csrf}">
 <label>Title (optional) <input type="text" name="title" maxlength="120" placeholder="Uses the file name if left empty"></label>
+<label>Hashtags (optional) <input type="text" name="tags" maxlength="400" placeholder="#trip #2027"></label>
 <label>File <input type="file" name="file" accept=".html,.htm,.txt,.md,text/html,text/plain,text/markdown" required></label>
-<p class="small">HTML pages and text files, up to 10 MB. Pages run in a locked-down frame: their own scripts, online pictures, links and printing work, but they cannot reach your account, the family's data or other pages.</p>
+<p class="small">HTML pages and text files, up to 10 MB. Leave the hashtags empty and the site suggests some from the file. The document is filed under today's date and number, for example 2026-1105_#1.</p>
+<p class="small">Pages run in a locked-down frame: their own scripts, libraries from cdnjs, jsDelivr, unpkg and Tailwind, Google Fonts, online pictures, links and printing work, but they cannot reach your account, the family's data or other pages.</p>
 <button type="submit">Upload</button>
-</form>"#,
+</form>"##,
             notice = notice(message),
             csrf = escape(nav.csrf)
         ),
     )
 }
 
-pub fn document_view(nav: &Nav, doc: &DocumentRow) -> String {
-    layout(
-        &doc.title,
-        Some(nav),
-        &format!(r#" data-csrf="{}""#, escape(nav.csrf)),
+fn section(title: &str, count: Option<usize>, body: &str) -> String {
+    let badge = count
+        .map(|n| format!(r#"<span class="count">{n}</span>"#))
+        .unwrap_or_default();
+    format!(
+        r#"<section class="panel-section"><div class="section-head"><h2>{}</h2>{badge}</div>{body}</section>"#,
+        escape(title)
+    )
+}
+
+fn check_section(latest: Option<&VersionRow>) -> String {
+    let Some(v) = latest else {
+        return String::new();
+    };
+    if v.kind != "html" {
+        return section(
+            "Upload check",
+            None,
+            r#"<p class="small">A text file: nothing to check.</p>"#,
+        );
+    }
+    let uses = if v.libraries.is_empty() {
+        "no libraries from the design stack".to_string()
+    } else {
+        escape(&v.libraries.join(", "))
+    };
+    let style = v
+        .style_guess
+        .as_deref()
+        .map(escape)
+        .unwrap_or_else(|| "no clear match".into());
+    let warnings = if v.warnings.is_empty() {
+        r#"<p class="ok">Nothing found that will fail in the frame.</p>"#.to_string()
+    } else {
+        format!(
+            r#"<ul class="warnings">{}</ul>"#,
+            v.warnings
+                .iter()
+                .map(|w| format!("<li>{}</li>", escape(w)))
+                .collect::<String>()
+        )
+    };
+    let fields = match v.field_count {
+        0 => String::new(),
+        n => format!(
+            r#"<dt>Fillable fields</dt><dd>{n}. Saving what people fill in comes in a later update.</dd>"#
+        ),
+    };
+    section(
+        "Upload check",
+        Some(v.warnings.len()),
         &format!(
-            r#"<div class="doc-head"><h1>{title}</h1><p class="small">Version {v} · {file} · {kb} KB · added by {by}, {when} (SGT) · <a href="/documents/{id}/raw" target="_blank" rel="noopener noreferrer">open on its own</a> · <a href="/documents">all documents</a></p></div>
-<iframe class="doc-frame" src="/documents/{id}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe>"#,
-            id = doc.id,
-            title = escape(&doc.title),
+            r#"<dl class="facts"><dt>Uses</dt><dd>{uses}</dd><dt>Closest style</dt><dd>{style} <span class="small">(rough guess)</span></dd>{fields}</dl>{warnings}"#
+        ),
+    )
+}
+
+/// One document, filling the window: the document frame and the management panel beside it
+/// (landscape) or in a sheet opened with Manage (portrait).
+pub fn document_view(
+    nav: &Nav,
+    doc: &DocumentRow,
+    versions: &[VersionRow],
+    can_manage: bool,
+    owner: &str,
+    message: Option<&str>,
+) -> String {
+    let key = escape(&doc.key);
+    let csrf = escape(nav.csrf);
+    let label = escape(&filing_label(&doc.key));
+    let added_by = doc.added_by.as_deref().unwrap_or("someone");
+    let details = section(
+        "Details",
+        None,
+        &format!(
+            r#"<dl class="facts"><dt>Filing number</dt><dd class="filing">{label}</dd><dt>Added by</dt><dd>{added}</dd><dt>Latest</dt><dd>version {v} · {kind} · {kb} KB · {by}, {when} (SGT)</dd><dt>File</dt><dd class="wrap">{file}</dd></dl><p><a class="pill" href="/documents/{key}/raw" target="_blank" rel="noopener noreferrer">Open on its own</a> <a class="pill" href="/documents">All documents</a></p>"#,
+            added = escape(added_by),
             v = doc.version_no,
-            file = escape(&doc.filename),
-            kb = (doc.size_bytes + 1023) / 1024,
+            kind = kind_name(&doc.kind),
+            kb = kilobytes(doc.size_bytes),
             by = escape(doc.uploaded_by.as_deref().unwrap_or("someone")),
             when = escape(&doc.uploaded_at),
-            sandbox = IFRAME_SANDBOX
+            file = escape(&doc.filename),
         ),
+    );
+    let tag_list = if doc.tags.is_empty() {
+        r#"<p class="small">No hashtags yet.</p>"#.to_string()
+    } else {
+        format!(
+            r#"<p class="tags">{}</p>"#,
+            doc.tags
+                .iter()
+                .map(|t| format!(r#"<span class="tag">#{}</span>"#, escape(t)))
+                .collect::<String>()
+        )
+    };
+    let tag_form = if can_manage {
+        format!(
+            r#"<form method="post" action="/documents/{key}/tags" class="stack"><input type="hidden" name="csrf" value="{csrf}"><label>Edit hashtags <input type="text" name="tags" maxlength="400" value="{value}"></label><button type="submit" class="secondary">Save hashtags</button></form>"#,
+            value = hashtags(&doc.tags),
+        )
+    } else {
+        String::new()
+    };
+    let tags = section(
+        "Hashtags",
+        Some(doc.tags.len()),
+        &format!("{tag_list}{tag_form}"),
+    );
+    let version_items: String = versions
+        .iter()
+        .map(|v| {
+            format!(
+                r#"<li><a href="/documents/{key}/raw?v={n}" target="_blank" rel="noopener noreferrer">Version {n}</a>{shown} · <span class="wrap">{file}</span> · {kb} KB · {by}, {when}</li>"#,
+                n = v.version_no,
+                shown = if v.version_no == doc.version_no { " (shown)" } else { "" },
+                file = escape(&v.filename),
+                kb = kilobytes(v.size_bytes),
+                by = escape(v.uploaded_by.as_deref().unwrap_or("someone")),
+                when = escape(&v.uploaded_at),
+            )
+        })
+        .collect();
+    let version_form = if can_manage {
+        format!(
+            r#"<form method="post" action="/documents/{key}/version" enctype="multipart/form-data" class="stack"><input type="hidden" name="csrf" value="{csrf}"><label>Upload a new version <input type="file" name="file" accept=".html,.htm,.txt,.md,text/html,text/plain,text/markdown" required></label><button type="submit" class="secondary">Add version</button></form>"#
+        )
+    } else {
+        String::new()
+    };
+    let version_section = section(
+        "Versions",
+        Some(versions.len()),
+        &format!(r#"<ul class="versions">{version_items}</ul>{version_form}"#),
+    );
+    let manage = if can_manage {
+        section(
+            "Manage",
+            None,
+            &format!(
+                r#"<form method="post" action="/documents/{key}/rename" class="stack"><input type="hidden" name="csrf" value="{csrf}"><label>Title <input type="text" name="title" maxlength="120" value="{title}" required></label><button type="submit" class="secondary">Rename</button></form>
+<form method="post" action="/documents/{key}/delete" class="stack danger-zone"><input type="hidden" name="csrf" value="{csrf}"><p class="small">Deleting removes every version and the hashtags for good. There are no backups.</p><label>Type {word} to confirm <input type="text" name="confirm" autocomplete="off" required pattern="{word}" placeholder="{word}"></label><button type="submit" class="danger">Delete permanently</button></form>"#,
+                title = escape(&doc.title),
+                word = DELETE_WORD,
+            ),
+        )
+    } else {
+        let who = if added_by == owner {
+            escape(owner)
+        } else {
+            format!("{} or {}", escape(added_by), escape(owner))
+        };
+        format!(r#"<p class="small">Only {who} can change or delete this document.</p>"#)
+    };
+    let latest = versions.iter().find(|v| v.version_no == doc.version_no);
+    let main = format!(
+        r##"<div class="viewer-doc">
+<div class="doc-bar"><span class="filing">{label}</span><h1 class="doc-title">{title}</h1><a class="pill manage-open" href="#panel">Manage</a></div>
+{notice}
+<iframe class="doc-frame" src="/documents/{key}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe>
+</div>
+<aside class="panel" id="panel" aria-label="Manage this document">
+<div class="panel-head"><span class="panel-title">This document</span><a class="pill manage-close" href="#doc">Close</a></div>
+{details}{tags}{version_section}{check}{manage}
+</aside>"##,
+        title = escape(&doc.title),
+        notice = notice(message),
+        sandbox = IFRAME_SANDBOX,
+        check = check_section(latest),
+    );
+    page_shell(
+        &doc.title,
+        Some(nav),
+        "app viewer-page",
+        &format!(r#" data-csrf="{csrf}""#),
+        r#"class="viewer" id="doc""#,
+        &main,
     )
 }
 
