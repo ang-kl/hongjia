@@ -293,6 +293,8 @@ export function createInk(api) {
   const widthRow = el('div', { className: 'ink-row' });
   for (const w of WIDTHS) widthRow.append(el('button', { type: 'button', className: 'ink-button ink-width', title: `Line ${w}`, ariaLabel: `Line width ${w}`, ariaPressed: 'false', dataset: { inkWidth: String(w) } }, el('span', { className: `ink-line w${w}`, ariaHidden: 'true' })));
   widthRow.append(
+    // D3: the loupe follows the pen while drawing.
+    el('button', { type: 'button', className: 'ink-button ink-text', textContent: 'Loupe', title: 'Loupe: magnify where the pen is', ariaPressed: 'false', dataset: { inkLoupe: '' } }),
     el('button', { type: 'button', className: 'ink-button ink-text', textContent: 'Undo', dataset: { inkUndo: '' } }),
     el('button', { type: 'button', className: 'ink-button ink-text ink-done', textContent: 'Done', dataset: { inkDone: '' } }));
   bar.append(toolRow, colorRow, widthRow);
@@ -308,6 +310,7 @@ export function createInk(api) {
     for (const b of bar.querySelectorAll('[data-ink-tool]')) b.setAttribute('aria-pressed', String(b.dataset.inkTool === tool));
     for (const b of bar.querySelectorAll('[data-ink-color]')) b.setAttribute('aria-pressed', String(b.dataset.inkColor === api.color()));
     for (const b of bar.querySelectorAll('[data-ink-width]')) b.setAttribute('aria-pressed', String(Number(b.dataset.inkWidth) === width));
+    bar.querySelector('[data-ink-loupe]')?.setAttribute('aria-pressed', String(Boolean(api.loupeOn?.())));
     layer.dataset.tool = tool;
     live.setAttribute('data-color', api.color());
   };
@@ -343,6 +346,7 @@ export function createInk(api) {
     showLive();
   });
   layer.addEventListener('pointermove', event => {
+    if (api.loupeOn?.()) { const at = inFrame(event); api.loupeMove?.(at.x, at.y); }
     if (scroll && event.pointerId === scroll.id) {
       api.toFrame({ type: 'hj:scrollby', dx: scroll.x - event.clientX, dy: scroll.y - event.clientY });
       scroll.x = event.clientX; scroll.y = event.clientY;
@@ -411,6 +415,7 @@ export function createInk(api) {
     else if (button.dataset.inkColor) api.setColor(button.dataset.inkColor);
     else if (button.dataset.inkWidth) width = Number(button.dataset.inkWidth);
     else if ('inkUndo' in button.dataset) api.announce((await api.undo()) ? 'Last drawing removed.' : 'Nothing of yours to undo.');
+    else if ('inkLoupe' in button.dataset) api.toggleLoupe?.();
     else if ('inkDone' in button.dataset) { exit(); return; }
     paint();
   });

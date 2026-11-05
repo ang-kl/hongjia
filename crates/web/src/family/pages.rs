@@ -216,6 +216,7 @@ fn kind_word(kind: &str) -> &'static str {
         "stamp" => "Stamp",
         "ink" => "Drawing",
         "shape" => "Shape",
+        "signature" => "Signature",
         _ => "Comment",
     }
 }
@@ -476,7 +477,11 @@ fn hashtags(tags: &[String]) -> String {
 }
 
 fn kind_name(kind: &str) -> &'static str {
-    if kind == "html" { "web page" } else { "text" }
+    match kind {
+        "html" => "web page",
+        "picture" => "picture",
+        _ => "text",
+    }
 }
 
 fn kilobytes(bytes: i32) -> i32 {
@@ -548,8 +553,8 @@ pub fn document_upload(nav: &Nav, message: Option<&str>) -> String {
 <input type="hidden" name="csrf" value="{csrf}">
 <label>Title (optional) <input type="text" name="title" maxlength="120" placeholder="Uses the file name if left empty"></label>
 <label>Hashtags (optional) <input type="text" name="tags" maxlength="400" placeholder="#trip #2027"></label>
-<label>File <input type="file" name="file" accept=".html,.htm,.txt,.md,text/html,text/plain,text/markdown" required></label>
-<p class="small">HTML pages and text files, up to 10 MB. Leave the hashtags empty and the site suggests some from the file. The document is filed under today's date and number, for example 2026-1105_#1.</p>
+<label>File <input type="file" name="file" accept=".html,.htm,.txt,.md,.jpg,.jpeg,.png,.webp,text/html,text/plain,text/markdown,image/jpeg,image/png,image/webp" required></label>
+<p class="small">HTML pages, text files and pictures (JPEG, PNG or WebP), up to 10 MB. On an iPhone, choose a photo from the library; Safari sends it as a JPEG. Leave the hashtags empty and the site suggests some from the file. The document is filed under today's date and number, for example 2026-1105_#1.</p>
 <p class="small">Pages run in a locked-down frame: their own scripts, libraries from cdnjs, jsDelivr, unpkg and Tailwind, Google Fonts, online pictures, links and printing work, but they cannot reach your account, the family's data or other pages.</p>
 <button type="submit">Upload</button>
 </form>"##,
@@ -573,6 +578,23 @@ fn check_section(latest: Option<&VersionRow>) -> String {
     let Some(v) = latest else {
         return String::new();
     };
+    if v.kind == "picture" {
+        return section(
+            "Upload check",
+            None,
+            &format!(
+                r#"<dl class="facts"><dt>Picture</dt><dd>{w} x {h} ({kind})</dd></dl><p class="ok">Shown as it is; every mark, drawing and signature works on it.</p>"#,
+                w = v.image_width.unwrap_or(0),
+                h = v.image_height.unwrap_or(0),
+                kind = escape(
+                    &v.image_type
+                        .as_deref()
+                        .unwrap_or("jpeg")
+                        .to_ascii_uppercase()
+                ),
+            ),
+        );
+    }
     if v.kind != "html" {
         return section(
             "Upload check",
@@ -744,7 +766,7 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) 
             quote(),
             escape(&row.text)
         ),
-        "stamp" => format!(
+        "stamp" | "signature" => format!(
             r#"<p class="annotation-quote" data-annotation-jump>{tag} {}</p>"#,
             escape(&row.label())
         ),
@@ -763,7 +785,8 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) 
             with_mentions(&row.body, &row.mentions)
         )
     };
-    let edit = if review.can_edit(row) {
+    // A signature is moved, never edited (D3).
+    let edit = if review.can_edit(row) && row.kind != "signature" {
         r#"<button type="button" class="link" data-annotation-edit>Edit</button>"#
     } else {
         ""
@@ -802,6 +825,11 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) 
                 escape(points),
                 row.ref_height.map(|h| h.to_string()).unwrap_or_default()
             ),
+            // D3: a placed signature's drawn strokes (a typed one is in data-text).
+            _ if row.kind == "signature" => format!(
+                r#" data-points="{}""#,
+                escape(row.points.as_deref().unwrap_or(""))
+            ),
             _ => String::new(),
         },
         author = escape(row.author.as_deref().unwrap_or("someone")),
@@ -825,7 +853,7 @@ fn annotations_section(key: &str, csrf: &str, review: &Review) -> String {
     };
     format!(
         r#"<section class="panel-section" id="annotations"><div class="section-head"><h2>Annotations</h2><span class="count" data-annotation-count>{n}</span></div>
-<p class="small">Right-click the document (press and hold on a touch screen, or tap twice with the Pencil) to highlight, underline, strike through, insert or replace text, add a note, a text box or a stamp, or draw: Draw, Sketch (rough circles, boxes, lines and arrows become clean shapes), Shapes and Eraser. Or select text and press Comment. Type @ and a name to mention someone. Everyone can mark up; you can edit, move and delete your own.</p>
+<p class="small">Right-click the document (press and hold on a touch screen, or tap twice with the Pencil) to highlight, underline, strike through, insert or replace text, add a note, a text box, a stamp or your signature, or draw: Draw, Sketch (rough circles, boxes, lines and arrows become clean shapes), Shapes and Eraser. Loupe magnifies. Or select text and press Comment. Type @ and a name to mention someone. Everyone can mark up; you can edit, move and delete your own.</p>
 <ol class="annotations" data-annotations>{items}</ol><p class="small" data-annotations-empty{empty}>No annotations yet.</p>
 <form method="post" action="/documents/{key}/annotations" class="stack composer" data-composer><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="quote" value=""><input type="hidden" name="prefix" value=""><input type="hidden" name="suffix" value=""><input type="hidden" name="field_key" value=""><input type="hidden" name="field_label" value="">
 <p class="composer-target" data-composer-target hidden></p>
@@ -954,7 +982,7 @@ pub fn document_view(
         .collect();
     let version_form = if can_manage {
         format!(
-            r#"<form method="post" action="/documents/{key}/version" enctype="multipart/form-data" class="stack"><input type="hidden" name="csrf" value="{csrf}"><label>Upload a new version <input type="file" name="file" accept=".html,.htm,.txt,.md,text/html,text/plain,text/markdown" required></label><button type="submit" class="secondary">Add version</button></form>"#
+            r#"<form method="post" action="/documents/{key}/version" enctype="multipart/form-data" class="stack"><input type="hidden" name="csrf" value="{csrf}"><label>Upload a new version <input type="file" name="file" accept=".html,.htm,.txt,.md,.jpg,.jpeg,.png,.webp,text/html,text/plain,text/markdown,image/jpeg,image/png,image/webp" required></label><button type="submit" class="secondary">Add version</button></form>"#
         )
     } else {
         String::new()

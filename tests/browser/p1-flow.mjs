@@ -1,4 +1,4 @@
-// P1 and P2b browser check: sign in with the family password, consent, upload a sample document, then
+// P1, P2b and D1 to D3 browser check: sign in with the family password, consent, upload a sample document, then
 // every family page at the owner's seven device-class viewports (light and dark). On the document page
 // the management panel must sit beside the document in landscape and open as a sheet in portrait.
 // Needs a release build and a PostgreSQL database.
@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { mkdir } from 'node:fs/promises';
+import { deflateSync } from 'node:zlib';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -487,7 +488,200 @@ for (const [vw, vh, shot] of [[820, 1180, 'tablet-portrait-drawings.png'], [375,
   if (shots) await pp.screenshot({ path: `${shots}/phone-drawing.png` });
   await phone.close();
 }
-await page.reload({ waitUntil: 'networkidle' });
+// 5. D3: a signature drawn on the pad and placed with its caption; a saved signature placed straight
+// away; another member's typed signature (theirs only); the loupe; and a picture, with a sticky note
+// and a drawing that keep their places after a reload and on a phone.
+const CRC = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = bytes => { let c = 0xffffffff; for (const b of bytes) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+function makePng(w, h) {
+  const chunk = (type, data) => {
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    out.write(type, 4, 'ascii');
+    data.copy(out, 8);
+    out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
+    return out;
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const rows = Buffer.alloc(h * (1 + w * 3));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const at = y * (1 + w * 3) + 1 + x * 3;
+    rows[at] = 40 + (x * 180) / w; rows[at + 1] = 120 + (y * 100) / h; rows[at + 2] = 90;
+  }
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
+}
+const CAPTION = /^Signed by (\w+), \d\d [A-Z][a-z]{2} \d{4}, \d\d:\d\d \(SGT\)$/;
+const signatures = p => p.locator('li[data-kind=signature]').count();
+const signatureAdded = (p, before) => p.waitForFunction(n => document.querySelectorAll('li[data-kind=signature]').length > n, before, { timeout: 5000 }).then(() => true, () => false);
+// Signing happens on its own document, with the lines far apart: a placed signature covers the
+// words after it, and a right-click on a placed mark gives the browser's own menu (D1).
+const SIGN = `<!doctype html><html><head><meta charset="utf-8"><title>Signing</title>
+<style>body{font:16px system-ui;margin:24px}p{margin:0 0 150px}</style></head><body>
+<h1>Signing sample</h1><p>Copper agreement line for the first signer.</p><p>Thistle line for signing again.</p>
+<p>Velvet line for the other member.</p><p>Lantern orchard harbour meadow willow line for the loupe.</p></body></html>`;
+await page.goto(base + '/documents/new');
+await page.setInputFiles('input[name=file]', { name: 'signing.html', mimeType: 'text/html', buffer: Buffer.from(SIGN) });
+await page.click('form[action="/documents"] button[type=submit]');
+await page.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
+const signPath = new URL(page.url()).pathname;
+await page.waitForTimeout(800);
+{
+  await rightClick(page, 'Copper');
+  await page.click('.anno-menu [data-act=signature]');
+  if (!(await page.waitForSelector('[data-sig-pad]:not([hidden])', { timeout: 3000 }).then(() => true, () => false))) failures.push('the signature pad did not open without a saved signature');
+  const pad = await page.locator('[data-sig-area]').boundingBox();
+  await drag(page, Array.from({ length: 24 }, (_, i) => ({ x: pad.x + 40 + i * 14, y: pad.y + pad.height * 0.55 + Math.sin(i / 2) * 14 })));
+  await drag(page, [{ x: pad.x + 140, y: pad.y + 18 }, { x: pad.x + 150, y: pad.y + pad.height * 0.5 }, { x: pad.x + 170, y: pad.y + pad.height * 0.75 }]);
+  if (shots) await page.screenshot({ path: `${shots}/notebook-signature-pad.png` });
+  const before = await signatures(page);
+  await page.click('[data-sig-save]');
+  if (!(await signatureAdded(page, before))) failures.push('the drawn signature was not placed');
+  await page.waitForTimeout(400);
+  const caption = (await page.locator('.ov-signature .sig-caption').first().textContent().catch(() => '')) || '';
+  const who = CAPTION.exec(caption);
+  if (!who || who[1] !== 'delta') failures.push(`signature caption: "${caption}"`);
+  if ((await page.locator('.ov-signature .sig-svg line').count()) < 5) failures.push('the placed signature shows no strokes');
+  if (await page.isVisible('[data-sig-pad]')) failures.push('the pad stayed open after saving');
+  if (await page.locator('li[data-kind=signature] [data-annotation-edit]').count()) failures.push('a signature offers Edit (it is moved, never edited)');
+  if (shots) await page.screenshot({ path: `${shots}/notebook-signature-placed.png` });
+  // With a signature saved, Signature places it at once.
+  const again = await signatures(page);
+  await rightClick(page, 'Thistle');
+  await page.click('.anno-menu [data-act=signature]');
+  if (!(await signatureAdded(page, again))) failures.push('a saved signature was not placed straight away');
+  if (await page.isVisible('[data-sig-pad]')) failures.push('the pad opened although a signature was saved');
+}
+{
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const bp = await signIn(ctx, 'beta');
+  await bp.goto(base + signPath, { waitUntil: 'networkidle' });
+  await bp.waitForTimeout(600);
+  await rightClick(bp, 'Velvet');
+  await bp.click('.anno-menu [data-act=signature]');
+  if (!(await bp.waitForSelector('[data-sig-pad]:not([hidden])', { timeout: 3000 }).then(() => true, () => false))) failures.push('another member got no pad (they have no signature of their own)');
+  await bp.click('[data-sig-tab=typed]');
+  await bp.fill('[data-sig-input]', 'Invented Name');
+  const before = await signatures(bp);
+  await bp.click('[data-sig-save]');
+  if (!(await signatureAdded(bp, before))) failures.push('the typed signature was not placed');
+  await bp.waitForTimeout(400);
+  const typed = bp.locator('.ov-signature', { has: bp.locator('.sig-typed', { hasText: 'Invented Name' }) });
+  const caption = (await typed.locator('.sig-caption').textContent().catch(() => '')) || '';
+  if (CAPTION.exec(caption)?.[1] !== 'beta') failures.push(`typed signature caption: "${caption}"`);
+  if ((await bp.locator('.ov-signature[data-own=true]').count()) !== 1) failures.push('the other member could move signatures that are not theirs');
+  await ctx.close();
+}
+// The loupe: from the menu; it follows the pointer, magnifies 3 times, and closes with Escape or a click.
+{
+  const lens = () => rawFrame(page).evaluate(() => {
+    const l = document.querySelector('[data-hj-loupe]');
+    if (!l || getComputedStyle(l).display === 'none') return null;
+    const r = l.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, transform: l.firstElementChild.style.transform };
+  });
+  const frameBox = await page.locator('.doc-frame').boundingBox();
+  await rightClick(page, 'Lantern');
+  await page.click('.anno-menu [data-act=loupe]');
+  await page.waitForTimeout(250);
+  if (!(await page.isVisible('[data-loupe-chip]'))) failures.push('the loupe controls did not show');
+  {
+    const chip = await page.locator('[data-loupe-chip]').boundingBox();
+    const close = await page.locator('[data-loupe-close]').boundingBox();
+    if (!chip || !close || close.x + close.width > chip.x + chip.width + 1 || chip.x < 0 || chip.x + chip.width > 1440) failures.push('the loupe controls are cut off');
+  }
+  const a = await textPoint(page, 'orchard');
+  await page.mouse.move(a.x, a.y);
+  await page.waitForTimeout(250);
+  const first = await lens();
+  if (!first || Math.abs(frameBox.x + 1 + first.x - a.x) > 3 || Math.abs(frameBox.y + 1 + first.y - a.y) > 3) failures.push(`the loupe is not under the pointer (${JSON.stringify(first)} vs ${JSON.stringify(a)})`);
+  if (shots) await page.screenshot({ path: `${shots}/notebook-loupe.png` });
+  const b = await textPoint(page, 'harbour');
+  await page.mouse.move(b.x, b.y);
+  await page.waitForTimeout(250);
+  const second = await lens();
+  if (!second || Math.abs(second.x - first.x) < 20) failures.push('the loupe did not follow the pointer');
+  if (!/scale\(2\)/.test(second?.transform || '')) failures.push('the loupe does not start at 2 times');
+  await page.click('[data-loupe-zoom="3"]');
+  await page.mouse.move(a.x, a.y);
+  await page.waitForTimeout(250);
+  if (!/scale\(3\)/.test((await lens())?.transform || '')) failures.push('3× did not magnify 3 times');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  if ((await lens()) || (await page.isVisible('[data-loupe-chip]'))) failures.push('Escape did not close the loupe');
+  await rightClick(page, 'Lantern');
+  await page.click('.anno-menu [data-act=loupe]');
+  await page.waitForTimeout(250);
+  await page.mouse.click(a.x, a.y);
+  await page.waitForTimeout(300);
+  if ((await lens()) || (await page.isVisible('[data-loupe-chip]'))) failures.push('a click in the document did not close the loupe');
+  if (await page.locator('[data-loupe-chip]').isVisible()) await page.click('[data-loupe-close]');
+}
+// A picture: shown in the frame, with a sticky note and a drawing that keep their places.
+const PICTURE = makePng(240, 160);
+await page.goto(base + '/documents/new');
+await page.setInputFiles('input[name=file]', { name: 'Garden plan.png', mimeType: 'image/png', buffer: PICTURE });
+await page.click('form[action="/documents"] button[type=submit]');
+await page.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
+const picturePath = new URL(page.url()).pathname;
+await page.waitForTimeout(800);
+const pictureAt = async p => {
+  const box = await p.locator('.doc-frame').boundingBox();
+  const r = await rawFrame(p).evaluate(() => { const b = document.getElementById('picture').getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; });
+  return { x: box.x + 1 + r.x, y: box.y + 1 + r.y, w: r.w, h: r.h };
+};
+const relTo = (o, q) => o && q && { x: (o.x - q.x) / q.w, y: (o.y - q.y) / q.h };
+let notePlace = null, inkPlace = null;
+{
+  const natural = await rawFrame(page).evaluate(() => document.getElementById('picture')?.naturalWidth);
+  if (natural !== 240) failures.push(`the picture did not show in the frame (natural width ${natural})`);
+  if (!(await page.textContent('#panel')).includes('240 x 160 (PNG)')) failures.push('the panel does not report the picture size');
+  let pic = await pictureAt(page);
+  await page.mouse.click(pic.x + pic.w * 0.3, pic.y + pic.h * 0.4, { button: 'right' });
+  await page.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => failures.push('right-click on a picture opened no menu'));
+  const notes = await page.locator('li[data-kind=note]').count();
+  await page.click('.anno-menu [data-act=note]');
+  await fill(page, 'Invented note on the picture');
+  await page.waitForFunction(n => document.querySelectorAll('li[data-kind=note]').length > n, notes, { timeout: 5000 }).catch(() => failures.push('no note on the picture'));
+  await page.mouse.click(pic.x + pic.w * 0.6, pic.y + pic.h * 0.7, { button: 'right' });
+  await page.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => {});
+  await page.click('.anno-menu [data-act=ink][data-tool=draw]');
+  const drawings = await inkCount(page, 'li[data-kind=ink]');
+  await drag(page, Array.from({ length: 16 }, (_, i) => ({ x: pic.x + pic.w * 0.55 + i * 8, y: pic.y + pic.h * 0.7 + Math.sin(i / 2) * 8 })));
+  if (!(await inkAdded(page, 'li[data-kind=ink]', drawings))) failures.push('no drawing on the picture');
+  await page.keyboard.press('Escape');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(800);
+  pic = await pictureAt(page);
+  notePlace = relTo(await page.locator('.ov-note').first().boundingBox(), pic);
+  inkPlace = relTo(await groupBox(page, 'li[data-kind=ink]'), pic);
+  if (!notePlace || Math.abs(notePlace.x - 0.3) > 0.02 || Math.abs(notePlace.y - 0.4) > 0.02) failures.push(`the note moved on the picture after a reload (${JSON.stringify(notePlace)})`);
+  if (!inkPlace || inkPlace.x < 0.5 || inkPlace.x > 0.6 || inkPlace.y < 0.6 || inkPlace.y > 0.72) failures.push(`the drawing moved on the picture after a reload (${JSON.stringify(inkPlace)})`);
+}
+{
+  const phone = await browser.newContext({ viewport: { width: 375, height: 667 }, hasTouch: true, isMobile: true, deviceScaleFactor: shots ? 2 : 1, storageState: await setup.storageState() });
+  const pp = await phone.newPage();
+  await pp.goto(base + picturePath, { waitUntil: 'networkidle' });
+  await pp.waitForTimeout(900);
+  const pic = await pictureAt(pp);
+  const note = relTo(await pp.locator('.ov-note').first().boundingBox(), pic);
+  const drawn = relTo(await groupBox(pp, 'li[data-kind=ink]'), pic);
+  if (!note || !notePlace || Math.abs(note.x - notePlace.x) > 0.03 || Math.abs(note.y - notePlace.y) > 0.03) failures.push(`on a phone the note left its place on the picture (${JSON.stringify(note)} vs ${JSON.stringify(notePlace)})`);
+  if (!drawn || !inkPlace || Math.abs(drawn.x - inkPlace.x) > 0.03 || Math.abs(drawn.y - inkPlace.y) > 0.03) failures.push(`on a phone the drawing left its place on the picture (${JSON.stringify(drawn)} vs ${JSON.stringify(inkPlace)})`);
+  if (shots) await pp.screenshot({ path: `${shots}/phone-picture.png` });
+  // The loupe's controls fit a phone.
+  await pp.mouse.click(pic.x + pic.w * 0.5, pic.y + pic.h * 0.2, { button: 'right' });
+  await pp.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => failures.push('no menu on the phone picture'));
+  await pp.click('.anno-menu [data-act=loupe]');
+  await pp.waitForTimeout(250);
+  const chip = await pp.locator('[data-loupe-chip]').boundingBox();
+  const close = await pp.locator('[data-loupe-close]').boundingBox();
+  if (!chip || !close || chip.x < 0 || chip.x + chip.width > 375 || close.x + close.width > chip.x + chip.width + 1) failures.push(`the loupe controls do not fit a phone (${JSON.stringify(chip)})`);
+  await pp.click('[data-loupe-close]');
+  await phone.close();
+}
+
+await page.goto(base + sketchPath, { waitUntil: 'networkidle' });
 await page.waitForTimeout(600);
 const expectedDrawings = await page.locator('.ink-layer g').count();
 
@@ -574,7 +768,7 @@ async function checkFabs(p, label, width, height, problems, shot) {
   if (csp.length) problems.push(`CSP after the buttons: ${csp.join('; ')}`);
 }
 
-const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['sketch', sketchPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
+const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['sketch', sketchPath, true], ['signing', signPath, true], ['picture', picturePath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
 
 // The menu button (bottom left) on every signed-in page: inside the window, at least 44px, and its
 // panel lists Latest document, Documents (which folds open to the documents), Journal and Settings

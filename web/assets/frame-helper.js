@@ -121,6 +121,19 @@
 
   // A number between lo and hi.
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+
+  // The loupe (D3): a round lens of `size` pixels centred on the pointer (cx, cy) in the viewport;
+  // its copy of the page is scaled by `zoom` and moved so the point under the pointer sits in the
+  // lens's centre. On a touch screen the lens sits above the finger so the finger does not hide it.
+  function loupeLayout(cx, cy, scrollX, scrollY, zoom, size, touch) {
+    var half = size / 2;
+    var lift = touch ? size * 0.75 : 0;
+    var docX = cx + scrollX, docY = cy + scrollY;
+    return {
+      left: cx - half, top: cy - half - lift,
+      tx: half - docX * zoom, ty: half - docY * zoom
+    };
+  }
   /* PURE END */
 
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -357,7 +370,7 @@
     yellow: ['#ffe08a', '#b58900'], green: ['#bdf0b5', '#2e8b3a'], blue: ['#c4ddff', '#2f66c8'],
     pink: ['#ffc8e1', '#c2357f'], orange: ['#ffd3a6', '#cf6200']
   };
-  var PLACED = { note: 1, textbox: 1, stamp: 1 };
+  var PLACED = { note: 1, textbox: 1, stamp: 1, signature: 1 };
   var DRAWN = { ink: 1, shape: 1 };
   var anchors = [];
   var style = null;
@@ -661,9 +674,83 @@
   }, true);
   document.addEventListener('pointerleave', hideRing, true);
 
+  // The loupe (D3). The page chooses the magnification; the lens shows a copy of this document's own
+  // content (its scripts removed), so nothing the family wrote over the frame enters the document.
+  // It follows the mouse, the Pencil (hovering or drawing) and a finger; a click or a tap closes
+  // it, and so does Escape. Very long pages are refused: a copy that large would be slow.
+  var LOUPE_SIZE = 180, LOUPE_MAX_ELEMENTS = 20000;
+  var loupe = { zoom: 0, lens: null, inner: null, last: null, down: null, touch: false };
+  function loupeEnsure() {
+    if (loupe.lens) return true;
+    if (!document.body || document.body.getElementsByTagName('*').length > LOUPE_MAX_ELEMENTS) return false;
+    var lens = document.createElement('div');
+    lens.setAttribute('data-hj-loupe', '');
+    var bg = getComputedStyle(document.body).backgroundColor;
+    if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') bg = getComputedStyle(document.documentElement).backgroundColor;
+    if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') bg = '#fff';
+    var size = Math.min(LOUPE_SIZE, Math.round(window.innerWidth * 0.45));
+    lens.style.cssText = 'position:fixed;z-index:2147483647;width:' + size + 'px;height:' + size + 'px;border-radius:50%;overflow:hidden;'
+      + 'pointer-events:none;display:none;border:2px solid #14373e;box-shadow:0 8px 28px rgba(0,0,0,.28);background:' + bg;
+    var inner = document.createElement('div');
+    inner.style.cssText = 'position:absolute;left:0;top:0;transform-origin:0 0;width:' + document.documentElement.clientWidth + 'px';
+    var copy = document.body.cloneNode(true);
+    Array.prototype.forEach.call(copy.querySelectorAll('script, [data-hj-loupe], [data-hj-ring]'), function (el) { el.parentNode.removeChild(el); });
+    copy.setAttribute('aria-hidden', 'true');
+    inner.appendChild(copy);
+    lens.appendChild(inner);
+    document.documentElement.appendChild(lens);
+    loupe.lens = lens; loupe.inner = inner; loupe.size = size;
+    return true;
+  }
+  function loupeAt(x, y, touch) {
+    if (!loupe.zoom || !loupe.lens) return;
+    loupe.last = { x: x, y: y, touch: !!touch };
+    var at = loupeLayout(x, y, window.scrollX, window.scrollY, loupe.zoom, loupe.size, touch);
+    loupe.lens.style.left = at.left + 'px';
+    loupe.lens.style.top = at.top + 'px';
+    loupe.inner.style.transform = 'translate(' + at.tx + 'px,' + at.ty + 'px) scale(' + loupe.zoom + ')';
+    loupe.lens.style.display = 'block';
+  }
+  function loupeOpen(zoom) {
+    if (!loupeEnsure()) { send({ type: 'hj:loupe', zoom: 0, reason: 'long' }); return; }
+    loupe.zoom = zoom;
+    document.documentElement.style.touchAction = 'none';
+    var last = loupe.last || { x: window.innerWidth / 2, y: window.innerHeight / 3 };
+    loupeAt(last.x, last.y, last.touch);
+  }
+  function loupeClose(tell) {
+    loupe.zoom = 0;
+    loupe.down = null;
+    if (loupe.lens && loupe.lens.parentNode) loupe.lens.parentNode.removeChild(loupe.lens);
+    loupe.lens = loupe.inner = null;
+    document.documentElement.style.touchAction = '';
+    if (tell) send({ type: 'hj:loupe', zoom: 0 });
+  }
+  document.addEventListener('pointermove', function (event) {
+    var touch = event.pointerType === 'touch';
+    if (loupe.zoom) loupeAt(event.clientX, event.clientY, touch);
+    else loupe.last = { x: event.clientX, y: event.clientY, touch: touch }; // where it opens next
+  }, true);
+  document.addEventListener('pointerdown', function (event) {
+    if (!loupe.zoom) return;
+    loupe.down = { x: event.clientX, y: event.clientY };
+    loupeAt(event.clientX, event.clientY, event.pointerType === 'touch');
+  }, true);
+  document.addEventListener('pointerup', function (event) {
+    if (!loupe.zoom || !loupe.down) return;
+    var still = Math.abs(event.clientX - loupe.down.x) <= 6 && Math.abs(event.clientY - loupe.down.y) <= 6;
+    loupe.down = null;
+    if (still) { swallowClick = Date.now(); loupeClose(true); }
+  }, true);
+  document.addEventListener('keydown', function (event) {
+    if (loupe.zoom && event.key === 'Escape') { event.preventDefault(); loupeClose(true); }
+  }, true);
+  window.addEventListener('scroll', function () { if (loupe.zoom && loupe.last) loupeAt(loupe.last.x, loupe.last.y, loupe.last.touch); }, true);
+  window.addEventListener('resize', function () { if (loupe.zoom) { var z = loupe.zoom; loupeClose(false); loupeOpen(z); } });
+
   function text(v, n) { return typeof v === 'string' ? clip(v, n) : ''; }
   function fractionOf(v) { var n = Number(v); return isFinite(n) ? clamp(n, 0, 1) : 0; }
-  var KINDS = { comment: 1, highlight: 1, underline: 1, strike: 1, insert: 1, replace: 1, note: 1, textbox: 1, stamp: 1, ink: 1, shape: 1 };
+  var KINDS = { comment: 1, highlight: 1, underline: 1, strike: 1, insert: 1, replace: 1, note: 1, textbox: 1, stamp: 1, ink: 1, shape: 1, signature: 1 };
   window.addEventListener('message', function (event) {
     if (!framed || event.source !== window.parent) return;
     var d = event.data;
@@ -698,6 +785,10 @@
         type: 'hj:located', req: d.req, path: place.path, fx: Math.round(place.fx * 10000) / 10000, fy: Math.round(place.fy * 10000) / 10000,
         bx: Math.round(b.x * 10) / 10, by: Math.round(b.y * 10) / 10, bw: Math.round(b.w * 10) / 10, bh: Math.round(b.h * 10) / 10
       });
+    } else if (d.type === 'hj:loupe' && (d.zoom === 0 || d.zoom === 2 || d.zoom === 3)) {
+      if (d.zoom) loupeOpen(d.zoom); else loupeClose(false);
+    } else if (d.type === 'hj:loupe-at' && isFinite(d.x) && isFinite(d.y)) {
+      loupeAt(clamp(Number(d.x), 0, window.innerWidth), clamp(Number(d.y), 0, window.innerHeight), false);
     } else if (d.type === 'hj:scrollby' && isFinite(d.dx) && isFinite(d.dy)) {
       // The page's drawing surface covers the frame; a wheel or a finger there scrolls the document.
       window.scrollBy(clamp(Number(d.dx), -5000, 5000), clamp(Number(d.dy), -5000, 5000));
