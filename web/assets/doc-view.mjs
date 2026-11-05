@@ -781,7 +781,9 @@ function start() {
     }
   };
   const redactRefusal = code => code === '403' ? 'Only the person who added this document, or the owner, can redact it.'
-    : code === '422' ? 'Pictures cannot be redacted yet.' : 'Not marked; please try again.';
+    : code === '422' ? 'Pictures cannot be redacted yet.'
+    : code === '409' ? 'Not marked: these words cross formatting (bold, a link or a table) in the file. Select plain words, or a shorter piece.'
+    : 'Not marked; please try again.';
   menu.addEventListener('click', event => {
     const button = event.target.closest('button[data-act]');
     if (!button || button.disabled || !context) return;

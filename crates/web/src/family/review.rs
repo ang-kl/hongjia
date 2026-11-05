@@ -702,6 +702,22 @@ fn status(code: StatusCode) -> Response {
     code.into_response()
 }
 
+/// Whether a redaction mark's words can be found in the stored text of the document's latest
+/// version, exactly as applying it will look for them.
+async fn text_holds(state: &FamilyState, document_id: i64, mark: &Mark) -> sqlx::Result<bool> {
+    let content: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT content FROM document_versions WHERE document_id = $1 ORDER BY version_no DESC LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let Some(content) = content else {
+        return Ok(false);
+    };
+    let model = super::redact::text_model(&String::from_utf8_lossy(&content));
+    Ok(super::redact::locate(&model.chars, &mark.quote, &mark.prefix, &mark.suffix).is_ok())
+}
+
 /// The form token, from the `X-CSRF-Token` header (a fetch from the page) or the `csrf` field (a
 /// plain form), plus the Origin check. Some(true) for a fetch, Some(false) for a form, None when
 /// the check fails.
@@ -1045,6 +1061,12 @@ pub async fn create_annotation(
         }
         if doc.kind == "picture" {
             return Ok(status(StatusCode::UNPROCESSABLE_ENTITY));
+        }
+        // A Markdown file is shown formatted, so selected words can cross bold, links or table
+        // marks that the stored file has between them. Such a mark could never be applied, so it is
+        // refused now rather than at apply.
+        if doc.kind == "text" && !text_holds(&state, doc.id, &mark).await? {
+            return Ok(status(StatusCode::CONFLICT));
         }
     }
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM annotations WHERE document_id = $1")

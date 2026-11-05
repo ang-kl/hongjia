@@ -5,10 +5,10 @@
 
 use pulldown_cmark::{CowStr, Event, Options, Parser, Tag, html};
 
-/// Whether a text document's file name marks it as Markdown.
+/// Whether a text document's file name marks it as Markdown (`.md`, the only Markdown name uploads
+/// accept; see `documents::kind_for`).
 pub fn is_markdown(filename: &str) -> bool {
-    let lower = filename.to_ascii_lowercase();
-    lower.ends_with(".md") || lower.ends_with(".markdown")
+    filename.to_ascii_lowercase().ends_with(".md")
 }
 
 /// A whole page for the frame: the rendered Markdown on a white page.
@@ -133,8 +133,9 @@ mod tests {
 
     #[test]
     fn markdown_files_are_recognised() {
-        assert!(is_markdown("SOURCES.md") && is_markdown("notes.MARKDOWN"));
+        assert!(is_markdown("SOURCES.md") && is_markdown("NOTES.MD"));
         assert!(!is_markdown("notes.txt") && !is_markdown("page.html"));
+        assert_eq!(crate::family::documents::kind_for("notes.md"), Some("text"));
     }
 
     #[test]

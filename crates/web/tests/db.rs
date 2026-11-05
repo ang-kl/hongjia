@@ -3594,6 +3594,31 @@ async fn markdown_documents_are_formatted_pages(pool: PgPool) {
     let original = o.get(&format!("{key}/original")).await;
     assert_eq!(original.body, md, "the download is the file as uploaded");
 
+    // Redaction marks are checked against the stored file at once: plain words are accepted,
+    // words that cross formatting in the file are refused (409) instead of failing at apply.
+    let r = upload(
+        &mut o,
+        &csrf,
+        "Contacts",
+        Some(("contacts.md", "Call Ann **Lee** today.\n")),
+    )
+    .await;
+    let path = format!("{}/annotations", r.header("location").unwrap());
+    let plain = [
+        ("kind", "redaction"),
+        ("quote", "Ann"),
+        ("prefix", "Call "),
+        ("suffix", " Lee"),
+    ];
+    assert_eq!(fetch_post(&mut o, &path, &plain).await.status, 201);
+    let across = [
+        ("kind", "redaction"),
+        ("quote", "Ann Lee"),
+        ("prefix", "Call "),
+        ("suffix", " today."),
+    ];
+    assert_eq!(fetch_post(&mut o, &path, &across).await.status, 409);
+
     let r = upload(
         &mut o,
         &csrf,
