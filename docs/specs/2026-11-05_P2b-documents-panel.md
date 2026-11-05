@@ -179,3 +179,11 @@ Owner decision in chat: "show embedded Google Map".
 - **Privacy:** when a document shows a map, Google receives the viewer's internet address and the place being looked up. Photos from other websites already work this way.
 - **Upload check:** it now lists "Google Maps (embedded)" and "Leaflet" among the libraries a document uses. It warns only about frames from other sites, and frames whose address a script fills in later are not judged. The storage warning now says the site keeps such values, since pull request C added the storage stand-in.
 - **Checks:** a unit test covers allowed and refused frames and the two new library names, including the look-alike `maps.google.com/mapsevil`, which is refused. The policy unit test pins `frame-src` to `FRAME_SOURCES`.
+
+## Upload check: cut-off files and re-checking (5 November 2026, evening)
+
+A Coffee-Table Edition produced by another AI was uploaded in good faith. It turned out to stop part-way through its main script, so none of its buttons, tabs or maps worked, and the upload check gave no sign of it.
+
+- **Cut-off warning:** if a page opens more `<script>` elements than it closes, the check says the file looks cut off and explains the effect. If a full page simply lacks its closing `</html>`, a softer note says it may be incomplete. Fragments without `<html>` are not judged.
+- **Re-checking:** the check's rules carry a version (`CHECK_VERSION`, now 2), stored in `settings` as `upload_check_version`. When the number goes up, every version is checked again at the next start. Panels then show today's findings, for example the Google Maps note, instead of the ones from upload day.
+- **Checks:** a unit test covers a cut-off script, a missing `</html>`, a whole page and a fragment. A database test covers a cut-off upload being reported and a stale version re-checked after the rules change. Run on the owner's three files locally (not committed): the original itinerary and the second template have no warnings, and the Coffee-Table Edition is reported as cut off.

@@ -2920,3 +2920,43 @@ async fn pictures_are_recognised_shown_and_downloaded(pool: PgPool) {
     let found = o.get("/api/search?q=garden").await.body;
     assert!(found.contains(&format!(r#""key":"{day}_1""#)), "{found}");
 }
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn the_upload_check_runs_again_when_its_rules_change(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let day = today(&pool).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let cut =
+        "<!doctype html><html><body><button onclick=\"go()\">Go</button><script>function go() {";
+    upload(&mut o, &csrf, "Cut", Some(("cut.html", cut))).await;
+    let view = o.get(&format!("/documents/{day}_1")).await.body;
+    assert!(
+        view.contains("looks cut off"),
+        "a cut-off file is reported at upload"
+    );
+
+    // A version checked under older rules is checked again at the next start.
+    sqlx::query("UPDATE document_versions SET warnings = '{}'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE settings SET value = 1 WHERE key = 'upload_check_version'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    assert!(
+        o.get(&format!("/documents/{day}_1"))
+            .await
+            .body
+            .contains("looks cut off")
+    );
+    let version: i32 =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'upload_check_version'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(version, hongjia_web::family::documents::CHECK_VERSION);
+}
