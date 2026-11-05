@@ -62,13 +62,108 @@ if (!(await page.textContent('h1')).includes('Hello, delta')) failures.push('hom
 const SAMPLE = `<!doctype html><html><head><meta charset="utf-8"><title>Sample</title>
 <style>body{font:16px system-ui;margin:24px}section{min-height:60vh}</style></head><body>
 <h1 id="top">Sample trip</h1><section id="days"><h2>Day by day</h2><label><input type="checkbox"> Book the car</label></section>
-<section id="stays"><h2>Stays</h2><p>Two bedrooms.</p></section>
-<script>document.body.dataset.ran = 'yes';</script></body></html>`;
+<section id="stays"><h2>Stays</h2><p>Two bedrooms.</p><p id="visits"></p></section>
+<script>document.body.dataset.ran = 'yes';
+var n = Number(localStorage.getItem('visits') || 0) + 1; localStorage.setItem('visits', String(n));
+document.getElementById('visits').textContent = 'Visits: ' + n;</script></body></html>`;
 await page.goto(base + '/documents/new');
 await page.setInputFiles('input[name=file]', { name: 'sample-trip.html', mimeType: 'text/html', buffer: Buffer.from(SAMPLE) });
 await page.click('form[action="/documents"] button[type=submit]');
 await page.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
 const docPath = new URL(page.url()).pathname;
+
+// 2. Saved fields, the storage stand-in and annotations (P2b C), as the owner at notebook size.
+async function signIn(context, profile) {
+  const p = await context.newPage();
+  await p.goto(base + '/');
+  await p.check(`input[name=profile][value=${profile}]`);
+  await p.fill('input[name=passphrase]', FAMILY);
+  await p.click('form[action="/signin"] button[type=submit]');
+  await p.waitForURL(base + '/consent');
+  await p.click('form[action="/consent"] button[type=submit]');
+  await p.waitForURL(base + '/home');
+  return p;
+}
+const frameOf = p => p.frameLocator('.doc-frame');
+const box = () => frameOf(page).locator('input[type=checkbox]');
+const settle = () => page.waitForTimeout(1500);
+const openDoc = async (p = page) => { await p.goto(base + docPath, { waitUntil: 'networkidle' }); await p.waitForTimeout(300); };
+const visits = async () => Number(((await frameOf(page).locator('#visits').textContent()) || '').replace(/\D/g, ''));
+const selectText = (p, text) => p.frames().find(f => f.url().includes('/raw')).evaluate(wanted => {
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const at = n.data.indexOf(wanted);
+    if (at !== -1) {
+      const r = document.createRange();
+      r.setStart(n, at); r.setEnd(n, at + wanted.length);
+      getSelection().removeAllRanges(); getSelection().addRange(r);
+      return true;
+    }
+  }
+  return false;
+}, text);
+const annotate = async (p, body) => {
+  await p.waitForSelector('[data-comment]:not([hidden])', { timeout: 4000 });
+  await p.click('[data-comment]');
+  await p.fill('[data-composer-body]', body);
+  await p.click('form[data-composer] button[type=submit]');
+  await p.waitForFunction(text => [...document.querySelectorAll('li[data-annotation-id] .annotation-body')].some(el => el.textContent === text), body, { timeout: 4000 });
+};
+const marks = p => frameOf(p).locator('mark[data-hj-id]').count();
+
+await openDoc();
+const firstVisits = await visits();
+await box().check();
+await settle();
+await openDoc();
+if (!(await box().isChecked())) failures.push('a tick was not saved across a reload');
+if (await visits() !== firstVisits + 1) failures.push(`the storage stand-in did not keep counting (${firstVisits} then ${await visits()})`);
+await selectText(page, 'Two bedrooms');
+await annotate(page, 'Invented note to delete');
+if (await marks(page) !== 1) failures.push('no highlight for the new annotation');
+await page.click('li[data-annotation-id] form[data-annotation-delete] button');
+await page.waitForFunction(() => !document.querySelector('li[data-annotation-id]'), null, { timeout: 4000 }).catch(() => failures.push('delete did not remove the annotation'));
+if (await marks(page) !== 0) failures.push('the highlight stayed after the delete');
+// Two that stay, for the pages below: one on a passage, one on the field.
+await selectText(page, 'Two bedrooms');
+await annotate(page, 'Ask for a quiet room');
+await box().focus();
+await page.waitForFunction(() => document.querySelector('[data-comment]')?.textContent === 'Comment on this field', null, { timeout: 4000 }).catch(() => failures.push('Comment on this field was not offered'));
+await annotate(page, 'Booked');
+await openDoc();
+if (await page.locator('li[data-annotation-id]').count() !== 2 || await marks(page) !== 1) failures.push('annotations or highlight missing after a reload');
+if ((await frameOf(page).locator('input[type=checkbox][data-hj-field]').count()) !== 1) failures.push('the annotated field is not outlined');
+// Personal mode: each person sees only their own; the shared copy comes back untouched.
+const setMode = async mode => {
+  await page.check(`form[action$="/fields-mode"] input[value=${mode}]`);
+  await page.click('form[action$="/fields-mode"] button[type=submit]');
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(300);
+};
+await setMode('personal');
+if (await box().isChecked()) failures.push('personal mode showed the shared tick');
+await box().check();
+await settle();
+const other = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const beta = await signIn(other, 'beta');
+await openDoc(beta);
+if (await frameOf(beta).locator('input[type=checkbox]').isChecked()) failures.push('another member saw a personal tick');
+await other.close();
+await setMode('shared');
+if (!(await box().isChecked())) failures.push('the shared tick did not come back');
+if (shots) {
+  await page.locator('#annotations').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${shots}/notebook-annotations.png` });
+  const phone = await browser.newContext({ viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, storageState: await setup.storageState() });
+  const pp = await phone.newPage();
+  await openDoc(pp);
+  await pp.click('[data-menu-details] > summary');
+  await pp.click('[data-sidebar-toggle]');
+  await pp.waitForTimeout(400);
+  await pp.locator('#annotations').scrollIntoViewIfNeeded();
+  await pp.screenshot({ path: `${shots}/phone-annotations.png` });
+  await phone.close();
+}
 const state = await setup.storageState();
 await setup.close();
 
@@ -93,10 +188,11 @@ async function checkFabs(p, label, width, height, problems, shot) {
   if (folder.x + folder.width > width + 1 || globe.y + globe.height > height + 1) problems.push('buttons outside the window');
   for (const b of [sat, globe, folder]) if (b.width < 44 || b.height < 44) problems.push(`button smaller than 44px (${Math.round(b.width)}x${Math.round(b.height)})`);
   if (await p.isDisabled('[data-fab-globe]')) problems.push('buttons not enabled');
-  if (label === 'document' && await p.isVisible('.manage-open')) {
-    const m = await box('.manage-open');
+  {
+    const m = await box('[data-menu-details] > summary');
     const g = await box('[data-fab-group]');
-    if (m && g && m.x < g.x + g.width && m.x + m.width > g.x && m.y < g.y + g.height && m.y + m.height > g.y) problems.push('buttons cover Manage');
+    if (!m) problems.push('menu button missing');
+    else if (g && m.x < g.x + g.width && m.x + m.width > g.x && m.y < g.y + g.height && m.y + m.height > g.y) problems.push('the right buttons cover the menu button');
   }
   if (!['documents', 'document'].includes(label)) return;
   const hidden = sel => p.$eval(sel, el => el.hidden || getComputedStyle(el).display === 'none');
@@ -153,8 +249,33 @@ async function checkFabs(p, label, width, height, problems, shot) {
 
 const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
 
+// The menu button (bottom left) on every signed-in page: inside the window, at least 44px, and its
+// panel lists Latest document, Documents (which folds open to the documents), Journal and Settings
+// (which folds open to Sign out); Escape closes it.
+async function checkMenu(p, label, width, height, problems) {
+  const button = p.locator('[data-menu-details] > summary');
+  const b = await button.boundingBox();
+  if (!b) { problems.push('menu button missing'); return; }
+  if (b.x < 0 || b.y + b.height > height + 1 || b.width < 44 || b.height < 44) problems.push('menu button outside the window or too small');
+  if (await p.locator('header.bar nav').count()) problems.push('the header still has its own links');
+  if (!['documents', 'document', 'home'].includes(label)) return;
+  await button.click();
+  const panel = await p.locator('.menu-panel').boundingBox();
+  if (!panel || panel.x < 0 || panel.y < 0 || panel.x + panel.width > width + 1) problems.push('menu panel outside the window');
+  const text = (await p.textContent('.menu-panel')).replace(/\s+/g, ' ');
+  for (const item of ['Latest document', 'Documents', 'Journal', 'Settings']) if (!text.includes(item)) problems.push(`menu has no ${item}`);
+  if ((label === 'document') !== text.includes('Sidebar')) problems.push('the Sidebar switch belongs to document pages only');
+  await p.click('[data-menu-documents] > summary');
+  await p.waitForSelector('[data-menu-docs] .menu-doc', { timeout: 3000 }).catch(() => problems.push('Documents did not list the documents'));
+  await p.click('.menu-group:not([data-menu-documents]) > summary');
+  if (!(await p.isVisible('text=Sign out delta'))) problems.push('Settings did not show Sign out');
+  await p.keyboard.press('Escape');
+  if (await p.isVisible('.menu-panel')) problems.push('Escape did not close the menu');
+}
+
 // The document page: the frame fills the window; the panel is beside it (landscape or square and at
-// least 720px wide) or a sheet that Manage opens and Close shuts (portrait).
+// least 720px wide), closes with × and comes back with the menu's Sidebar switch (Ö on, ø off); in
+// portrait it is a sheet that the Sidebar switch opens and × shuts.
 async function checkViewer(p, width, height, problems, shot) {
   const box = sel => p.locator(sel).first().boundingBox();
   const visible = () => p.$eval('#panel', el => getComputedStyle(el).visibility === 'visible' && el.getBoundingClientRect().top < innerHeight - 40);
@@ -168,21 +289,37 @@ async function checkViewer(p, width, height, problems, shot) {
     if (!(await visible())) problems.push('panel not visible beside the document');
     if (panel.x < frame.x + frame.width - 1) problems.push('panel not beside the frame');
     if (frame.width < width * 0.55) problems.push(`frame only ${Math.round(frame.width)}px wide`);
-    if (await p.isVisible('.manage-open')) problems.push('Manage button shown in beside mode');
+    await p.click('[data-sidebar-close]');
+    await p.waitForTimeout(300);
+    if (await p.isVisible('#panel')) problems.push('× did not close the sidebar');
+    const wide = await box('.doc-frame');
+    if (!wide || wide.width < width * 0.9) problems.push('the document did not take the freed space');
+    await p.click('[data-menu-details] > summary');
+    if ((await p.textContent('[data-sidebar-glyph]')) !== 'ø') problems.push('the switch does not show ø when the sidebar is off');
+    await p.click('[data-sidebar-toggle]');
+    await p.waitForTimeout(300);
+    if (!(await visible())) problems.push('the Sidebar switch did not bring the sidebar back');
+    if ((await p.textContent('[data-sidebar-glyph]')) !== 'Ö') problems.push('the switch does not show Ö when the sidebar is on');
   } else {
-    if (await visible()) problems.push('sheet open before Manage was tapped');
+    if (await visible()) problems.push('sheet open before the Sidebar switch was used');
     if (frame.width < width * 0.85) problems.push(`frame only ${Math.round(frame.width)}px wide`);
-    await p.click('.manage-open');
+    await p.click('[data-menu-details] > summary');
+    await p.click('[data-sidebar-toggle]');
     await p.waitForTimeout(400);
-    if (!(await visible())) problems.push('Manage did not open the sheet');
+    if (!(await visible())) problems.push('the Sidebar switch did not open the sheet');
     if (await p.isVisible('[data-fab-globe]')) problems.push('the buttons cover the open sheet');
+    if (await p.isVisible('[data-menu-details] > summary')) problems.push('the menu button covers the open sheet');
     if (shot) await p.screenshot({ path: shot });
-    await p.click('.manage-close');
+    await p.click('[data-sidebar-close]');
     await p.waitForTimeout(400);
-    if (await visible()) problems.push('Close did not shut the sheet');
+    if (await visible()) problems.push('× did not shut the sheet');
   }
   const ran = await p.frameLocator('.doc-frame').locator('body').getAttribute('data-ran');
   if (ran !== 'yes') problems.push('document script did not run in the frame');
+  // Saved fields and annotations (P2b C).
+  if (!(await p.frameLocator('.doc-frame').locator('input[type=checkbox]').isChecked())) problems.push('the saved tick is not shown');
+  if ((await p.frameLocator('.doc-frame').locator('mark[data-hj-id]').count()) !== 1) problems.push('the highlight is not shown');
+  if ((await p.locator('li[data-annotation-id]').count()) !== 2) problems.push('the annotations are not listed');
 }
 
 for (const scheme of ['light', 'dark']) {
@@ -215,6 +352,14 @@ for (const scheme of ['light', 'dark']) {
       if (shots && scheme === 'light' && ['notebook', 'phone-small'].includes(name)) await p.screenshot({ path: `${shots}/${name}-${label}.png`, fullPage: label !== 'document' });
       if (label === 'document') await checkViewer(p, width, height, problems, shots && scheme === 'light' ? `${shots}/${name}-document-panel.png` : '');
       if (signedIn) await checkFabs(p, label, width, height, problems, shots && scheme === 'light' && label === 'documents' && ['notebook', 'phone-small'].includes(name) ? `${shots}/${name}-globe.png` : '');
+      if (signedIn) await checkMenu(p, label, width, height, problems);
+      if (signedIn && shots && scheme === 'light' && label === 'document' && ['notebook', 'phone-small'].includes(name)) {
+        await p.click('[data-menu-details] > summary');
+        await p.click('[data-menu-documents] > summary');
+        await p.waitForTimeout(500);
+        await p.screenshot({ path: `${shots}/${name}-menu.png` });
+        await p.keyboard.press('Escape');
+      }
       const tag = `${scheme} ${name} ${label}`;
       console.log(`${problems.length ? 'FAIL' : 'ok  '} ${tag}`);
       for (const problem of problems) console.log(`     ${problem}`);

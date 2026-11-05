@@ -646,6 +646,14 @@ async fn send_multipart(
         .await
 }
 
+/// A shown HTML document without the helper the server adds (P2b C): what remains must be the
+/// stored file, byte for byte. Panics if the helper is missing.
+fn without_helper(body: &str) -> String {
+    let start = body.find("<script data-hj-helper>").expect("helper added");
+    let end = start + body[start..].find("</script>").expect("helper closed") + "</script>".len();
+    format!("{}{}", &body[..start], &body[end..])
+}
+
 /// Today's date in Singapore as a filing number starts, for example 2026-1105.
 async fn today(pool: &PgPool) -> String {
     sqlx::query_scalar("SELECT to_char((now() AT TIME ZONE 'Asia/Singapore')::date, 'YYYY-MMDD')")
@@ -684,7 +692,15 @@ async fn documents_upload_list_view_and_sandboxed_raw(pool: PgPool) {
 
     let raw = o.get(&format!("{location}/raw")).await;
     assert_eq!(raw.status, 200);
-    assert_eq!(raw.body, SAMPLE, "served byte for byte");
+    assert_eq!(
+        without_helper(&raw.body),
+        SAMPLE,
+        "the stored file, byte for byte"
+    );
+    assert!(
+        raw.body
+            .starts_with(r#"<!doctype html><html><head><script data-hj-helper>"#)
+    );
     assert_eq!(raw.header("content-type"), Some("text/html; charset=utf-8"));
     assert_eq!(
         raw.header("content-security-policy"),
@@ -979,8 +995,14 @@ async fn hashtags_versions_and_the_upload_check(pool: PgPool) {
     )
     .await;
     assert_eq!(r.status, 303, "{}", r.body);
-    assert_eq!(o.get(&format!("{key}/raw")).await.body, "<p>second</p>");
-    assert_eq!(o.get(&format!("{key}/raw?v=1")).await.body, SAMPLE);
+    assert_eq!(
+        without_helper(&o.get(&format!("{key}/raw")).await.body),
+        "<p>second</p>"
+    );
+    assert_eq!(
+        without_helper(&o.get(&format!("{key}/raw?v=1")).await.body),
+        SAMPLE
+    );
     let view = o.get(&key).await.body;
     assert!(
         view.contains("Version 2</a> (shown)")
@@ -1278,5 +1300,524 @@ async fn library_and_contents_for_the_globe(pool: PgPool) {
             .await
             .body
             .contains("Lake plan")
+    );
+}
+
+// P2b (C): saved fields, the storage stand-in and annotations.
+
+const FORM_DOC: &str = r#"<!doctype html><html><head><meta charset="utf-8"><title>Checklist</title></head><body>
+<h1>Checklist</h1><label><input type="checkbox" id="a"> Book the car</label><p>Two bedrooms near the lake.</p>
+<script>document.body.dataset.ran = 'yes';</script></body></html>"#;
+
+/// Uploads FORM_DOC as `c` and returns its address, for example /documents/2026-1105_1.
+async fn form_doc(c: &mut Client) -> String {
+    let csrf = c.csrf().await;
+    let r = upload(c, &csrf, "Checklist", Some(("checklist.html", FORM_DOC))).await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    r.header("location").unwrap().to_string()
+}
+
+/// A fetch from the document page: the form token in the header.
+async fn fetch_post(c: &mut Client, path: &str, form: &[(&str, &str)]) -> Reply {
+    let csrf = c.csrf().await;
+    let body = form
+        .iter()
+        .map(|(k, v)| format!("{k}={}", urlencode(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+    c.send("POST", path, &body, &[("X-CSRF-Token", &csrf)])
+        .await
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn saved_fields_are_shared_or_personal(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let key = form_doc(&mut o).await;
+    let mut b = member(port, "beta").await;
+    let mut g = member(port, "gamma").await;
+
+    // Any member fills in; in shared mode everyone sees one copy.
+    let r = fetch_post(
+        &mut b,
+        &format!("{key}/fields"),
+        &[
+            ("kind", "field"),
+            ("key", "id:a"),
+            ("value", "true"),
+            ("label", "Book the car"),
+        ],
+    )
+    .await;
+    assert_eq!(r.status, 204, "{}", r.body);
+    let raw = g.get(&format!("{key}/raw")).await.body;
+    assert!(
+        raw.contains(r#""mode":"shared","fields":{"id:a":"true"}"#),
+        "{}",
+        &raw[..200]
+    );
+    assert_eq!(without_helper(&raw), FORM_DOC);
+    let same: bool = sqlx::query_scalar(
+        "SELECT content = $1 AND sha256 = sha256(content) FROM document_versions",
+    )
+    .bind(FORM_DOC.as_bytes())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(same, "the stored file and its hash are unchanged");
+    let view = g.get(&key).await.body;
+    assert!(
+        view.contains("Book the car</span>: ticked · beta"),
+        "latest changes in the panel"
+    );
+    assert!(
+        !view.contains("/fields-mode"),
+        "only the uploader and owner see the choice of mode"
+    );
+
+    // Only the uploader or the owner chooses the mode.
+    assert!(
+        o.get(&key)
+            .await
+            .body
+            .contains(&format!(r#"action="{key}/fields-mode""#))
+    );
+    let g_csrf = g.csrf().await;
+    assert_eq!(
+        g.post(
+            &format!("{key}/fields-mode"),
+            &[("csrf", &g_csrf), ("mode", "personal")]
+        )
+        .await
+        .status,
+        403
+    );
+    let o_csrf = o.csrf().await;
+    assert_eq!(
+        o.post(
+            &format!("{key}/fields-mode"),
+            &[("csrf", &o_csrf), ("mode", "secret")]
+        )
+        .await
+        .status,
+        400
+    );
+    let r = o
+        .post(
+            &format!("{key}/fields-mode"),
+            &[("csrf", &o_csrf), ("mode", "personal")],
+        )
+        .await;
+    assert_eq!(r.status, 303);
+    assert_eq!(r.header("location"), Some(format!("{key}#panel").as_str()));
+
+    // In personal mode each person sees only their own answers.
+    assert_eq!(
+        fetch_post(
+            &mut b,
+            &format!("{key}/fields"),
+            &[("kind", "field"), ("key", "id:b"), ("value", "mine")]
+        )
+        .await
+        .status,
+        204
+    );
+    assert!(
+        b.get(&format!("{key}/raw"))
+            .await
+            .body
+            .contains(r#""fields":{"id:b":"mine"}"#)
+    );
+    let theirs = g.get(&format!("{key}/raw")).await.body;
+    assert!(theirs.contains(r#""mode":"personal","fields":{}"#) && !theirs.contains("mine"));
+    assert!(b.get(&key).await.body.contains("You have 1 saved."));
+
+    // Switching back shows the shared copy again, untouched.
+    o.post(
+        &format!("{key}/fields-mode"),
+        &[("csrf", &o_csrf), ("mode", "shared")],
+    )
+    .await;
+    assert!(
+        g.get(&format!("{key}/raw"))
+            .await
+            .body
+            .contains(r#""fields":{"id:a":"true"}"#)
+    );
+    let audit: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action = 'document fields mode'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audit, 2);
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn field_and_storage_writes_are_checked(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let key = form_doc(&mut o).await;
+    let path = format!("{key}/fields");
+    let ok = |r: Reply| r.status;
+
+    // The form token must come in the header, from this site.
+    let csrf = o.csrf().await;
+    assert_eq!(
+        o.post(
+            &path,
+            &[
+                ("csrf", &csrf),
+                ("kind", "field"),
+                ("key", "k"),
+                ("value", "v")
+            ]
+        )
+        .await
+        .status,
+        403
+    );
+    o.origin = Some("https://evil.example".into());
+    assert_eq!(
+        ok(fetch_post(
+            &mut o,
+            &path,
+            &[("kind", "field"), ("key", "k"), ("value", "v")]
+        )
+        .await),
+        403
+    );
+    o.origin = Some(format!("http://127.0.0.1:{port}"));
+    assert_eq!(
+        Client::new(port)
+            .post(&path, &[("kind", "field")])
+            .await
+            .status,
+        401
+    );
+
+    // Sizes and kinds.
+    let long_key = "k".repeat(201);
+    let field_value = "v".repeat(4001);
+    let storage_ok = "s".repeat(8000);
+    let storage_long = "s".repeat(8001);
+    for (form, expected) in [
+        (vec![("kind", "secret"), ("key", "k"), ("value", "v")], 400),
+        (vec![("kind", "field"), ("key", ""), ("value", "v")], 400),
+        (
+            vec![
+                ("kind", "field"),
+                ("key", long_key.as_str()),
+                ("value", "v"),
+            ],
+            400,
+        ),
+        (
+            vec![
+                ("kind", "field"),
+                ("key", "k"),
+                ("value", field_value.as_str()),
+            ],
+            400,
+        ),
+        (
+            vec![
+                ("kind", "storage"),
+                ("key", "big"),
+                ("value", storage_ok.as_str()),
+            ],
+            204,
+        ),
+        (
+            vec![
+                ("kind", "storage"),
+                ("key", "big"),
+                ("value", storage_long.as_str()),
+            ],
+            400,
+        ),
+        (vec![("kind", "field"), ("op", "clear")], 400),
+    ] {
+        assert_eq!(
+            ok(fetch_post(&mut o, &path, &form).await),
+            expected,
+            "{:?}",
+            &form[..2]
+        );
+    }
+
+    // At most 500 keys per copy; changing an existing key still works.
+    let id: i64 = sqlx::query_scalar("SELECT id FROM documents")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO document_fields (document_id, kind, key, value) SELECT $1, 'field', 'k' || n, 'x' FROM generate_series(1, 500) n")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        ok(fetch_post(
+            &mut o,
+            &path,
+            &[("kind", "field"), ("key", "new"), ("value", "v")]
+        )
+        .await),
+        413
+    );
+    assert_eq!(
+        ok(fetch_post(
+            &mut o,
+            &path,
+            &[("kind", "field"), ("key", "k7"), ("value", "changed")]
+        )
+        .await),
+        204
+    );
+    sqlx::query("DELETE FROM document_fields WHERE kind = 'field'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // The storage stand-in: set, remove, clear; fields are left alone.
+    for form in [
+        vec![("kind", "storage"), ("key", "visits"), ("value", "3")],
+        vec![("kind", "storage"), ("op", "remove"), ("key", "big")],
+        vec![
+            ("kind", "field"),
+            ("key", "id:a"),
+            ("value", "</script><b>x"),
+        ],
+    ] {
+        assert_eq!(ok(fetch_post(&mut o, &path, &form).await), 204);
+    }
+    let raw = o.get(&format!("{key}/raw")).await.body;
+    assert!(
+        raw.contains(r#""storage":{"visits":"3"}"#),
+        "{}",
+        &raw[..300]
+    );
+    assert!(
+        raw.contains(r#""id:a":"\u003c/script\u003e\u003cb\u003ex""#),
+        "a saved value cannot end the script"
+    );
+    assert!(!raw.contains("</script><b>x"));
+    assert_eq!(
+        ok(fetch_post(&mut o, &path, &[("kind", "storage"), ("op", "clear")]).await),
+        204
+    );
+    let raw = o.get(&format!("{key}/raw")).await.body;
+    assert!(raw.contains(r#""storage":{}"#) && raw.contains(r#""id:a""#));
+
+    // Text documents are sent exactly as stored, with no helper.
+    let csrf = o.csrf().await;
+    let r = upload(
+        &mut o,
+        &csrf,
+        "Notes",
+        Some(("notes.txt", "plain <head> text")),
+    )
+    .await;
+    let notes = r.header("location").unwrap().to_string();
+    assert_eq!(
+        o.get(&format!("{notes}/raw")).await.body,
+        "plain <head> text"
+    );
+
+    // Deleting the document removes its saved values.
+    let gone = o
+        .post(
+            &format!("{key}/delete"),
+            &[("csrf", &csrf), ("confirm", "DELETE")],
+        )
+        .await;
+    assert_eq!(gone.status, 303);
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM document_fields")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn annotations_by_any_member_deleted_by_author_or_owner(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let key = form_doc(&mut o).await;
+    let path = format!("{key}/annotations");
+    let mut b = member(port, "beta").await;
+    let mut g = member(port, "gamma").await;
+
+    // From the page's composer (fetch): a JSON reply.
+    let r = fetch_post(
+        &mut b,
+        &path,
+        &[
+            ("quote", "Two bedrooms"),
+            ("prefix", "Book the car "),
+            ("suffix", " near the lake."),
+            ("body", "  Book early  "),
+        ],
+    )
+    .await;
+    assert_eq!(r.status, 201, "{}", r.body);
+    assert!(
+        r.body.contains(r#""author":"beta""#)
+            && r.body.contains(r#""body":"Book early""#)
+            && r.body.contains(r#""can_delete":true"#)
+    );
+    let beta_id = r
+        .body
+        .split(r#""id":""#)
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_string();
+    // A plain form works too, for a comment on the whole document.
+    let csrf = g.csrf().await;
+    let r = g
+        .post(&path, &[("csrf", &csrf), ("body", "<b>Looks good</b>")])
+        .await;
+    assert_eq!(r.status, 303);
+    assert_eq!(r.header("location"), Some(format!("{key}#panel").as_str()));
+    let r = fetch_post(
+        &mut g,
+        &path,
+        &[
+            ("field_key", "id:a"),
+            ("field_label", "Book the car"),
+            ("body", "Done"),
+        ],
+    )
+    .await;
+    assert_eq!(r.status, 201);
+
+    // Everyone sees them; only the author (or the owner) may delete.
+    let listed = g.get(&path).await;
+    assert_eq!(
+        listed.header("content-type"),
+        Some("application/json; charset=utf-8")
+    );
+    assert_eq!(listed.body.matches(r#""id":"#).count(), 3);
+    assert!(
+        listed.body.contains(r#""author":"beta""#) && listed.body.contains(r#""can_delete":false"#)
+    );
+    let view = g.get(&key).await.body;
+    assert!(
+        view.contains("&lt;b&gt;Looks good&lt;/b&gt;") && !view.contains("<b>Looks good</b>"),
+        "bodies are escaped"
+    );
+    assert!(
+        view.contains(r#"data-quote="Two bedrooms""#)
+            && view.contains("On the field: Book the car")
+    );
+    assert_eq!(
+        view.matches("data-annotation-delete").count(),
+        2,
+        "gamma may delete only their own two"
+    );
+    assert_eq!(
+        fetch_post(&mut g, &format!("{path}/{beta_id}/delete"), &[])
+            .await
+            .status,
+        403
+    );
+    assert_eq!(
+        fetch_post(&mut b, &format!("{path}/{beta_id}/delete"), &[])
+            .await
+            .status,
+        204
+    );
+    assert_eq!(
+        fetch_post(&mut b, &format!("{path}/{beta_id}/delete"), &[])
+            .await
+            .status,
+        404
+    );
+    let gamma_id: i64 = sqlx::query_scalar("SELECT min(id) FROM annotations")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let o_csrf = o.csrf().await;
+    let r = o
+        .post(&format!("{path}/{gamma_id}/delete"), &[("csrf", &o_csrf)])
+        .await;
+    assert_eq!(r.status, 303, "the owner deletes anyone's");
+    let audit: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action = 'annotation deleted'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audit, 2);
+
+    // Refusals.
+    let long_body = "x".repeat(4001);
+    let long_quote = "q".repeat(1001);
+    let long_prefix = "p".repeat(65);
+    for form in [
+        vec![("body", "   ")],
+        vec![("body", long_body.as_str())],
+        vec![("quote", long_quote.as_str()), ("body", "x")],
+        vec![("prefix", long_prefix.as_str()), ("body", "x")],
+    ] {
+        assert_eq!(fetch_post(&mut b, &path, &form).await.status, 400);
+    }
+    assert_eq!(
+        b.post(&path, &[("csrf", "stale"), ("body", "x")])
+            .await
+            .status,
+        403
+    );
+    b.origin = Some("https://evil.example".into());
+    assert_eq!(
+        fetch_post(&mut b, &path, &[("body", "x")]).await.status,
+        403
+    );
+    assert_eq!(Client::new(port).get(&path).await.status, 401);
+    assert_eq!(
+        Client::new(port).post(&path, &[("body", "x")]).await.status,
+        401
+    );
+
+    // Deleting the document removes its annotations.
+    o.post(
+        &format!("{key}/delete"),
+        &[("csrf", &o_csrf), ("confirm", "DELETE")],
+    )
+    .await;
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM annotations")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn latest_document_opens_the_newest_filing(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let day = today(&pool).await;
+    let mut b = member(port, "beta").await;
+    let empty = b.get("/documents/latest").await;
+    assert_eq!(empty.status, 303);
+    assert_eq!(empty.header("location"), Some("/documents"));
+    let csrf = b.csrf().await;
+    upload(&mut b, &csrf, "One", Some(("one.html", SAMPLE))).await;
+    upload(&mut b, &csrf, "Two", Some(("two.html", SAMPLE))).await;
+    let latest = b.get("/documents/latest").await;
+    assert_eq!(
+        latest.header("location"),
+        Some(format!("/documents/{day}_2").as_str())
+    );
+    assert_eq!(
+        Client::new(port).get("/documents/latest").await.status,
+        303,
+        "strangers go to sign in"
+    );
+    let menu = b.get("/documents").await.body;
+    assert!(
+        menu.contains("/documents/latest")
+            && menu.contains("Sign out beta")
+            && !menu.contains(r#"href="/owner""#)
     );
 }

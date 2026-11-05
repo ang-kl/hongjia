@@ -12,7 +12,7 @@
 use super::doccheck::{self, Filing};
 use super::pages::{self, Nav};
 use super::store::Session;
-use super::{FamilyState, auth, store, web};
+use super::{FamilyState, auth, review, store, web};
 use axum::{
     Form,
     extract::{Multipart, Path, State},
@@ -87,6 +87,8 @@ pub struct DocumentRow {
     pub uploaded_by: Option<String>,
     pub uploaded_at: String,
     pub tags: Vec<String>,
+    /// Whether what people fill in is one family copy ("shared") or kept per person ("personal").
+    pub fields_mode: String,
 }
 
 #[derive(Debug, FromRow)]
@@ -112,7 +114,8 @@ pub(super) async fn list(pool: &PgPool) -> sqlx::Result<Vec<DocumentRow>> {
                 to_char(d.filed_on, 'FMMonth YYYY') AS month, d.title, d.created_by, c.handle AS added_by,
                 v.version_no, v.filename, v.kind, v.size_bytes, p.handle AS uploaded_by,
                 to_char(v.uploaded_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') AS uploaded_at,
-                COALESCE((SELECT array_agg(t.tag ORDER BY t.pos, t.tag) FROM document_tags t WHERE t.document_id = d.id), '{}') AS tags
+                COALESCE((SELECT array_agg(t.tag ORDER BY t.pos, t.tag) FROM document_tags t WHERE t.document_id = d.id), '{}') AS tags,
+                d.fields_mode
          FROM documents d
          JOIN LATERAL (SELECT * FROM document_versions WHERE document_id = d.id ORDER BY version_no DESC LIMIT 1) v ON TRUE
          LEFT JOIN profiles p ON p.id = v.uploaded_by
@@ -130,7 +133,8 @@ async fn find(pool: &PgPool, filing: &Filing) -> sqlx::Result<Option<DocumentRow
                 to_char(d.filed_on, 'FMMonth YYYY') AS month, d.title, d.created_by, c.handle AS added_by,
                 v.version_no, v.filename, v.kind, v.size_bytes, p.handle AS uploaded_by,
                 to_char(v.uploaded_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') AS uploaded_at,
-                COALESCE((SELECT array_agg(t.tag ORDER BY t.pos, t.tag) FROM document_tags t WHERE t.document_id = d.id), '{}') AS tags
+                COALESCE((SELECT array_agg(t.tag ORDER BY t.pos, t.tag) FROM document_tags t WHERE t.document_id = d.id), '{}') AS tags,
+                d.fields_mode
          FROM documents d
          JOIN LATERAL (SELECT * FROM document_versions WHERE document_id = d.id ORDER BY version_no DESC LIMIT 1) v ON TRUE
          LEFT JOIN profiles p ON p.id = v.uploaded_by
@@ -338,7 +342,7 @@ pub async fn backfill_versions(pool: &PgPool) -> sqlx::Result<u64> {
     Ok(pending.len() as u64)
 }
 
-fn page(status: StatusCode, body: String) -> Response {
+pub(super) fn page(status: StatusCode, body: String) -> Response {
     (
         status,
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
@@ -347,18 +351,18 @@ fn page(status: StatusCode, body: String) -> Response {
         .into_response()
 }
 
-fn see_other(path: &str) -> Response {
+pub(super) fn see_other(path: &str) -> Response {
     Redirect::to(path).into_response()
 }
 
-async fn signed_in(
+pub(super) async fn signed_in(
     state: &FamilyState,
     headers: &HeaderMap,
 ) -> Result<Option<Session>, super::handlers::Fail> {
     super::handlers::current_session(state, headers).await
 }
 
-fn nav(session: &Session) -> Nav<'_> {
+pub(super) fn nav(session: &Session) -> Nav<'_> {
     Nav {
         handle: &session.handle,
         is_owner: session.is_owner,
@@ -366,7 +370,7 @@ fn nav(session: &Session) -> Nav<'_> {
     }
 }
 
-fn not_found() -> Response {
+pub(super) fn not_found() -> Response {
     page(
         StatusCode::NOT_FOUND,
         pages::message(
@@ -389,11 +393,16 @@ fn out_of_date(back: &str) -> Response {
 }
 
 /// The person who added a document and the owner may change or delete it.
-fn can_manage(session: &Session, doc: &DocumentRow) -> bool {
+pub(super) fn can_manage(session: &Session, doc: &DocumentRow) -> bool {
     session.is_owner || doc.created_by == Some(session.profile_id)
 }
 
-fn form_ok(state: &FamilyState, headers: &HeaderMap, session: &Session, csrf: &str) -> bool {
+pub(super) fn form_ok(
+    state: &FamilyState,
+    headers: &HeaderMap,
+    session: &Session,
+    csrf: &str,
+) -> bool {
     web::same_origin(headers, &state.expected_origin(headers))
         && auth::ct_eq(session.csrf.as_bytes(), csrf.as_bytes())
 }
@@ -417,7 +426,7 @@ fn address(key: &str) -> Option<Address> {
 
 /// Finds the document an address names, or returns the response to send instead (a forward from
 /// an old address, or not found).
-async fn resolve(
+pub(super) async fn resolve(
     state: &FamilyState,
     key: &str,
     suffix: &str,
@@ -448,6 +457,26 @@ pub async fn index(
         StatusCode::OK,
         pages::documents(&nav(&session), &rows),
     ))
+}
+
+/// "Latest document" in the menu: the newest filing, or the list when there is none.
+pub async fn latest(
+    State(state): State<FamilyState>,
+    headers: HeaderMap,
+) -> Result<Response, super::handlers::Fail> {
+    if signed_in(&state, &headers).await?.is_none() {
+        return Ok(see_other("/"));
+    }
+    let key: Option<String> = sqlx::query_scalar(
+        "SELECT to_char(filed_on, 'YYYY-MMDD') || '_' || day_no FROM documents
+         WHERE deleted_at IS NULL ORDER BY filed_on DESC, day_no DESC LIMIT 1",
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+    Ok(see_other(&match key {
+        Some(key) => format!("/documents/{key}"),
+        None => "/documents".to_string(),
+    }))
 }
 
 pub async fn new_form(
@@ -585,7 +614,7 @@ pub async fn upload(
     Ok(see_other(&format!("/documents/{key}")))
 }
 
-async fn show(
+pub(super) async fn show(
     state: &FamilyState,
     session: &Session,
     doc: &DocumentRow,
@@ -593,6 +622,7 @@ async fn show(
     notice: Option<&str>,
 ) -> Result<Response, super::handlers::Fail> {
     let versions = versions(&state.pool, doc.id).await?;
+    let review = review::page_data(&state.pool, doc, session).await?;
     Ok(page(
         status,
         pages::document_view(
@@ -602,6 +632,7 @@ async fn show(
             can_manage(session, doc),
             &state.config.owner,
             notice,
+            &review,
         ),
     ))
 }
@@ -627,9 +658,9 @@ pub async fn raw(
     uri: Uri,
     Path(key): Path<String>,
 ) -> Result<Response, super::handlers::Fail> {
-    if signed_in(&state, &headers).await?.is_none() {
+    let Some(session) = signed_in(&state, &headers).await? else {
         return Ok(see_other("/"));
-    }
+    };
     let doc = match resolve(&state, &key, "/raw").await? {
         Ok(doc) => doc,
         Err(response) => return Ok(response),
@@ -643,10 +674,16 @@ pub async fn raw(
     let Some((kind, bytes)) = content(&state.pool, doc.id, version).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
-    let content_type = if kind == "html" {
-        "text/html; charset=utf-8"
+    let (content_type, bytes) = if kind == "html" {
+        // The helper for saved fields, the storage stand-in and annotations is added as the file
+        // is sent; the stored file never changes.
+        let data = review::frame_data(&state.pool, &doc, &session).await?;
+        (
+            "text/html; charset=utf-8",
+            review::inject(&bytes, &review::helper_script(&data)),
+        )
     } else {
-        "text/plain; charset=utf-8"
+        ("text/plain; charset=utf-8", bytes)
     };
     Ok((
         [
@@ -691,7 +728,7 @@ async fn for_change(
     Ok(Ok((session, doc)))
 }
 
-fn back_to_panel(doc: &DocumentRow) -> Response {
+pub(super) fn back_to_panel(doc: &DocumentRow) -> Response {
     see_other(&format!("/documents/{}#panel", doc.key))
 }
 
