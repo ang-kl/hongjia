@@ -33,14 +33,19 @@ static SITE_CSS: &[u8] = include_bytes!("../../../web/assets/site.css");
 static SITE_MJS: &[u8] = include_bytes!("../../../web/assets/site.mjs");
 static DEVICE_PROFILE_MJS: &[u8] = include_bytes!("../../../web/assets/device-profile.mjs");
 static SESSION_MJS: &[u8] = include_bytes!("../../../web/assets/session.mjs");
+static EXPLORER_MJS: &[u8] = include_bytes!("../../../web/assets/explorer.mjs");
+static GLOBE_LAYOUT_MJS: &[u8] = include_bytes!("../../../web/assets/globe-layout.mjs");
 
-/// A compiled-in browser file (served in placeholder mode except session.mjs, which is family-only).
+/// A compiled-in browser file (served in placeholder mode except session.mjs, explorer.mjs and
+/// globe-layout.mjs, which are family-only).
 pub(crate) fn asset(name: &str) -> Response {
     match name {
         "site.css" => file(SITE_CSS, "text/css; charset=utf-8", ASSET_CACHE),
         "site.mjs" => file(SITE_MJS, JAVASCRIPT, ASSET_CACHE),
         "device-profile.mjs" => file(DEVICE_PROFILE_MJS, JAVASCRIPT, ASSET_CACHE),
         "session.mjs" => file(SESSION_MJS, JAVASCRIPT, ASSET_CACHE),
+        "explorer.mjs" => file(EXPLORER_MJS, JAVASCRIPT, ASSET_CACHE),
+        "globe-layout.mjs" => file(GLOBE_LAYOUT_MJS, JAVASCRIPT, ASSET_CACHE),
         _ => plain(StatusCode::NOT_FOUND, "Not found\n"),
     }
 }

@@ -3,7 +3,7 @@
 
 A private family review site for hongjia.org. Updated 5 November 2026.
 
-**Status: phase P2b.** Without a database the site shows the placeholder page. With one (`DATABASE_URL`) and a family password, family members tap their name and type the family password; the site then offers documents (HTML and text, viewed in a locked-down frame that fills the window), the login journal and location consent. Each document is filed under a dated number (`2026-1105_#1`) and has a management panel beside it: hashtags, versions, an upload check, rename and permanent delete (the uploader and the owner only). Search, the globe and contents come next, then annotations and saved form fields.
+**Status: phase P2b.** Without a database the site shows the placeholder page. With one (`DATABASE_URL`) and a family password, family members tap their name and type the family password; the site then offers documents (HTML and text, viewed in a locked-down frame that fills the window), the login journal and location consent. Each document is filed under a dated number (`2026-1105_#1`) and has a management panel beside it: hashtags, versions, an upload check, rename and permanent delete (the uploader and the owner only). Every signed-in page has the 🛰️ satellite (search across all documents), the globe (documents as pins on islands of shared hashtags) and the 📁 folder (the open document's headings, or all documents). Annotations and saved form fields come next.
 
 ## Plan and specs
 

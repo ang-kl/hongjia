@@ -81,6 +81,76 @@ const CLASSES = [
   ['phone-small', 375, 667, 'phone-standard'],
   ['phone-small-compact', 360, 740, 'phone-compact']
 ];
+// The 🛰️ globe 📁 buttons (michi 0.9.1 rules) on every signed-in page; the full walk on the
+// documents list and the document page: the field stays closed until the satellite is pressed,
+// Enter opens the first result, Escape closes the field, then the card, then the globe, focus
+// returns to the globe button, and 📁 lists all documents or moves the frame to a heading.
+async function checkFabs(p, label, width, height, problems, shot) {
+  const box = sel => p.locator(sel).first().boundingBox();
+  const sat = await box('[data-fab-satellite]'), globe = await box('[data-fab-globe]'), folder = await box('[data-fab-folder]');
+  if (!sat || !globe || !folder) { problems.push('buttons missing'); return; }
+  if (!(sat.x < globe.x && globe.x < folder.x)) problems.push('button order is not satellite, globe, folder');
+  if (folder.x + folder.width > width + 1 || globe.y + globe.height > height + 1) problems.push('buttons outside the window');
+  for (const b of [sat, globe, folder]) if (b.width < 44 || b.height < 44) problems.push(`button smaller than 44px (${Math.round(b.width)}x${Math.round(b.height)})`);
+  if (await p.isDisabled('[data-fab-globe]')) problems.push('buttons not enabled');
+  if (label === 'document' && await p.isVisible('.manage-open')) {
+    const m = await box('.manage-open');
+    const g = await box('[data-fab-group]');
+    if (m && g && m.x < g.x + g.width && m.x + m.width > g.x && m.y < g.y + g.height && m.y + m.height > g.y) problems.push('buttons cover Manage');
+  }
+  if (!['documents', 'document'].includes(label)) return;
+  const hidden = sel => p.$eval(sel, el => el.hidden || getComputedStyle(el).display === 'none');
+  if (!(await hidden('[data-fab-search]'))) problems.push('search field open before the satellite was pressed');
+  // The slide-out field, globe closed: inside the window; Escape closes it and focus returns.
+  await p.click('[data-fab-satellite]');
+  const field = await box('[data-fab-search]');
+  if (!field || field.x < -1 || field.x + field.width > width + 1) problems.push('search field outside the window');
+  await p.keyboard.press('Escape');
+  if (!(await hidden('[data-fab-search]'))) problems.push('Escape did not close the field');
+  if (!(await p.evaluate(() => document.activeElement?.hasAttribute('data-fab-satellite')))) problems.push('focus did not return to the satellite');
+  // The globe.
+  await p.click('[data-fab-globe]');
+  await p.waitForSelector('[data-globe]:not([hidden]) svg.globe-canvas', { timeout: 5000 }).catch(() => problems.push('globe did not open'));
+  if (!(await hidden('[data-fab-search]'))) problems.push('field open when the globe opened');
+  const pins = await p.locator('.globe-node').count();
+  if (pins < 1) problems.push('no pins on the globe');
+  if (label === 'document' && !(await p.isVisible('[data-globe-card]'))) problems.push('the open document\'s card is not shown');
+  await p.click('[data-fab-satellite]');
+  await p.fill('[data-fab-input]', 'bedrooms');
+  await p.keyboard.press('Enter');
+  await p.waitForFunction(() => /found/.test(document.querySelector('[data-globe-status]')?.textContent || ''), null, { timeout: 5000 }).catch(() => problems.push('search gave no status'));
+  const cardTitle = await p.textContent('[data-globe-card] h3').catch(() => '');
+  if (cardTitle !== 'sample-trip') problems.push(`first result card shows "${cardTitle}"`);
+  if (shot) await p.screenshot({ path: shot });
+  await p.focus('[data-fab-input]');
+  await p.keyboard.press('Escape');
+  if (!(await hidden('[data-fab-search]')) || !(await p.isVisible('[data-globe-card]'))) problems.push('first Escape did not close only the field');
+  await p.keyboard.press('Escape');
+  if (await p.isVisible('[data-globe-card]') || await hidden('[data-globe]')) problems.push('second Escape did not close only the card');
+  await p.keyboard.press('Escape');
+  if (!(await hidden('[data-globe]'))) problems.push('third Escape did not close the globe');
+  if (!(await p.evaluate(() => document.activeElement?.hasAttribute('data-fab-globe')))) problems.push('focus did not return to the globe button');
+  // 📁 contents.
+  await p.click('[data-fab-folder]');
+  if (label === 'documents') {
+    await p.waitForSelector('[data-fab-contents] a[href^="/documents/2"]', { timeout: 5000 }).catch(() => problems.push('contents did not list the documents'));
+  } else {
+    const link = p.locator('[data-fab-contents] [data-frame-jump="stays"]');
+    if (!(await link.count())) problems.push('contents did not list the headings');
+    else {
+      await link.click();
+      await p.waitForTimeout(400);
+      const frame = p.frames().find(f => f.url().includes('/raw'));
+      const [hash, scrolled] = frame ? await frame.evaluate(() => [location.hash, scrollY]) : ['', 0];
+      if (hash !== '#stays' || scrolled <= 0) problems.push(`heading did not move the frame (${hash}, ${scrolled})`);
+      const ran = await p.frameLocator('.doc-frame').locator('body').getAttribute('data-ran');
+      if (ran !== 'yes') problems.push('the frame reloaded instead of moving');
+    }
+  }
+  const csp = await p.evaluate(() => window.__csp);
+  if (csp.length) problems.push(`CSP after the buttons: ${csp.join('; ')}`);
+}
+
 const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
 
 // The document page: the frame fills the window; the panel is beside it (landscape or square and at
@@ -105,6 +175,7 @@ async function checkViewer(p, width, height, problems, shot) {
     await p.click('.manage-open');
     await p.waitForTimeout(400);
     if (!(await visible())) problems.push('Manage did not open the sheet');
+    if (await p.isVisible('[data-fab-globe]')) problems.push('the buttons cover the open sheet');
     if (shot) await p.screenshot({ path: shot });
     await p.click('.manage-close');
     await p.waitForTimeout(400);
@@ -143,6 +214,7 @@ for (const scheme of ['light', 'dark']) {
       if (result.csp.length) problems.push(`CSP: ${result.csp.join('; ')}`);
       if (shots && scheme === 'light' && ['notebook', 'phone-small'].includes(name)) await p.screenshot({ path: `${shots}/${name}-${label}.png`, fullPage: label !== 'document' });
       if (label === 'document') await checkViewer(p, width, height, problems, shots && scheme === 'light' ? `${shots}/${name}-document-panel.png` : '');
+      if (signedIn) await checkFabs(p, label, width, height, problems, shots && scheme === 'light' && label === 'documents' && ['notebook', 'phone-small'].includes(name) ? `${shots}/${name}-globe.png` : '');
       const tag = `${scheme} ${name} ${label}`;
       console.log(`${problems.length ? 'FAIL' : 'ok  '} ${tag}`);
       for (const problem of problems) console.log(`     ${problem}`);

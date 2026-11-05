@@ -4,7 +4,9 @@
 pub mod auth;
 pub mod doccheck;
 pub mod documents;
+mod explore;
 mod handlers;
+pub mod json;
 mod pages;
 pub mod store;
 pub mod web;
@@ -152,9 +154,11 @@ pub fn security_headers() -> [(&'static str, &'static str); 8] {
 /// Prepares the database (profiles from the environment, the internal network key) and builds the router.
 pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, sqlx::Error> {
     store::sync_profiles(&pool, &config.profiles, &config.owner).await?;
-    let checked = documents::backfill_checks(&pool).await?;
-    if checked > 0 {
-        eprintln!("upload check run for {checked} earlier document versions");
+    let updated = documents::backfill_versions(&pool).await?;
+    if updated > 0 {
+        eprintln!(
+            "upload check and search index brought up to date for {updated} earlier document versions"
+        );
     }
     let net_key = store::net_key(&pool).await?;
     let state = FamilyState {
@@ -183,6 +187,8 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route("/privacy", get(handlers::privacy))
         .route("/api/heartbeat", post(handlers::heartbeat))
         .route("/api/location", post(handlers::location))
+        .route("/api/search", get(explore::search))
+        .route("/api/library", get(explore::library))
         .route(
             "/documents",
             get(documents::index).post(documents::upload).layer(
@@ -218,6 +224,14 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route(
             "/assets/session.mjs",
             get(|| async { crate::asset("session.mjs") }),
+        )
+        .route(
+            "/assets/explorer.mjs",
+            get(|| async { crate::asset("explorer.mjs") }),
+        )
+        .route(
+            "/assets/globe-layout.mjs",
+            get(|| async { crate::asset("globe-layout.mjs") }),
         )
         .fallback(|| async { crate::plain(StatusCode::NOT_FOUND, "Not found\n") })
         .with_state(state.clone())

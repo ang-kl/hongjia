@@ -1018,3 +1018,265 @@ async fn hashtags_versions_and_the_upload_check(pool: PgPool) {
     .unwrap();
     assert_eq!(libraries, vec!["GSAP"]);
 }
+
+const BACKSLASH: char = '\\';
+
+fn page_with(title: &str, body: &str) -> String {
+    format!(
+        "<!doctype html><html><head><title>{title}</title></head><body><h1>{title}</h1>{body}</body></html>"
+    )
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn search_finds_titles_hashtags_and_text(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let day = today(&pool).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    send_multipart(
+        &mut o,
+        "/documents",
+        &[
+            ("csrf", &csrf),
+            ("title", "Harbour walk"),
+            ("tags", "#boats #lake"),
+        ],
+        Some((
+            "h.html",
+            &page_with("Harbour walk", "<p>Morning by the water.</p>"),
+        )),
+    )
+    .await;
+    let long = format!(
+        "{} The lantern festival starts at dusk. 灯笼节日 {}",
+        "padding words ".repeat(40),
+        "more ".repeat(60)
+    );
+    send_multipart(
+        &mut o,
+        "/documents",
+        &[
+            ("csrf", &csrf),
+            ("title", "Festival notes"),
+            ("tags", "#events"),
+        ],
+        Some((
+            "f.html",
+            &page_with(
+                "Festival notes",
+                &format!("<p>{long}</p><script>var hidden = 'lanternscript';</script>"),
+            ),
+        )),
+    )
+    .await;
+    send_multipart(
+        &mut o,
+        "/documents",
+        &[
+            ("csrf", &csrf),
+            ("title", "Quotes \"and\" <tags>"),
+            ("tags", "#misc"),
+        ],
+        Some(("q.txt", "Plain text about gardens.")),
+    )
+    .await;
+
+    let r = o.get("/api/search?q=harbour").await;
+    assert_eq!(r.status, 200);
+    assert_eq!(
+        r.header("content-type"),
+        Some("application/json; charset=utf-8")
+    );
+    assert!(
+        r.body
+            .starts_with(r#"{"query":"harbour","results":[{"key":""#),
+        "{}",
+        r.body
+    );
+    assert!(
+        r.body.contains(&format!(
+            r#""key":"{day}_1","label":"{day}_#1","title":"Harbour walk","tags":["boats","lake"]"#
+        )),
+        "{}",
+        r.body
+    );
+
+    let tag = o.get("/api/search?q=%23boats").await.body;
+    assert!(
+        tag.contains("Harbour walk") && !tag.contains("Festival"),
+        "{tag}"
+    );
+
+    let text = o.get("/api/search?q=lantern").await.body;
+    assert!(text.contains("Festival notes"), "{text}");
+    assert!(
+        text.contains("The lantern festival starts at dusk."),
+        "snippet around the match: {text}"
+    );
+    assert!(
+        text.contains(r#""snippet":"…"#),
+        "cut at the start is marked: {text}"
+    );
+    assert!(
+        !o.get("/api/search?q=lanternscript")
+            .await
+            .body
+            .contains("Festival"),
+        "scripts are not searched"
+    );
+
+    let chinese = o.get("/api/search?q=%E7%81%AF%E7%AC%BC").await.body;
+    assert!(
+        chinese.contains("Festival notes"),
+        "Chinese text matches: {chinese}"
+    );
+
+    let quoted = o.get("/api/search?q=gardens").await.body;
+    assert!(
+        quoted.contains(&format!(
+            r#""title":"Quotes \"and\" {b}u003ctags{b}u003e""#,
+            b = BACKSLASH
+        )),
+        "{quoted}"
+    );
+
+    assert!(
+        o.get("/api/search?q=zzzz")
+            .await
+            .body
+            .ends_with(r#""results":[]}"#)
+    );
+    assert!(
+        o.get("/api/search?q=")
+            .await
+            .body
+            .ends_with(r#""results":[]}"#)
+    );
+    assert!(
+        o.get("/api/search?q=%23")
+            .await
+            .body
+            .ends_with(r#""results":[]}"#)
+    );
+    assert!(
+        o.get("/api/search?q=100%25")
+            .await
+            .body
+            .ends_with(r#""results":[]}"#),
+        "% is literal"
+    );
+    let too_long = format!("/api/search?q={}", "a".repeat(101));
+    assert_eq!(o.get(&too_long).await.status, 400);
+
+    let mut stranger = Client::new(port);
+    let refused = stranger.get("/api/search?q=harbour").await;
+    assert_eq!(refused.status, 401);
+    assert!(!refused.body.contains("Harbour"));
+    assert_eq!(stranger.get("/api/library").await.status, 401);
+
+    // Members search too.
+    let mut b = member(port, "beta").await;
+    assert!(
+        b.get("/api/search?q=harbour")
+            .await
+            .body
+            .contains("Harbour walk")
+    );
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn search_returns_at_most_twenty(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    for i in 0..22 {
+        upload(
+            &mut o,
+            &csrf,
+            &format!("Common {i}"),
+            Some(("c.html", &page_with("Common", "<p>shared word</p>"))),
+        )
+        .await;
+    }
+    let body = o.get("/api/search?q=shared").await.body;
+    assert_eq!(body.matches(r#""key":"#).count(), 20, "{body}");
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn library_and_contents_for_the_globe(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let day = today(&pool).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let body = r#"<section id="days"><h2>Day by day</h2><h3>Morning</h3></section><h2 id="stays">Stays</h2>"#;
+    send_multipart(
+        &mut o,
+        "/documents",
+        &[("csrf", &csrf), ("title", "Lake plan"), ("tags", "#lake")],
+        Some(("l.html", &page_with("Lake plan", body))),
+    )
+    .await;
+    let library = o.get("/api/library").await;
+    assert_eq!(library.status, 200);
+    let month: String = sqlx::query_scalar(
+        "SELECT to_char((now() AT TIME ZONE 'Asia/Singapore')::date, 'FMMonth YYYY')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        library.body,
+        format!(
+            r#"{{"documents":[{{"key":"{day}_1","label":"{day}_#1","title":"Lake plan","tags":["lake"],"month":"{month}"}}]}}"#
+        )
+    );
+
+    // The document page lists its headings with anchors in 📁 contents; the others are counted.
+    let page = o.get(&format!("/documents/{day}_1")).await.body;
+    assert!(
+        page.contains(&format!(
+            r#"<a href="/documents/{day}_1/raw#days" data-frame-jump="days">Day by day</a>"#
+        )),
+        "{page}"
+    );
+    assert!(page.contains(r#"data-frame-jump="stays">Stays</a>"#));
+    assert!(
+        page.contains("2 more headings have no anchor"),
+        "the h1 and the h3"
+    );
+    assert!(page.contains(&format!(r#"data-doc-key="{day}_1""#)));
+    // Other signed-in pages have the buttons and the library contents; the sign-in page has none.
+    let list = o.get("/documents").await.body;
+    assert!(list.contains("data-fab-satellite") && list.contains("data-contents-library"));
+    let satellite = list.find("data-fab-satellite").unwrap();
+    let globe = list.find("data-fab-globe").unwrap();
+    let folder = list.find("data-fab-folder").unwrap();
+    assert!(
+        satellite < globe && globe < folder,
+        "michi order: satellite, globe, folder"
+    );
+    assert!(
+        !Client::new(port)
+            .get("/")
+            .await
+            .body
+            .contains("data-fab-group")
+    );
+    assert_eq!(o.get("/assets/explorer.mjs").await.status, 200);
+    assert_eq!(o.get("/assets/globe-layout.mjs").await.status, 200);
+
+    // Versions from before search existed are indexed when the server starts.
+    sqlx::query(
+        "UPDATE document_versions SET indexed = false, text_content = '', heading_ids = '{}'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    start(pool.clone(), config()).await;
+    assert!(
+        o.get("/api/search?q=morning")
+            .await
+            .body
+            .contains("Lake plan")
+    );
+}

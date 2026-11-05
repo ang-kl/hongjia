@@ -12,7 +12,32 @@ pub struct Nav<'a> {
 }
 
 fn layout(title: &str, nav: Option<&Nav>, body_attrs: &str, main: &str) -> String {
-    page_shell(title, nav, "app", body_attrs, r#"class="page""#, main)
+    page_shell(title, nav, "app", body_attrs, r#"class="page""#, main, None)
+}
+
+/// The 📁 contents of every page except a document: all documents, filled in by explorer.mjs.
+const LIBRARY_CONTENTS: &str = r#"<p class="fab-contents-head">All documents</p><div data-contents-library><p class="small">Loading the documents…</p></div>"#;
+
+/// The 🛰️ satellite, globe and 📁 folder buttons at the bottom right of every signed-in page, in
+/// the michi order, with the search field, the contents list and the globe they open.
+fn explorer(contents: &str) -> String {
+    format!(
+        r##"<div class="fab-group" data-fab-group>
+<form class="fab-search glass" id="fab-search" role="search" data-fab-search hidden><label><span class="visually-hidden">Search all documents</span><input type="search" data-fab-input placeholder="Search titles, hashtags and text" autocomplete="off" spellcheck="false" maxlength="100"></label><button type="submit" aria-label="Search">→</button></form>
+<div class="fab-contents glass" id="fab-contents" role="region" aria-label="Contents" data-fab-contents hidden>{contents}</div>
+<button type="button" class="fab-satellite" data-fab-satellite aria-expanded="false" aria-controls="fab-search" title="Search all documents" disabled><span aria-hidden="true">🛰️</span><span class="visually-hidden">Search all documents</span></button>
+<button type="button" class="fab-globe" data-fab-globe aria-haspopup="dialog" aria-controls="globe" aria-expanded="false" title="Explore the documents" disabled><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><defs><radialGradient id="fab-g" cx="38%" cy="32%" r="70%"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset=".6" stop-color="#eef3fa" stop-opacity=".9"/><stop offset="1" stop-color="#c9d7ea" stop-opacity=".9"/></radialGradient></defs><circle cx="24" cy="24" r="19" fill="url(#fab-g)" stroke="#7f9bc4" stroke-opacity=".9" stroke-width="1.4"/><path d="M12 18c3-4 8-4 10-1s6 1 9-2c3 3 3 8 1 11s-7 2-9 0-6 1-9 3c-3-3-4-7-2-11z" fill="#d7e3f3" stroke="#9fb6d6" stroke-width=".8"/><circle cx="16" cy="19" r="2.2" fill="#f0b8a2"/><circle cx="31" cy="15" r="2.2" fill="#a8c8f0"/><circle cx="33" cy="30" r="2.2" fill="#f3d58b"/><circle cx="20" cy="33" r="2.2" fill="#b9e0c6"/></svg><span class="visually-hidden">Explore the documents</span></button>
+<button type="button" class="fab-folder" data-fab-folder aria-expanded="false" aria-controls="fab-contents" title="Contents" disabled><span aria-hidden="true">📁</span><span class="visually-hidden">Contents</span></button>
+</div>
+<div class="globe-dialog" id="globe" role="dialog" aria-modal="true" aria-label="Globe of the family documents" data-globe hidden>
+<div class="globe-backdrop" data-globe-close></div>
+<p class="visually-hidden" role="status" aria-live="polite" data-globe-status></p>
+<button type="button" class="globe-x glass" data-globe-close aria-label="Close the globe">×</button>
+<div class="globe-box" data-globe-box><div class="globe-stage" data-globe-stage></div></div>
+<p class="visually-hidden" id="globe-help">Each island is a hashtag shared by several documents. Select a pin to see the document. Drag or use the arrow keys to turn the globe; scroll, pinch or press plus and minus to zoom. Press Escape to close the search, then the card, then the globe.</p>
+<div class="globe-card glass" role="region" aria-label="Selected document" data-globe-card hidden><button type="button" class="globe-card-x" data-globe-card-close aria-label="Close this card">×</button><div class="globe-panel" data-globe-panel></div></div>
+</div>"##
+    )
 }
 
 fn page_shell(
@@ -22,6 +47,7 @@ fn page_shell(
     body_attrs: &str,
     main_attrs: &str,
     main: &str,
+    contents: Option<&str>,
 ) -> String {
     let header = match nav {
         Some(nav) => format!(
@@ -33,9 +59,15 @@ fn page_shell(
         None => r#"<header class="bar"><a class="brand" href="/"><span lang="zh">洪家</span> · hongjia</a></header>"#.to_string(),
     };
     let session_script = if nav.is_some() {
-        r#"<script type="module" src="/assets/session.mjs"></script>"#
+        r#"<script type="module" src="/assets/session.mjs"></script>
+<script type="module" src="/assets/explorer.mjs"></script>"#
     } else {
         ""
+    };
+    let explore = if nav.is_some() {
+        explorer(contents.unwrap_or(LIBRARY_CONTENTS))
+    } else {
+        String::new()
     };
     format!(
         r#"<!doctype html>
@@ -56,6 +88,7 @@ fn page_shell(
 <main {main_attrs}>
 {main}
 </main>
+{explore}
 </body>
 </html>
 "#,
@@ -491,6 +524,48 @@ fn check_section(latest: Option<&VersionRow>) -> String {
     )
 }
 
+/// 📁 contents of a document page: its headings with anchors, as links that move the frame.
+fn document_contents(key: &str, latest: Option<&VersionRow>) -> String {
+    let Some(v) = latest else {
+        return LIBRARY_CONTENTS.to_string();
+    };
+    let key = escape(key);
+    let mut items = String::new();
+    let mut unanchored = 0;
+    for ((level, id), text) in v
+        .heading_levels
+        .iter()
+        .zip(&v.heading_ids)
+        .zip(&v.heading_texts)
+    {
+        if id.is_empty() {
+            unanchored += 1;
+            continue;
+        }
+        items.push_str(&format!(
+            r#"<li class="level-{level}"><a href="/documents/{key}/raw#{anchor}" data-frame-jump="{anchor}">{text}</a></li>"#,
+            level = level.clamp(&1, &3),
+            anchor = escape(id),
+            text = escape(text),
+        ));
+    }
+    let list = if items.is_empty() {
+        r#"<p class="small">This document has no headings to jump to.</p>"#.to_string()
+    } else {
+        format!(r#"<ol class="fab-contents-list">{items}</ol>"#)
+    };
+    let note = match unanchored {
+        0 => String::new(),
+        1 => r#"<p class="small">1 more heading has no anchor; jumping to it comes with annotations.</p>"#.to_string(),
+        n => format!(
+            r#"<p class="small">{n} more headings have no anchor; jumping to them comes with annotations.</p>"#
+        ),
+    };
+    format!(
+        r#"<p class="fab-contents-head">In this document</p>{list}{note}<p class="small"><a href="/documents">All documents</a></p>"#
+    )
+}
+
 /// One document, filling the window: the document frame and the management panel beside it
 /// (landscape) or in a sheet opened with Manage (portrait).
 pub fn document_view(
@@ -608,9 +683,10 @@ pub fn document_view(
         &doc.title,
         Some(nav),
         "app viewer-page",
-        &format!(r#" data-csrf="{csrf}""#),
+        &format!(r#" data-csrf="{csrf}" data-doc-key="{key}""#),
         r#"class="viewer" id="doc""#,
         &main,
+        Some(&document_contents(&doc.key, latest)),
     )
 }
 
