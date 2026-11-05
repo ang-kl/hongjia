@@ -1067,6 +1067,20 @@ pub fn check_html(html: &str) -> Check {
                 .to_string(),
         );
     }
+    // A page an AI stopped writing part-way: a script that never closes, so nothing in it runs.
+    let scripts_opened = start_tags(html, &lower, "script").len();
+    let scripts_closed = lower.matches("</script").count();
+    if scripts_opened > scripts_closed {
+        check.warnings.push(
+            "This file looks cut off: a script starts but never ends, so its buttons, tabs and maps will not work. It was probably saved before it was finished; ask for the complete file."
+                .to_string(),
+        );
+    } else if lower.contains("<html") && !lower.trim_end().ends_with("</html>") {
+        check.warnings.push(
+            "This file does not end with </html>. If parts of the page are missing, it may have been saved before it was finished."
+                .to_string(),
+        );
+    }
     let mut blocked_frames: Vec<String> = Vec::new();
     for tag in start_tags(html, &lower, "iframe") {
         let src = attr(tag, "src").unwrap_or_default();
@@ -1486,6 +1500,33 @@ localStorage.setItem('k', 'v');
             check_html(r#"<iframe src="https://www.google.com/maps/embed?pb=1"></iframe>"#)
                 .warnings
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn cut_off_files_are_reported() {
+        let cut = r#"<!doctype html><html><body><button onclick="go()">Go</button><script>function go() { const card = `<button onclick="focusStop"#;
+        let warnings = check_html(cut).warnings;
+        assert!(
+            warnings.iter().any(|w| w.contains("looks cut off")),
+            "{warnings:?}"
+        );
+        let ends_early = "<!doctype html><html><body><p>Day one</p></body>";
+        assert!(
+            check_html(ends_early)
+                .warnings
+                .iter()
+                .any(|w| w.contains("does not end with </html>"))
+        );
+        let whole = "<!doctype html><html><body><script>let a = 1;</script></body></html>\n";
+        assert!(
+            check_html(whole).warnings.is_empty(),
+            "{:?}",
+            check_html(whole).warnings
+        );
+        assert!(
+            check_html("<p>a fragment</p>").warnings.is_empty(),
+            "fragments have no <html> to close"
         );
     }
 

@@ -379,7 +379,36 @@ async fn insert(
 
 /// Checks and indexes versions uploaded before the upload check, search or contents existed.
 /// Runs when the server starts; returns how many versions were brought up to date.
+/// The upload check's rules. When they change, this number goes up and every version is checked
+/// again at the next start, so each panel shows the current findings (not the ones from the day
+/// the file was uploaded).
+pub const CHECK_VERSION: i32 = 2;
+
+/// Marks every version for a fresh check when the rules changed since the last start.
+async fn recheck_when_rules_change(pool: &PgPool) -> sqlx::Result<()> {
+    let stored: Option<i32> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'upload_check_version'")
+            .fetch_optional(pool)
+            .await?;
+    if stored.unwrap_or(1) < CHECK_VERSION {
+        let mut tx = pool.begin().await?;
+        sqlx::query("UPDATE document_versions SET checked = false")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES ('upload_check_version', $1)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(CHECK_VERSION)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+    }
+    Ok(())
+}
+
 pub async fn backfill_versions(pool: &PgPool) -> sqlx::Result<u64> {
+    recheck_when_rules_change(pool).await?;
     let pending: Vec<(i64, String, Vec<u8>, String)> = sqlx::query_as(
         "SELECT id, kind, content, filename FROM document_versions WHERE NOT checked OR NOT indexed ORDER BY id LIMIT 500",
     )
