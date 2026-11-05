@@ -1,4 +1,4 @@
-// P1, P2b and D1 to D3 browser check: sign in with the family password, consent, upload a sample document, then
+// P1, P2b and D1 to D4 browser check: sign in with the family password, consent, upload a sample document, then
 // every family page at the owner's seven device-class viewports (light and dark). On the document page
 // the management panel must sit beside the document in landscape and open as a sheet in portrait.
 // Needs a release build and a PostgreSQL database.
@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 
 const require = createRequire(import.meta.url);
@@ -681,6 +681,111 @@ let notePlace = null, inkPlace = null;
   await phone.close();
 }
 
+// 4. D4: redaction and attachments, on a document of their own (added by the owner).
+const REDACT = `<!doctype html><html><head><meta charset="utf-8"><title>Redaction</title>
+<style>body{font:16px system-ui;margin:24px}p{margin:0 0 48px}</style></head><body>
+<h1>Redaction sample</h1><p id="r1">Invented contact Quillon Marsh lives at 7 Bramble Lane.</p><p id="r2">Orchard gate code 4417 for visitors.</p>
+<p id="r3">Lantern place for the paperclip pin.</p><p id="r4">Meadow place for the second file.</p></body></html>`;
+const PDF = Buffer.from('%PDF-1.4\n% invented test file\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n');
+const SMALL_PNG = makePng(40, 30);
+await page.goto(base + '/documents/new');
+await page.setInputFiles('input[name=file]', { name: 'redaction.html', mimeType: 'text/html', buffer: Buffer.from(REDACT) });
+await page.click('form[action="/documents"] button[type=submit]');
+await page.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
+const redactPath = new URL(page.url()).pathname;
+await page.waitForTimeout(800);
+const kindCount = (p, kind) => p.locator(`li[data-kind=${kind}]`).count();
+const kindAdded = (p, kind, n) => p.waitForFunction(([k, m]) => document.querySelectorAll(`li[data-kind=${k}]`).length > m, [kind, n], { timeout: 5000 }).then(() => true, () => false);
+const attachAt = async (p, word, file) => {
+  await rightClick(p, word);
+  const [chooser] = await Promise.all([p.waitForEvent('filechooser', { timeout: 4000 }).catch(() => null), p.click('.anno-menu [data-act=attach]')]);
+  if (!chooser) { failures.push(`Attach file opened no file picker (${file.name})`); return; }
+  await chooser.setFiles(file);
+};
+const downloadOf = async (p, name) => {
+  const link = p.locator('li[data-kind=attachment]', { hasText: name }).locator('[data-attachment-link]');
+  const [download] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), link.click()]);
+  return download ? { name: download.suggestedFilename(), bytes: await readFile(await download.path()) } : null;
+};
+{
+  // Another member (not the uploader, not the owner): no Redact in the menu, and the server says no.
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const bp = await signIn(ctx, 'beta');
+  await bp.goto(base + redactPath, { waitUntil: 'networkidle' });
+  await bp.waitForTimeout(600);
+  await rightClick(bp, 'Quillon Marsh', 'Quillon Marsh');
+  if (!(await menuOpen(bp))) failures.push('no menu for another member');
+  if (await bp.locator('.anno-menu [data-act=redaction]').count()) failures.push('Redact offered to a member who did not add the document');
+  await bp.keyboard.press('Escape');
+  const refused = await bp.evaluate(async path => (await fetch(`${path}/annotations`, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'X-CSRF-Token': document.body.dataset.csrf, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ kind: 'redaction', quote: 'Quillon Marsh' }).toString()
+  })).status, redactPath);
+  if (refused !== 403) failures.push(`another member marked a redaction (status ${refused})`);
+  if (await bp.locator('form[data-redact-apply]').count()) failures.push('another member sees the apply form');
+  await ctx.close();
+}
+{
+  // The owner marks two passages: black boxes in the document, listed under Pending redactions.
+  for (const words of ['Quillon Marsh', '4417']) {
+    await rightClick(page, words, words);
+    const n = await kindCount(page, 'redaction');
+    await page.click('.anno-menu [data-act=redaction]');
+    if (!(await kindAdded(page, 'redaction', n))) failures.push(`"${words}" was not marked for redaction`);
+  }
+  await noSelection(page);
+  await page.waitForTimeout(300);
+  const black = await rawFrame(page).evaluate(() => [...document.querySelectorAll('mark[data-hj-kind=redaction]')].map(m => getComputedStyle(m).backgroundColor));
+  if (black.length !== 2 || !black.every(c => c === 'rgb(0, 0, 0)')) failures.push(`pending redactions not drawn as black boxes (${black.join(', ')})`);
+  // A PDF pinned before the redaction is applied, to check it survives it.
+  await attachAt(page, 'Lantern', { name: 'Invented ticket.pdf', mimeType: 'application/pdf', buffer: PDF });
+  if (!(await kindAdded(page, 'attachment', 0))) failures.push('the PDF was not attached');
+  await page.locator('#redactions').scrollIntoViewIfNeeded();
+  if (shots) await page.screenshot({ path: `${shots}/notebook-redaction-pending.png` });
+  // Applying needs REDACT; then the older version is gone and the words are blacked out.
+  await page.fill('form[data-redact-apply] input[name=confirm]', 'REDACT');
+  await Promise.all([page.waitForURL(/redacted=2/, { timeout: 8000 }).catch(() => failures.push('applying did not return to the document')), page.click('form[data-redact-apply] button[type=submit]')]);
+  await page.waitForTimeout(900);
+  const text = await rawFrame(page).evaluate(() => document.body.textContent);
+  if (!text.includes('Invented contact ███████ █████ lives') || !text.includes('gate code ████ for') || /Quillon|Marsh|4417/.test(text)) failures.push('the applied redaction does not show blacked-out words');
+  if (!(await page.textContent('.notice')).includes('Redaction applied: 2 passages blacked out')) failures.push('no notice after applying');
+  const versions = await page.locator('#panel .versions li').allTextContents();
+  if (versions.length !== 1 || !versions[0].startsWith('Version 2 (shown)')) failures.push(`versions after redaction: ${versions.join(' | ')}`);
+  if (!/Earlier versions were removed by a redaction on .* \(SGT\) by delta\./.test(await page.textContent('.redaction-note').catch(() => ''))) failures.push('no note that earlier versions were removed');
+  for (const old of ['original?v=1', 'raw?v=1']) {
+    const status = await page.evaluate(async url => (await fetch(url, { credentials: 'same-origin' })).status, `${redactPath}/${old}`);
+    if (status !== 404) failures.push(`the old version is still served at ${old} (${status})`);
+  }
+  if (await kindCount(page, 'redaction')) failures.push('pending redactions left after applying');
+  if (await kindCount(page, 'attachment') !== 1) failures.push('the attachment did not survive the redaction');
+  if (shots) {
+    await page.locator('#panel .versions').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${shots}/notebook-redaction-applied.png` });
+  }
+  // A PNG, and a web page that is refused with a reason.
+  await attachAt(page, 'Meadow', { name: 'Invented map.png', mimeType: 'image/png', buffer: SMALL_PNG });
+  if (!(await kindAdded(page, 'attachment', 1))) failures.push('the PNG was not attached');
+  await attachAt(page, 'Orchard', { name: 'page.html', mimeType: 'text/html', buffer: Buffer.from('<!doctype html><script>alert(1)</script>') });
+  await page.waitForFunction(() => /cannot be attached/.test(document.querySelector('[data-attach-status]')?.textContent || ''), null, { timeout: 5000 }).catch(() => failures.push('a refused .html file gave no reason'));
+  if (await kindCount(page, 'attachment') !== 2) failures.push('the .html file was attached');
+  if ((await page.locator('.ov-attachment').count()) !== 2) failures.push('the paperclips are not shown over the document');
+  const pdf = await downloadOf(page, 'Invented ticket.pdf');
+  if (!pdf || pdf.name !== 'Invented ticket.pdf' || !pdf.bytes.equals(PDF)) failures.push(`the PDF did not download unchanged (${pdf?.name})`);
+  const png = await downloadOf(page, 'Invented map.png');
+  if (!png || png.name !== 'Invented map.png' || !png.bytes.equals(SMALL_PNG)) failures.push(`the PNG did not download unchanged (${png?.name})`);
+  await page.locator('#attachments').scrollIntoViewIfNeeded();
+  if (shots) await page.screenshot({ path: `${shots}/notebook-attachments.png` });
+  // Pictures cannot be redacted yet: the item is there for the owner, greyed out.
+  await page.goto(base + picturePath, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const pic = await pictureAt(page);
+  await page.mouse.click(pic.x + pic.w * 0.5, pic.y + pic.h * 0.5, { button: 'right' });
+  await page.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => {});
+  if (!(await page.isDisabled('.anno-menu [data-act=redaction]').catch(() => false))) failures.push('Redact is not greyed out on a picture');
+  await page.keyboard.press('Escape');
+}
+
 await page.goto(base + sketchPath, { waitUntil: 'networkidle' });
 await page.waitForTimeout(600);
 const expectedDrawings = await page.locator('.ink-layer g').count();
@@ -768,7 +873,7 @@ async function checkFabs(p, label, width, height, problems, shot) {
   if (csp.length) problems.push(`CSP after the buttons: ${csp.join('; ')}`);
 }
 
-const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['sketch', sketchPath, true], ['signing', signPath, true], ['picture', picturePath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
+const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['sketch', sketchPath, true], ['signing', signPath, true], ['picture', picturePath, true], ['redaction', redactPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
 
 // The menu button (bottom left) on every signed-in page: inside the window, at least 44px, and its
 // panel lists Latest document, Documents (which folds open to the documents), Journal and Settings
@@ -913,6 +1018,15 @@ for (const scheme of ['light', 'dark']) {
         if (await p.isVisible('[data-ink-bar]')) problems.push('Escape did not leave drawing');
         const after = await p.evaluate(() => window.__csp);
         if (after.length) problems.push(`CSP while drawing: ${after.join('; ')}`);
+      }
+      if (label === 'redaction') {
+        // D4: the blacked-out words and the two paperclips, drawn over the document.
+        await p.waitForTimeout(400);
+        const text = await rawFrame(p).evaluate(() => document.body.textContent);
+        if (!text.includes('███████ █████') || /Quillon|4417/.test(text)) problems.push('the redacted words show');
+        const pins = await p.locator('.ov-attachment:not([hidden])').count();
+        if (pins !== 2) problems.push(`expected 2 paperclips over the document, found ${pins}`);
+        if ((await p.locator('li[data-kind=attachment]').count()) !== 2) problems.push('the attachments are not listed');
       }
       if (label === 'document') await checkViewer(p, width, height, problems, shots && scheme === 'light' ? `${shots}/${name}-document-panel.png` : '');
       if (signedIn) await checkFabs(p, label, width, height, problems, shots && scheme === 'light' && label === 'documents' && ['notebook', 'phone-small'].includes(name) ? `${shots}/${name}-globe.png` : '');

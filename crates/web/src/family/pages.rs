@@ -1,7 +1,9 @@
 //! Server-rendered pages. Every value from the database or the request is escaped.
 
+use super::attach;
 use super::doccheck::filing_label;
 use super::documents::{DELETE_WORD, DocumentRow, IFRAME_SANDBOX, VersionRow};
+use super::redact::REDACT_WORD;
 use super::review::{AnnotationRow, MentionRow, Review};
 use super::store::{AuditRow, FailureCount, FailureDetail, JournalRow, Profile, ProfileStatus};
 use super::web::escape;
@@ -217,6 +219,8 @@ fn kind_word(kind: &str) -> &'static str {
         "ink" => "Drawing",
         "shape" => "Shape",
         "signature" => "Signature",
+        "redaction" => "Redaction",
+        "attachment" => "Attachment",
         _ => "Comment",
     }
 }
@@ -775,6 +779,18 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) 
             color = escape(&row.color),
             word = drawing_word(row)
         ),
+        // D4: a passage waiting to be blacked out, and an attached file (downloaded only).
+        "redaction" => format!(
+            r#"<blockquote class="annotation-quote" data-annotation-jump><span class="kind-tag kind-redaction">Redaction</span> “{}”</blockquote>"#,
+            quote()
+        ),
+        "attachment" => format!(
+            r#"<p class="annotation-quote" data-annotation-jump><span class="kind-tag kind-attachment">Attachment</span> <span class="wrap">{name}</span></p><p class="attachment-file"><a href="/documents/{key}/attachments/{id}" download data-attachment-link>Download</a> · {kind} · {size}</p>"#,
+            name = escape(&row.text),
+            id = row.id,
+            kind = attach::type_words(row.file_type.as_deref().unwrap_or("")),
+            size = attach::size_words(i64::from(row.file_size.unwrap_or(0))),
+        ),
         _ => format!(r#"<p class="annotation-quote" data-annotation-jump>{tag}</p>"#),
     };
     let body = if row.body.is_empty() {
@@ -785,8 +801,10 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) 
             with_mentions(&row.body, &row.mentions)
         )
     };
-    // A signature is moved, never edited (D3).
-    let edit = if review.can_edit(row) && row.kind != "signature" {
+    // A signature is moved, never edited (D3); nor are redactions and attachments (D4).
+    let edit = if review.can_edit(row)
+        && !matches!(row.kind.as_str(), "signature" | "redaction" | "attachment")
+    {
         r#"<button type="button" class="link" data-annotation-edit>Edit</button>"#
     } else {
         ""
@@ -841,16 +859,16 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) 
 /// Annotations: the list, and the composer that the page's script fills when Comment is pressed
 /// (it also works as a plain form for a comment on the whole document).
 fn annotations_section(key: &str, csrf: &str, review: &Review) -> String {
-    let items: String = review
+    let marks: Vec<&AnnotationRow> = review
         .annotations
+        .iter()
+        .filter(|a| !SEPARATE.contains(&a.kind.as_str()))
+        .collect();
+    let items: String = marks
         .iter()
         .map(|a| annotation_item(key, csrf, a, review))
         .collect();
-    let empty = if review.annotations.is_empty() {
-        ""
-    } else {
-        " hidden"
-    };
+    let empty = if marks.is_empty() { "" } else { " hidden" };
     format!(
         r#"<section class="panel-section" id="annotations"><div class="section-head"><h2>Annotations</h2><span class="count" data-annotation-count>{n}</span></div>
 <p class="small">Right-click the document (press and hold on a touch screen, or tap twice with the Pencil) to highlight, underline, strike through, insert or replace text, add a note, a text box, a stamp or your signature, or draw: Draw, Sketch (rough circles, boxes, lines and arrows become clean shapes), Shapes and Eraser. Loupe magnifies. Or select text and press Comment. Type @ and a name to mention someone. Everyone can mark up; you can edit, move and delete your own.</p>
@@ -861,7 +879,70 @@ fn annotations_section(key: &str, csrf: &str, review: &Review) -> String {
 <div class="composer-actions"><button type="submit">Save comment</button><button type="button" class="secondary" data-composer-clear hidden>On the whole document instead</button></div>
 <p class="small" role="status" data-composer-status></p>
 </form></section>"#,
-        n = review.annotations.len(),
+        n = marks.len(),
+    )
+}
+
+/// Kinds listed in their own panel sections (D4) instead of with the annotations.
+const SEPARATE: [&str; 2] = ["redaction", "attachment"];
+
+/// The marks of one kind, as a list for its own section.
+fn kind_list(key: &str, csrf: &str, review: &Review, kind: &str, none: &str) -> (usize, String) {
+    let rows: Vec<&AnnotationRow> = review
+        .annotations
+        .iter()
+        .filter(|a| a.kind == kind)
+        .collect();
+    let items: String = rows
+        .iter()
+        .map(|a| annotation_item(key, csrf, a, review))
+        .collect();
+    let hidden = if rows.is_empty() { "" } else { " hidden" };
+    (
+        rows.len(),
+        format!(
+            r#"<ol class="annotations" data-mark-list="{kind}">{items}</ol><p class="small" data-mark-empty="{kind}"{hidden}>{none}</p>"#
+        ),
+    )
+}
+
+/// D4: passages waiting to be blacked out, and (for the uploader or the owner) the form that
+/// applies them for good. Shown to everyone when some are waiting.
+fn redactions_section(key: &str, csrf: &str, review: &Review, doc: &DocumentRow) -> String {
+    let (n, list) = kind_list(
+        key,
+        csrf,
+        review,
+        "redaction",
+        "Nothing is marked for redaction.",
+    );
+    if !review.can_choose_mode && n == 0 {
+        return String::new();
+    }
+    let how = if doc.kind == "picture" {
+        r#"<p class="small">Pictures cannot be redacted yet. Upload an edited picture as a new version instead.</p>"#.to_string()
+    } else if review.can_redact {
+        format!(
+            r#"<p class="small">To black out words for good, select them in the document, right-click (press and hold on a touch screen, or tap twice with the Pencil) and choose Redact. Marked words show as black boxes until the redactions are applied.</p>
+<form method="post" action="/documents/{key}/redactions/apply" class="stack danger-zone" data-redact-apply><input type="hidden" name="csrf" value="{csrf}"><p class="small">Applying makes a new version with every marked passage blacked out (█) and deletes every earlier version for good. There are no backups. Other marks keep their place; the blacked-out words are removed from what they saved.</p><label>Type {word} to confirm <input type="text" name="confirm" autocomplete="off" required pattern="{word}" placeholder="{word}"></label><button type="submit" class="danger">Apply redactions permanently</button></form>"#,
+            word = REDACT_WORD,
+        )
+    } else {
+        r#"<p class="small">Only the person who added this document, or the owner, can mark and apply redactions.</p>"#.to_string()
+    };
+    format!(
+        r#"<section class="panel-section" id="redactions"><div class="section-head"><h2>Pending redactions</h2><span class="count" data-mark-count="redaction">{n}</span></div>{list}{how}</section>"#
+    )
+}
+
+/// D4: files pinned to the document. Anyone in the family may attach one.
+fn attachments_section(key: &str, csrf: &str, review: &Review) -> String {
+    let (n, list) = kind_list(key, csrf, review, "attachment", "No files attached yet.");
+    format!(
+        r#"<section class="panel-section" id="attachments"><div class="section-head"><h2>Attachments</h2><span class="count" data-mark-count="attachment">{n}</span></div>
+<p class="small">Right-click the document where a file belongs (press and hold on a touch screen, or tap twice with the Pencil) and choose Attach file. Pictures (JPEG, PNG, WebP), PDF, Word, Excel, PowerPoint, plain text and CSV, up to 10 MB. Files are only ever downloaded, never opened in the site.</p>
+{list}<input type="file" hidden data-attach-input accept="{accept}"><p class="small" role="status" data-attach-status></p></section>"#,
+        accept = attach::ACCEPT,
     )
 }
 
@@ -987,10 +1068,21 @@ pub fn document_view(
     } else {
         String::new()
     };
+    let redaction_note = review
+        .redacted
+        .as_ref()
+        .map(|(on, by)| {
+            format!(
+                r#"<p class="small redaction-note">Earlier versions were removed by a redaction on {} (SGT) by {}.</p>"#,
+                escape(on),
+                escape(by.as_deref().unwrap_or("someone"))
+            )
+        })
+        .unwrap_or_default();
     let version_section = section(
         "Versions",
         Some(versions.len()),
-        &format!(r#"<ul class="versions">{version_items}</ul>{version_form}"#),
+        &format!(r#"<ul class="versions">{version_items}</ul>{redaction_note}{version_form}"#),
     );
     let manage = if can_manage {
         section(
@@ -1020,7 +1112,7 @@ pub fn document_view(
 </div>
 <aside class="panel" id="panel" aria-label="Manage this document">
 <div class="panel-head"><span class="panel-title">This document</span><a class="panel-close" href="#doc" data-sidebar-close title="Close the sidebar"><span aria-hidden="true">×</span><span class="visually-hidden">Close the sidebar</span></a></div>
-{details}{annotations}{fields}{tags}{version_section}{check}{manage}
+{details}{annotations}{redactions}{attachments}{fields}{tags}{version_section}{check}{manage}
 </aside>
 <script type="module" src="/assets/doc-view.mjs"></script>"##,
         title = escape(&doc.title),
@@ -1028,6 +1120,8 @@ pub fn document_view(
         sandbox = IFRAME_SANDBOX,
         check = check_section(latest),
         annotations = annotations_section(&key, &csrf, review),
+        redactions = redactions_section(&key, &csrf, review, doc),
+        attachments = attachments_section(&key, &csrf, review),
         fields = if doc.kind == "html" {
             fields_section(&key, &csrf, review)
         } else {
@@ -1039,8 +1133,11 @@ pub fn document_view(
         Some(nav),
         "app viewer-page",
         &format!(
-            r#" data-csrf="{csrf}" data-doc-key="{key}" data-viewer="{viewer}""#,
-            viewer = escape(nav.handle)
+            r#" data-csrf="{csrf}" data-doc-key="{key}" data-viewer="{viewer}" data-doc-kind="{kind}" data-manager="{manager}" data-can-redact="{redact}""#,
+            viewer = escape(nav.handle),
+            kind = escape(&doc.kind),
+            manager = can_manage,
+            redact = review.can_redact,
         ),
         r#"class="viewer" id="doc""#,
         &main,

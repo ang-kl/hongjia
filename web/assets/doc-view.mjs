@@ -5,6 +5,9 @@
 // and it can never create, change, move or delete a mark: a person chooses in the menu or the
 // panel drawn by this page. Words people write (comments, notes, text boxes, inserted and
 // replacement text, stamps) and drawings (D2) are drawn here, over the frame, and never sent into it.
+// D4: the uploader or the owner marks passages for redaction (a black box until applied in the
+// panel), and anyone may pin a file at a point (a paperclip drawn here; the file is only ever
+// downloaded, never opened in the site).
 
 import { createInk, drawingNodes, parsePoints, placement } from './ink.mjs';
 import { createSignaturePad, signatureNodes } from './signature.mjs';
@@ -132,11 +135,46 @@ export function mentionQuery(text, caret) {
   return match ? match[2].toLowerCase() : null;
 }
 
-const KIND_WORDS = { comment: 'Comment', highlight: 'Highlight', underline: 'Underline', strike: 'Strikethrough', insert: 'Insert', replace: 'Replace', note: 'Sticky note', textbox: 'Text box', stamp: 'Stamp', ink: 'Drawing', shape: 'Shape', signature: 'Signature' };
+/// A size in words, as the panel shows it: "820 bytes", "12 KB", "3.4 MB".
+export function fileSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} bytes`;
+  if (n < 1024 * 1024) return `${Math.floor((n + 512) / 1024)} KB`;
+  const tenths = Math.floor((n * 10 + 512 * 1024) / (1024 * 1024));
+  return `${Math.floor(tenths / 10)}.${tenths % 10} MB`;
+}
+
+const TYPE_WORDS = { jpeg: 'JPEG picture', png: 'PNG picture', webp: 'WebP picture', pdf: 'PDF', docx: 'Word document', doc: 'Word document', xlsx: 'Excel workbook', xls: 'Excel workbook', pptx: 'PowerPoint', ppt: 'PowerPoint', csv: 'CSV', txt: 'Plain text' };
+/// What an attached file's type is called in the panel.
+export const typeWords = kind => TYPE_WORDS[kind] || 'Plain text';
+
+/// The Redact item in the menu (D4): offered only to the uploader and the owner, and greyed out
+/// on a picture. Null when the item is not shown at all.
+export function redactItem(manager, canRedact) {
+  if (!manager) return null;
+  return canRedact ? { label: 'Redact', needs: 'quote' } : { label: 'Redact (not for pictures yet)', needs: 'never' };
+}
+
+const KIND_WORDS = { comment: 'Comment', highlight: 'Highlight', underline: 'Underline', strike: 'Strikethrough', insert: 'Insert', replace: 'Replace', note: 'Sticky note', textbox: 'Text box', stamp: 'Stamp', ink: 'Drawing', shape: 'Shape', signature: 'Signature', redaction: 'Redaction', attachment: 'Attachment' };
 const SHAPE_WORDS = { rectangle: 'Rectangle', oval: 'Oval', line: 'Line', arrow: 'Arrow' };
 const DRAWN = new Set(['ink', 'shape']);
-const PLACED = new Set(['note', 'textbox', 'stamp', 'signature']);
-const OVERLAID = new Set(['note', 'textbox', 'stamp', 'insert', 'replace', 'signature']);
+const PLACED = new Set(['note', 'textbox', 'stamp', 'signature', 'attachment']);
+const OVERLAID = new Set(['note', 'textbox', 'stamp', 'insert', 'replace', 'signature', 'attachment']);
+/// Kinds listed in their own panel sections (D4).
+const SEPARATE = ['redaction', 'attachment'];
+const SVG = 'http://www.w3.org/2000/svg';
+
+/// A paperclip, for an attached file's pin.
+function paperclip(doc) {
+  const svg = doc.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'clip-icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = doc.createElementNS(SVG, 'path');
+  path.setAttribute('d', 'M16.5 7v8.5a4.5 4.5 0 0 1-9 0V6a3 3 0 0 1 6 0v9a1.5 1.5 0 0 1-3 0V7.5');
+  svg.append(path);
+  return svg;
+}
 
 function element(tag, props = {}, ...children) {
   const el = document.createElement(tag);
@@ -162,6 +200,11 @@ function start() {
   const list = document.querySelector('[data-annotations]');
   const count = document.querySelector('[data-annotation-count]');
   const empty = document.querySelector('[data-annotations-empty]');
+  // D4: pending redactions and attachments have sections of their own.
+  const lists = Object.fromEntries(SEPARATE.map(kind => [kind, document.querySelector(`[data-mark-list="${kind}"]`)]));
+  const listFor = kind => lists[kind] || list;
+  const manager = body.dataset.manager === 'true';
+  const canRedact = body.dataset.canRedact === 'true';
   const composer = document.querySelector('[data-composer]');
   const commentButton = document.querySelector('[data-comment]');
   const overlay = document.querySelector('[data-doc-overlay]');
@@ -194,7 +237,7 @@ function start() {
 
   // The marks, as the helper needs them: places and the document's own text only, no words
   // people wrote.
-  const entries = () => [...list.querySelectorAll('li[data-annotation-id]')];
+  const entries = () => [list, ...Object.values(lists)].filter(Boolean).flatMap(l => [...l.querySelectorAll('li[data-annotation-id]')]);
   const anchors = () => entries().map(li => ({
     id: li.dataset.annotationId, kind: li.dataset.kind || 'comment', color: li.dataset.color || 'yellow',
     quote: li.dataset.quote || '', prefix: li.dataset.prefix || '', suffix: li.dataset.suffix || '',
@@ -202,9 +245,17 @@ function start() {
   }));
   const sendAnchors = () => { toFrame({ type: 'hj:anchors', items: anchors() }); drawOverlay(); };
   const refreshCount = () => {
-    const n = entries().length;
+    const n = list.querySelectorAll('li[data-annotation-id]').length;
     count.textContent = String(n);
     empty.hidden = n > 0;
+    for (const [kind, l] of Object.entries(lists)) {
+      if (!l) continue;
+      const k = l.querySelectorAll('li[data-annotation-id]').length;
+      const badge = document.querySelector(`[data-mark-count="${kind}"]`);
+      const none = document.querySelector(`[data-mark-empty="${kind}"]`);
+      if (badge) badge.textContent = String(k);
+      if (none) none.hidden = k > 0;
+    }
   };
 
   // What Comment will attach to: the latest selection or focused field in the document.
@@ -269,6 +320,11 @@ function start() {
         head = element('p', { className: 'annotation-quote' }, tag(), ` ${a.label}`); break;
       case 'note': case 'textbox':
         head = element('p', { className: 'annotation-quote' }, tag()); break;
+      case 'redaction':
+        head = element('blockquote', { className: 'annotation-quote' }, element('span', { className: 'kind-tag kind-redaction', textContent: 'Redaction' }), ` “${a.quote}”`); break;
+      case 'attachment':
+        head = element('p', { className: 'annotation-quote' }, element('span', { className: 'kind-tag kind-attachment', textContent: 'Attachment' }), ' ', element('span', { className: 'wrap', textContent: a.text || '' }));
+        break;
       case 'ink': case 'shape':
         head = element('p', { className: 'annotation-quote' },
           element('span', { className: 'kind-tag', textContent: a.kind === 'shape' ? (SHAPE_WORDS[a.tool] || 'Shape') : 'Drawing', dataset: { color: a.color || 'yellow' } }),
@@ -281,6 +337,11 @@ function start() {
     }
     if (a.kind !== 'comment' || a.field || a.quote) head.dataset.annotationJump = '';
     li.append(head);
+    if (a.kind === 'attachment') {
+      li.append(element('p', { className: 'attachment-file' },
+        element('a', { href: `${base}/attachments/${a.id}`, download: '', textContent: 'Download', dataset: { attachmentLink: '' } }),
+        ` · ${typeWords(a.file_type)} · ${fileSize(a.size)}`));
+    }
     if (a.body) {
       const text = element('p', { className: 'annotation-body' });
       fillWithMentions(text, a.body, a.mentions || []);
@@ -288,8 +349,8 @@ function start() {
     }
     li.append(element('p', { className: 'small', textContent: `${a.author}, ${a.created} (SGT) · version ${a.version}` }));
     const actions = element('div', { className: 'annotation-actions' });
-    // A signature is moved, never edited (D3).
-    if (a.can_edit && a.kind !== 'signature') actions.append(element('button', { type: 'button', className: 'link', textContent: 'Edit', dataset: { annotationEdit: '' } }));
+    // A signature is moved, never edited (D3); nor are redactions and attachments (D4).
+    if (a.can_edit && !['signature', 'redaction', 'attachment'].includes(a.kind)) actions.append(element('button', { type: 'button', className: 'link', textContent: 'Edit', dataset: { annotationEdit: '' } }));
     if (a.can_delete) {
       const form = element('form', { method: 'post', action: `${base}/annotations/${a.id}/delete`, dataset: { annotationDelete: '' } },
         element('input', { type: 'hidden', name: 'csrf', value: csrf }),
@@ -302,7 +363,7 @@ function start() {
   const replaceEntry = a => {
     const old = document.getElementById(`annotation-${a.id}`);
     const fresh = item(a);
-    if (old) old.replaceWith(fresh); else list.append(fresh);
+    if (old) old.replaceWith(fresh); else listFor(a.kind).append(fresh);
     refreshCount();
     sendAnchors();
     return fresh;
@@ -348,7 +409,7 @@ function start() {
     }
   });
 
-  list.addEventListener('submit', async event => {
+  const onListSubmit = async event => {
     const form = event.target.closest('form[data-annotation-delete]');
     if (form) {
       event.preventDefault();
@@ -373,9 +434,9 @@ function start() {
     } catch {
       edit.querySelector('[data-editor-status]').textContent = 'Not saved; check the words and try again.';
     }
-  });
+  };
 
-  list.addEventListener('click', event => {
+  const onListClick = event => {
     const editButton = event.target.closest('[data-annotation-edit]');
     if (editButton) {
       const li = editButton.closest('li');
@@ -403,7 +464,11 @@ function start() {
       toFrame({ type: 'hj:scroll', id: li.dataset.annotationId });
       flashDrawing(li.dataset.annotationId);
     }
-  });
+  };
+  for (const l of [list, ...Object.values(lists)].filter(Boolean)) {
+    l.addEventListener('submit', onListSubmit);
+    l.addEventListener('click', onListClick);
+  }
 
   // @mentions: the family's handles, offered under a text box when @ is typed.
   let handles = null;
@@ -473,7 +538,14 @@ function start() {
       }
       shape.dataset.color = li.dataset.color || 'yellow';
       shape.dataset.own = li.dataset.canEdit === 'true' ? 'true' : 'false';
-      if (kind === 'signature') {
+      if (kind === 'attachment') {
+        // A paperclip and the file's name; the file is in the panel, to download.
+        if (shape.dataset.name !== li.dataset.text) {
+          shape.dataset.name = li.dataset.text;
+          shape.title = li.dataset.text;
+          shape.replaceChildren(paperclip(document), element('span', { className: 'clip-name', textContent: li.dataset.text }));
+        }
+      } else if (kind === 'signature') {
         // The signature (drawn strokes or the typed name) and its caption from the server.
         const sig = `${li.dataset.points}|${li.dataset.text}|${li.dataset.label}`;
         if (shape.dataset.sig !== sig) {
@@ -630,9 +702,11 @@ function start() {
   const inkItem = (label, tool) => { const b = item0(label, 'ink'); b.dataset.tool = tool; return b; };
   menu.append(swatches, item0('Underline', 'underline', 'quote'), item0('Strikethrough', 'strike', 'quote'), item0('Insert text…', 'insert', 'point'),
     item0('Replace…', 'replace', 'quote'), item0('Comment…', 'comment'), item0('Sticky note…', 'note', 'place'), item0('Text box…', 'textbox', 'place'),
-    stampButton, stampGroup, item0('Signature…', 'signature', 'place'), item0('My signature…', 'mysignature'),
+    stampButton, stampGroup, item0('Signature…', 'signature', 'place'), item0('My signature…', 'mysignature'), item0('Attach file…', 'attach', 'place'),
     inkItem('Draw', 'draw'), inkItem('Sketch', 'sketch'), shapesButton, shapesGroup, inkItem('Eraser', 'eraser'),
     item0('Loupe', 'loupe'), item0('Copy', 'copy', 'quote'), form);
+  const redact = redactItem(manager, canRedact);
+  if (redact) menu.querySelector('[data-act="replace"]').after(item0(redact.label, 'redaction', redact.needs));
   document.body.append(menu);
   const menuItems = () => [...menu.querySelectorAll('[role=menuitem]')].filter(el => !el.disabled && !el.closest('[hidden]'));
   let returnFocus = null;
@@ -656,7 +730,7 @@ function start() {
     const r = frame.getBoundingClientRect();
     const off = frameOffset();
     context = { ...message, px: r.left + off.left + message.x, py: r.top + off.top + message.y };
-    const has = { quote: Boolean(message.quote.trim()), point: Boolean(message.quote.trim() || message.ppre || message.psuf), place: Boolean(message.path) };
+    const has = { quote: Boolean(message.quote.trim()), point: Boolean(message.quote.trim() || message.ppre || message.psuf), place: Boolean(message.path), never: false };
     for (const el of menu.querySelectorAll('[data-needs]')) el.disabled = Boolean(el.dataset.needs) && !has[el.dataset.needs];
     form.hidden = true;
     stampGroup.hidden = true;
@@ -685,7 +759,7 @@ function start() {
     placeOpenMenu(context.px, context.py);
     formInput.focus();
   };
-  const run = async (fields, done = 'Added.') => {
+  const run = async (fields, done = 'Added.', why = () => 'Not saved; please try again.') => {
     // The menu may have been opened again while this was saving; only close the one it came from.
     const session = context;
     try {
@@ -694,12 +768,14 @@ function start() {
       li?.classList.add('flash');
       setTimeout(() => li?.classList.remove('flash'), 1200);
       document.querySelector('[data-anno-live]').textContent = done;
-    } catch {
+    } catch (error) {
       if (context !== session) return;
       form.hidden = false;
-      form.querySelector('[data-anno-status]').textContent = 'Not saved; please try again.';
+      form.querySelector('[data-anno-status]').textContent = why(error?.message);
     }
   };
+  const redactRefusal = code => code === '403' ? 'Only the person who added this document, or the owner, can redact it.'
+    : code === '422' ? 'Pictures cannot be redacted yet.' : 'Not marked; please try again.';
   menu.addEventListener('click', event => {
     const button = event.target.closest('button[data-act]');
     if (!button || button.disabled || !context) return;
@@ -707,6 +783,13 @@ function start() {
     switch (act) {
       case 'highlight': chooseColor(button.dataset.color); run(markFields('highlight'), 'Highlighted.'); break;
       case 'underline': case 'strike': run(markFields(act), act === 'strike' ? 'Struck through.' : 'Underlined.'); break;
+      case 'redaction': run(markFields('redaction'), 'Marked for redaction. Apply it in the panel to black it out for good.', redactRefusal); break;
+      case 'attach': {
+        const fields = placeFields('attachment');
+        closeMenu(false);
+        pickFile(fields);
+        break;
+      }
       case 'insert': askFor('insert', 'Text to insert', LIMITS.text, false); break;
       case 'replace': askFor('replace', 'Replace with', LIMITS.text, false); break;
       case 'note': askFor('note', 'Sticky note', LIMITS.body, true); break;
@@ -815,6 +898,54 @@ function start() {
     const saved = await pad.open({ saved: await savedSignature() });
     if (saved) announce('Your signature was saved.');
   }
+
+  // Attachments (D4): the file picker opens from the menu; the file goes with the place chosen.
+  const fileInput = document.querySelector('[data-attach-input]');
+  const attachStatus = document.querySelector('[data-attach-status]');
+  let attachAt = null;
+  function pickFile(fields) {
+    if (!fileInput) return;
+    attachAt = fields;
+    fileInput.value = '';
+    fileInput.click();
+  }
+  const tellAttach = (text, show) => {
+    if (attachStatus) attachStatus.textContent = text;
+    announce(text);
+    if (show) {
+      openPanel();
+      document.getElementById('attachments')?.scrollIntoView({ block: 'start' });
+    }
+  };
+  fileInput?.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    const at = attachAt;
+    attachAt = null;
+    if (!file || !at) return;
+    const data = new FormData();
+    data.append('anchor_path', at.anchor_path);
+    data.append('anchor_x', at.anchor_x);
+    data.append('anchor_y', at.anchor_y);
+    data.append('file', file, file.name);
+    tellAttach(`Attaching ${file.name}…`, false);
+    try {
+      const response = await fetch(`${base}/attachments`, { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf }, body: data });
+      if (response.status !== 201) {
+        let message = 'The file was not attached; please try again.';
+        try { message = (await response.json()).error || message; } catch { /* not JSON */ }
+        tellAttach(message, true);
+        return;
+      }
+      const li = replaceEntry(await response.json());
+      li.classList.add('flash');
+      setTimeout(() => li.classList.remove('flash'), 1200);
+      tellAttach(`${file.name} attached.`, false);
+    } catch {
+      tellAttach('The file was not attached; please try again.', true);
+    } finally {
+      fileInput.value = '';
+    }
+  });
 
   // The loupe (D3): drawn by the helper inside the frame, over the document's own content only.
   // This page sends the magnification, and the pointer's place while drawing covers the frame.

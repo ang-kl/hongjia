@@ -13,6 +13,9 @@
 // - D2: it reports the box of the element each drawing is anchored to, so the page can draw and
 //   scale drawings over the frame (their points never enter it), and it scrolls when the page's
 //   drawing surface passes on a wheel or a finger.
+// - D4: a passage marked for redaction shows as a black box until the redactions are applied on
+//   the server (the words stay in this page until then); an attached file's paperclip is placed
+//   like a note, by the page.
 // Messages go only to the parent page, which checks every one; the document's own scripts can
 // send the same messages, so the parent treats them all as untrusted.
 // The placeholder on the last line is replaced by the server with JSON, escaped so it cannot end
@@ -370,7 +373,7 @@
     yellow: ['#ffe08a', '#b58900'], green: ['#bdf0b5', '#2e8b3a'], blue: ['#c4ddff', '#2f66c8'],
     pink: ['#ffc8e1', '#c2357f'], orange: ['#ffd3a6', '#cf6200']
   };
-  var PLACED = { note: 1, textbox: 1, stamp: 1, signature: 1 };
+  var PLACED = { note: 1, textbox: 1, stamp: 1, signature: 1, attachment: 1 };
   var DRAWN = { ink: 1, shape: 1 };
   var anchors = [];
   var style = null;
@@ -389,7 +392,9 @@
         + 'mark[data-hj-kind=strike][data-hj-color=' + name + '],mark[data-hj-kind=replace][data-hj-color=' + name + ']{text-decoration:line-through 2px ' + line + ' !important}'
         + 'hj-caret[data-hj-color=' + name + ']::after{color:' + line + '}';
     });
-    css += 'mark[data-hj-kind=underline],mark[data-hj-kind=strike],mark[data-hj-kind=replace]{background:transparent !important;box-shadow:none !important}';
+    css += 'mark[data-hj-kind=underline],mark[data-hj-kind=strike],mark[data-hj-kind=replace]{background:transparent !important;box-shadow:none !important}'
+      + 'mark[data-hj-kind=redaction]{background:#000 !important;color:#000 !important;box-shadow:0 0 0 1px #000 !important;text-decoration:none !important;border-radius:1px}'
+      + 'mark[data-hj-kind=redaction] *{color:#000 !important;background:#000 !important}';
     style = document.createElement('style');
     style.textContent = css;
     document.head.appendChild(style);
@@ -750,7 +755,7 @@
 
   function text(v, n) { return typeof v === 'string' ? clip(v, n) : ''; }
   function fractionOf(v) { var n = Number(v); return isFinite(n) ? clamp(n, 0, 1) : 0; }
-  var KINDS = { comment: 1, highlight: 1, underline: 1, strike: 1, insert: 1, replace: 1, note: 1, textbox: 1, stamp: 1, ink: 1, shape: 1, signature: 1 };
+  var KINDS = { comment: 1, highlight: 1, underline: 1, strike: 1, insert: 1, replace: 1, note: 1, textbox: 1, stamp: 1, ink: 1, shape: 1, signature: 1, redaction: 1, attachment: 1 };
   window.addEventListener('message', function (event) {
     if (!framed || event.source !== window.parent) return;
     var d = event.data;

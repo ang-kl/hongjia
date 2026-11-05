@@ -1,6 +1,7 @@
 //! P1 family mode: individual sign-in, sessions, devices, consent and the login journal.
 //! Active only when a database is configured; otherwise the server stays the P0 placeholder.
 
+pub mod attach;
 pub mod auth;
 pub mod doccheck;
 pub mod documents;
@@ -9,6 +10,7 @@ mod handlers;
 pub mod json;
 mod pages;
 pub mod picture;
+pub mod redact;
 mod review;
 pub mod signature;
 pub mod store;
@@ -230,6 +232,14 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             "/documents/{key}/annotations/{id}/update",
             post(review::update_annotation),
         )
+        .route("/documents/{key}/redactions/apply", post(redact::apply))
+        .route(
+            "/documents/{key}/attachments",
+            post(attach::upload).layer(axum::extract::DefaultBodyLimit::max(
+                attach::MAX_BYTES + 64 * 1024,
+            )),
+        )
+        .route("/documents/{key}/attachments/{id}", get(attach::download))
         .route("/api/handles", get(review::handles))
         .route(
             "/api/signature",
