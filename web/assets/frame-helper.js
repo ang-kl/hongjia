@@ -748,7 +748,10 @@
     if (still) { swallowClick = Date.now(); loupeClose(true); }
   }, true);
   document.addEventListener('keydown', function (event) {
-    if (loupe.zoom && event.key === 'Escape') { event.preventDefault(); loupeClose(true); }
+    if (event.key !== 'Escape') return;
+    if (loupe.zoom) { event.preventDefault(); loupeClose(true); return; }
+    // The page's annotation menu sits outside this frame, so tell it; the document still sees the key.
+    send({ type: 'hj:escape' });
   }, true);
   window.addEventListener('scroll', function () { if (loupe.zoom && loupe.last) loupeAt(loupe.last.x, loupe.last.y, loupe.last.touch); }, true);
   window.addEventListener('resize', function () { if (loupe.zoom) { var z = loupe.zoom; loupeClose(false); loupeOpen(z); } });

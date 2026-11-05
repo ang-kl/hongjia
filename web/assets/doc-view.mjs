@@ -15,7 +15,7 @@ import { createSignaturePad, signatureNodes } from './signature.mjs';
 export const LIMITS = { key: 200, value: 4000, storage: 8000, label: 200, quote: 1000, around: 64, id: 20, text: 500, body: 4000, path: 400 };
 export const COLORS = ['yellow', 'green', 'blue', 'pink', 'orange'];
 export const STAMPS = [['check', '✓'], ['cross', '✗'], ['approved', 'Approved'], ['reviewed', 'Reviewed'], ['signedoff', 'Signed off']];
-const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe']);
+const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape']);
 /// Loupe magnifications (D3): 0 is closed.
 export const LOUPE_ZOOMS = [0, 2, 3];
 const INPUTS = new Set(['mouse', 'touch', 'pen', 'keyboard']);
@@ -81,6 +81,9 @@ export function validMessage(data) {
       // The helper says the loupe closed (Escape, a click in the document) or could not open.
       if (!LOUPE_ZOOMS.includes(data.zoom) || !['', 'long'].includes(data.reason ?? '')) return null;
       return { type: data.type, zoom: data.zoom, reason: data.reason ?? '' };
+    case 'hj:escape':
+      // Escape pressed while the document has the keyboard: it closes the annotation menu.
+      return { type: data.type };
   }
   return null;
 }
@@ -680,6 +683,9 @@ function start() {
   let color = 'yellow';
   let context = null;
   const menu = element('div', { className: 'anno-menu glass', role: 'menu', ariaLabel: 'Mark up', tabIndex: -1, hidden: true });
+  // A visible way to close it (the owner's request, 5 November 2026), for touch screens and the
+  // Pencil, where there is no Escape key; the key itself also closes it, wherever the focus is.
+  const escButton = element('button', { type: 'button', className: 'anno-esc', textContent: 'Esc', title: 'Close (Esc)', ariaLabel: 'Close this menu (Esc)', dataset: { annoClose: '' } });
   const swatches = element('div', { className: 'anno-row', role: 'group', ariaLabel: 'Highlight' }, element('span', { className: 'anno-label', textContent: 'Highlight' }));
   for (const c of COLORS) swatches.append(element('button', { type: 'button', className: 'swatch', role: 'menuitem', ariaLabel: `Highlight ${c}`, title: `Highlight ${c}`, dataset: { act: 'highlight', color: c, needs: 'quote' } }));
   const item0 = (label, act, needs = '') => element('button', { type: 'button', className: 'anno-item', role: 'menuitem', textContent: label, dataset: { act, needs } });
@@ -700,7 +706,7 @@ function start() {
   element('p', { className: 'small', role: 'status', dataset: { annoStatus: '' } }));
   attachMentions(formInput);
   const inkItem = (label, tool) => { const b = item0(label, 'ink'); b.dataset.tool = tool; return b; };
-  menu.append(swatches, item0('Underline', 'underline', 'quote'), item0('Strikethrough', 'strike', 'quote'), item0('Insert text…', 'insert', 'point'),
+  menu.append(escButton, swatches, item0('Underline', 'underline', 'quote'), item0('Strikethrough', 'strike', 'quote'), item0('Insert text…', 'insert', 'point'),
     item0('Replace…', 'replace', 'quote'), item0('Comment…', 'comment'), item0('Sticky note…', 'note', 'place'), item0('Text box…', 'textbox', 'place'),
     stampButton, stampGroup, item0('Signature…', 'signature', 'place'), item0('My signature…', 'mysignature'), item0('Attach file…', 'attach', 'place'),
     inkItem('Draw', 'draw'), inkItem('Sketch', 'sketch'), shapesButton, shapesGroup, inkItem('Eraser', 'eraser'),
@@ -868,6 +874,8 @@ function start() {
     else if (event.key === 'Tab') closeMenu(false);
   });
   document.addEventListener('pointerdown', event => { if (!menu.hidden && !menu.contains(event.target)) closeMenu(false); }, true);
+  escButton.addEventListener('click', () => closeMenu());
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !menu.hidden) { event.preventDefault(); closeMenu(); } });
   addEventListener('resize', () => closeMenu(false));
   body.append(element('p', { className: 'visually-hidden', role: 'status', dataset: { annoLive: '' } }));
   const announce = text => { document.querySelector('[data-anno-live]').textContent = text; };
@@ -1060,6 +1068,9 @@ function start() {
         if (resolve) resolve(message);
         break;
       }
+      case 'hj:escape':
+        closeMenu();
+        break;
       case 'hj:loupe':
         loupe.zoom = message.zoom;
         loupe.paint();

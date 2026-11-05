@@ -272,6 +272,24 @@ else {
   await page.keyboard.press('Escape');
   if (await menuOpen(page)) failures.push('Escape did not close the menu');
 }
+// The menu's Esc button closes it (touch and Pencil have no Escape key), and so does the Escape key
+// while the document still has the keyboard after a right-click (the owner's report, 5 November).
+await rightClick(page, 'river orchard');
+if (!(await menuOpen(page))) failures.push('right-click did not reopen the menu');
+else {
+  const esc = await page.locator('.anno-menu .anno-esc').boundingBox();
+  const lastSwatch = await page.locator('.anno-menu .swatch').last().boundingBox();
+  if (!esc || esc.width < 44) failures.push('the Esc button is missing or too narrow');
+  else if (lastSwatch && lastSwatch.x + lastSwatch.width > esc.x && lastSwatch.y < esc.y + esc.height) failures.push('the Esc button covers a highlight colour');
+  await page.click('.anno-menu .anno-esc');
+  if (await menuOpen(page)) failures.push('the Esc button did not close the menu');
+}
+await rightClick(page, 'river orchard');
+await page.locator('.doc-frame').focus();
+await rawFrame(page).evaluate(() => document.body.focus());
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
+if (await menuOpen(page)) failures.push('Escape in the document did not close the menu');
 // A comment that mentions another member shows on their About page (Settings, About).
 await rightClick(page, 'Granite lotus', 'Granite lotus');
 await page.click('.anno-menu [data-act=comment]');

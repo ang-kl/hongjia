@@ -93,6 +93,7 @@ test('menu, position and locate messages are checked', () => {
   assert.equal(validMessage({ ...menu, fx: 2 }), null);
   assert.equal(validMessage({ ...menu, x: Number.NaN }), null);
   assert.equal(validMessage({ ...menu, quote: 'q'.repeat(1001) }), null);
+  assert.deepEqual(validMessage({ type: 'hj:escape', extra: 'dropped' }), { type: 'hj:escape' });
   assert.deepEqual(validMessage({ type: 'hj:positions', items: [{ id: '4', x: 1.5, y: -20 }], w: 800, h: 600 }), { type: 'hj:positions', items: [{ id: '4', x: 1.5, y: -20 }], w: 800, h: 600 });
   assert.equal(validMessage({ type: 'hj:positions', items: [{ id: 'x', x: 1, y: 1 }], w: 1, h: 1 }), null);
   assert.equal(validMessage({ type: 'hj:positions', items: Array(1001).fill({ id: '1', x: 0, y: 0 }), w: 1, h: 1 }), null);

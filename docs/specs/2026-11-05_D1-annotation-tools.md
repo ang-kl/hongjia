@@ -109,3 +109,11 @@ Version 0.1 · 5 November 2026 · Asia/Singapore · follows P2b (C) annotations.
 - The Pencil's own double-tap and squeeze are not available to websites; two taps on the screen are used instead. Hover needs an iPad and Pencil that support it.
 - Touch and Pencil input were simulated in Chromium (Chrome DevTools Protocol), not tried on a real iPad. The owner's check on a real device is still needed.
 - Marks anchor to text by quote and context, and to places by element path. If a later version of the document changes that text or structure, a mark may not find its place. It then stays listed in the panel.
+
+## Owner follow-up: Esc on the right-click menu (5 November 2026, night)
+
+Owner report in chat: "right click menu doesn't have the "Esc" to close it".
+
+- **Esc button:** the menu now has a small **Esc** button at its top right. It closes the menu on a touch screen or with the Pencil, where there is no Escape key. It sits beside the Highlight label, clear of the colours, and is at least 44 px wide.
+- **Escape key:** it already closed the menu when the menu had the keyboard. After a mouse right-click, the keyboard can stay inside the document frame, which sits apart from the page. The frame's helper now tells the page when Escape is pressed (`hj:escape`, a message with no data), and the page closes the menu. The document still receives the key, so its own Escape handling (a lightbox, for example) keeps working. Escape anywhere else on the page also closes the menu.
+- **Checks:** a JS unit test covers `hj:escape` being accepted with any extra fields dropped. The browser check right-clicks and closes the menu with the Esc button. It then right-clicks again, puts the keyboard in the document and presses Escape. It also checks that the button is at least 44 px wide and does not cover a highlight colour.
