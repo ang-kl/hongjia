@@ -272,7 +272,7 @@ else {
   await page.keyboard.press('Escape');
   if (await menuOpen(page)) failures.push('Escape did not close the menu');
 }
-// A comment that mentions another member shows on their Home.
+// A comment that mentions another member shows on their About page (Settings, About).
 await rightClick(page, 'Granite lotus', 'Granite lotus');
 await page.click('.anno-menu [data-act=comment]');
 await page.fill('[data-composer-body]', '@beta please check this');
@@ -281,8 +281,9 @@ await page.waitForFunction(() => [...document.querySelectorAll('.annotation-body
 {
   const other = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const b = await signIn(other, 'beta');
+  await b.goto(base + '/about');
   const home = await b.textContent('main');
-  if (!home.includes('Mentioned you') || !home.includes('markup')) failures.push('the mention is not on the other member\'s Home');
+  if (!home.includes('Mentioned you') || !home.includes('markup')) failures.push('the mention is not on the other member\'s About page');
   await b.goto(base + markupPath, { waitUntil: 'networkidle' });
   if ((await b.locator('li.mentions-me').count()) < 1) failures.push('the panel does not mark mentions of the viewer');
   if ((await b.locator('li[data-can-edit=true]').count()) !== 0) failures.push('another member may edit marks that are not theirs');
