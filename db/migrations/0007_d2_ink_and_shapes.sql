@@ -20,13 +20,16 @@ ALTER TABLE annotations ADD COLUMN tool TEXT
 ALTER TABLE annotations ADD COLUMN points TEXT CHECK (char_length(points) BETWEEN 3 AND 16000);
 ALTER TABLE annotations ADD COLUMN stroke_width REAL CHECK (stroke_width BETWEEN 1 AND 24);
 ALTER TABLE annotations ADD COLUMN ref_width REAL CHECK (ref_width BETWEEN 1 AND 100000);
+-- The element's height when the drawing was made, so a drawing above or below its text keeps its
+-- distance from that edge when the text reflows (optional; width-only drawings still work).
+ALTER TABLE annotations ADD COLUMN ref_height REAL CHECK (ref_height BETWEEN 1 AND 100000);
 -- A drawing has all four drawing values and a place; no other mark has any of them.
 ALTER TABLE annotations ADD CONSTRAINT annotations_drawing_check CHECK (
     CASE WHEN kind IN ('ink', 'shape')
         THEN tool IS NOT NULL AND points IS NOT NULL AND stroke_width IS NOT NULL AND ref_width IS NOT NULL
              AND anchor_path IS NOT NULL
              AND (kind = 'ink') = (tool IN ('draw', 'sketch'))
-        ELSE tool IS NULL AND points IS NULL AND stroke_width IS NULL AND ref_width IS NULL
+        ELSE tool IS NULL AND points IS NULL AND stroke_width IS NULL AND ref_width IS NULL AND ref_height IS NULL
     END
 );
 CREATE INDEX annotations_drawings_idx ON annotations (document_id, author, created_at DESC)

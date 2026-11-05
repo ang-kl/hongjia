@@ -147,6 +147,7 @@ pub struct Drawing {
     pub points: String,
     pub stroke_width: f32,
     pub ref_width: f32,
+    pub ref_height: Option<f32>,
 }
 
 /// Checks a drawing for its kind: ink takes Draw or Sketch and 2 to 600 points with pressure; a
@@ -184,11 +185,17 @@ fn check_drawing(kind: &str, form: &AnnotationForm) -> Result<Drawing, &'static 
         number(&form.stroke_width, 1.0, 24.0).ok_or("the line width is not valid")?;
     let ref_width =
         number(&form.ref_width, 1.0, 100_000.0).ok_or("the reference width is not valid")?;
+    let ref_height = if form.ref_height.trim().is_empty() {
+        None
+    } else {
+        Some(number(&form.ref_height, 1.0, 100_000.0).ok_or("the reference height is not valid")?)
+    };
     Ok(Drawing {
         tool: tool.to_string(),
         points: format_points(&points, ink),
         stroke_width,
         ref_width,
+        ref_height,
     })
 }
 
@@ -319,7 +326,8 @@ pub fn check_mark(form: &AnnotationForm) -> Result<Mark, &'static str> {
     let drawing_fields = !(form.tool.is_empty()
         && form.points.is_empty()
         && form.stroke_width.is_empty()
-        && form.ref_width.is_empty());
+        && form.ref_width.is_empty()
+        && form.ref_height.is_empty());
     let drawing = if drawn {
         Some(check_drawing(kind, form)?)
     } else if drawing_fields {
@@ -516,6 +524,7 @@ pub struct AnnotationRow {
     pub points: Option<String>,
     pub stroke_width: Option<f32>,
     pub ref_width: Option<f32>,
+    pub ref_height: Option<f32>,
 }
 
 impl AnnotationRow {
@@ -575,7 +584,7 @@ async fn annotations(pool: &PgPool, document_id: i64) -> sqlx::Result<Vec<Annota
                 a.kind, a.color, a.text, a.anchor_path, a.anchor_x, a.anchor_y,
                 COALESCE((SELECT array_agg(mp.handle ORDER BY mp.handle) FROM annotation_mentions m
                           JOIN profiles mp ON mp.id = m.profile_id WHERE m.annotation_id = a.id), '{}') AS mentions,
-                a.tool, a.points, a.stroke_width, a.ref_width
+                a.tool, a.points, a.stroke_width, a.ref_width, a.ref_height
          FROM annotations a LEFT JOIN profiles p ON p.id = a.author
          WHERE a.document_id = $1 ORDER BY a.created_at, a.id",
     )
@@ -816,6 +825,7 @@ fn annotation_json(row: &AnnotationRow, can_delete: bool, can_edit: bool) -> Str
         ("points", json::string(row.points.as_deref().unwrap_or(""))),
         ("width", wide(row.stroke_width)),
         ("ref", wide(row.ref_width)),
+        ("refh", wide(row.ref_height)),
         ("created", json::string(&row.created)),
         ("can_delete", can_delete.to_string()),
         ("can_edit", can_edit.to_string()),
@@ -882,6 +892,8 @@ pub struct AnnotationForm {
     pub stroke_width: String,
     #[serde(default)]
     pub ref_width: String,
+    #[serde(default)]
+    pub ref_height: String,
 }
 
 /// The active family handles, for @mentions.
@@ -972,8 +984,8 @@ pub async fn create_annotation(
     let drawing = mark.drawing.as_ref();
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO annotations (document_id, version_no, author, quote, prefix, suffix, field_key, field_label, body,
-                                  kind, color, text, anchor_path, anchor_x, anchor_y, tool, points, stroke_width, ref_width)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id",
+                                  kind, color, text, anchor_path, anchor_x, anchor_y, tool, points, stroke_width, ref_width, ref_height)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id",
     )
     .bind(doc.id)
     .bind(doc.version_no)
@@ -994,6 +1006,7 @@ pub async fn create_annotation(
     .bind(drawing.map(|d| d.points.as_str()))
     .bind(drawing.map(|d| d.stroke_width))
     .bind(drawing.map(|d| d.ref_width))
+    .bind(drawing.and_then(|d| d.ref_height))
     .fetch_one(&state.pool)
     .await?;
     save_mentions(
@@ -1503,6 +1516,21 @@ mod tests {
             ),
             ("draw", "0,0,0.5 10,5,0.6 20,10,0.7", 4.0, 640.0)
         );
+        assert_eq!(d.ref_height, None, "the height is optional");
+        let mut tall = drawing("ink", "draw", "0,0,0.5 10,5,0.6");
+        tall.ref_height = "48".into();
+        assert_eq!(
+            check_mark(&tall).unwrap().drawing.unwrap().ref_height,
+            Some(48.0)
+        );
+        tall.ref_height = "0".into();
+        assert!(check_mark(&tall).is_err(), "a zero height is refused");
+        let mut stray = AnnotationForm {
+            kind: "note".into(),
+            ..AnnotationForm::default()
+        };
+        stray.ref_height = "48".into();
+        assert!(check_mark(&stray).is_err(), "only drawings carry a height");
         assert!(check_mark(&drawing("shape", "oval", "0,0 30,20")).is_ok());
         assert!(
             check_mark(&drawing("shape", "draw", "0,0 30,20")).is_err(),

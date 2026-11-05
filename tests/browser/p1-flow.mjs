@@ -423,17 +423,25 @@ await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(700);
 const ovalAfter = await groupBox(page, 'li[data-tool=oval]');
 if (!ovalBefore || !ovalAfter || Math.abs(ovalBefore.x - ovalAfter.x) > 3 || Math.abs(ovalBefore.y - ovalAfter.y) > 3) failures.push(`the oval moved after a reload (${JSON.stringify(ovalBefore)} then ${JSON.stringify(ovalAfter)})`);
-{
-  const narrow = await browser.newContext({ viewport: { width: 820, height: 1180 }, deviceScaleFactor: shots ? 2 : 1, storageState: await setup.storageState() });
+// At other widths each drawing stays beside its own paragraph: the oval over the second, the arrow
+// drawn under the third still under the third (text reflows taller on narrow screens).
+for (const [vw, vh, shot] of [[820, 1180, 'tablet-portrait-drawings.png'], [375, 667, 'phone-drawings.png']]) {
+  const narrow = await browser.newContext({ viewport: { width: vw, height: vh }, deviceScaleFactor: shots ? 2 : 1, storageState: await setup.storageState() });
   const np = await narrow.newPage();
   await np.goto(base + sketchPath, { waitUntil: 'networkidle' });
   await np.waitForTimeout(800);
-  const ovalNarrow = await groupBox(np, 'li[data-tool=oval]');
-  const paraNarrow = await paraBox(np, 's2');
-  const rel = (o, q) => o && q && { x: (o.x - q.x) / q.w, y: (o.y - q.y) / q.w, w: o.w / q.w };
-  const a = rel(ovalBefore, paraBefore), b = rel(ovalNarrow, paraNarrow);
-  if (!a || !b || Math.abs(a.x - b.x) > 0.03 || Math.abs(a.y - b.y) > 0.03 || Math.abs(a.w - b.w) > 0.03) failures.push(`the oval did not keep its place at another width (${JSON.stringify(a)} vs ${JSON.stringify(b)})`);
-  if (shots) await np.screenshot({ path: `${shots}/tablet-portrait-drawings.png` });
+  const para = async id => {
+    const box = await np.locator('.doc-frame').boundingBox();
+    const r = await rawFrame(np).evaluate(i => { const b = document.getElementById(i).getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; }, id);
+    return { x: box.x + 1 + r.x, y: box.y + 1 + r.y, w: r.w, h: r.h };
+  };
+  const [p2, p3] = [await para('s2'), await para('s3')];
+  const oval = await groupBox(np, 'li[data-tool=oval]');
+  const arrow = await groupBox(np, 'li[data-tool=arrow]');
+  const middle = b => b.y + b.h / 2;
+  if (!oval || middle(oval) < p2.y - 24 || middle(oval) > p2.y + p2.h + 24 || oval.x > p2.x + p2.w) failures.push(`at ${vw}px the oval left its paragraph (${JSON.stringify(oval)} vs ${JSON.stringify(p2)})`);
+  if (!arrow || middle(arrow) < p3.y || middle(arrow) > p3.y + p3.h + 40) failures.push(`at ${vw}px the arrow left its paragraph (${JSON.stringify(arrow)} vs ${JSON.stringify(p3)})`);
+  if (shots) await np.screenshot({ path: `${shots}/${shot}` });
   await narrow.close();
 }
 // After a Pencil, a finger scrolls instead of drawing (touch-capable tablet).

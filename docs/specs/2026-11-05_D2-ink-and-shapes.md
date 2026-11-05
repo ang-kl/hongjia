@@ -111,3 +111,15 @@ Drawings stay in the same table because they share everything other marks have: 
 
   In the device loop, the sketch page shows every drawing, and the toolbar opens inside the window with 44 px targets. The drawing surface covers the frame, and Escape leaves drawing.
 - Touch and Pencil input were simulated in Chromium (Chrome DevTools Protocol), not tried on a real iPad. The owner's check on a real device is still needed.
+
+## Review fix: drawings stay beside their paragraph (5 November 2026)
+
+The main session reviewed the phone screenshot and found a drift. A stroke that starts in the gap between paragraphs was anchored to the large box around them (often `<body>`). Its points were then scaled by width only, so on a phone an arrow drawn under the third paragraph showed up under the first.
+
+- **Anchor:** a point outside any text block now belongs to the nearest one: `p`, `li`, headings, `blockquote`, `pre`, table cells, `dd`/`dt`, captions, `label`, `summary`, `img` or `figure`. Distance is measured with vertical distance counted double, within 240 px. This applies to D1's placed marks too.
+- **Height:** each drawing also stores the element's height when it was drawn (`ref_height`, optional, in migration 0007). The drawing still keeps its shape, scaled by width. Its first point keeps its place against the element:
+  - inside the element, at the same fraction of its height;
+  - below or above it, at the same scaled distance from that edge.
+
+  Drawings saved without a height keep the width-only rule.
+- **Checks:** a unit test (`placement`) covers below, inside, above and old drawings. The browser check now opens the sketch document at 820 px and at 375 px and requires the oval to stay over its paragraph and the arrow under the third paragraph. All 154 checks pass.

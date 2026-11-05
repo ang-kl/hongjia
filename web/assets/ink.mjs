@@ -144,6 +144,24 @@ export function toView(point, at, refWidth) {
   return { x: at.x + point.x * s, y: at.y + point.y * s };
 }
 
+/// Where a drawing goes now, given its element's box `at` ({ x, y, w, h }). The drawing keeps its
+/// shape (scaled by the element's width), and its first point keeps its place against the element:
+/// inside it, at the same fraction of the element's height (text reflows taller on a narrow
+/// screen); above or below it, the same scaled distance from that edge. Drawings saved without a
+/// height (`refh`) are scaled by width only. Returns the origin and scale for the drawing's points.
+export function placement(drawing, at) {
+  const s = scaleOf(at.w, drawing.ref);
+  const first = drawing.points?.[0];
+  const refH = Number(drawing.refh) || 0;
+  let shift = 0;
+  if (first && refH > 0 && at.h > 0) {
+    const y0 = first.y;
+    const target = y0 < 0 ? y0 * s : y0 > refH ? at.h + (y0 - refH) * s : (y0 / refH) * at.h;
+    shift = target - y0 * s;
+  }
+  return { x: at.x, y: at.y + shift, s };
+}
+
 /// The line width for a base width and a pen pressure (0.5 is the base width).
 export function widthFor(base, pressure) {
   return base * (0.35 + 1.3 * Math.max(0, Math.min(1, pressure)));
@@ -205,10 +223,11 @@ export function segmentsOf(drawing) {
 /// Whether a point in the frame's viewport touches a drawing placed at `at` (within `radius` px
 /// plus half its line).
 export function touches(drawing, at, x, y, radius) {
-  const s = scaleOf(at.w, drawing.ref);
-  const reach = radius + (drawing.width * s) / 2;
+  const pl = placement(drawing, at);
+  const reach = radius + (drawing.width * pl.s) / 2;
   const p = { x, y };
-  return segmentsOf(drawing).some(([a, b]) => segmentDistance(p, toView(a, at, drawing.ref), toView(b, at, drawing.ref)) <= reach);
+  const view = q => ({ x: pl.x + q.x * pl.s, y: pl.y + q.y * pl.s });
+  return segmentsOf(drawing).some(([a, b]) => segmentDistance(p, view(a), view(b)) <= reach);
 }
 
 /// SVG elements for a drawing, in its reference coordinates (the caller scales and places the group).
@@ -357,6 +376,7 @@ export function createInk(api) {
     const rel = p => ({ x: p.x - place.bx, y: p.y - place.by, p: p.p });
     const save = {
       kind: fields.kind, tool: fields.tool, color: api.color(), stroke_width: String(width), ref_width: String(round1(place.bw)),
+      ref_height: place.bh > 0 ? String(round1(place.bh)) : '',
       anchor_path: place.path, anchor_x: String(place.fx), anchor_y: String(place.fy),
       points: fields.kind === 'ink' ? formatInk(fields.points.map(rel)) : formatShape(rel(fields.a), rel(fields.b))
     };

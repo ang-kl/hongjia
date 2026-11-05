@@ -6,7 +6,7 @@
 // panel drawn by this page. Words people write (comments, notes, text boxes, inserted and
 // replacement text, stamps) and drawings (D2) are drawn here, over the frame, and never sent into it.
 
-import { createInk, drawingNodes, parsePoints, scaleOf } from './ink.mjs';
+import { createInk, drawingNodes, parsePoints, placement } from './ink.mjs';
 
 export const LIMITS = { key: 200, value: 4000, storage: 8000, label: 200, quote: 1000, around: 64, id: 20, text: 500, body: 4000, path: 400 };
 export const COLORS = ['yellow', 'green', 'blue', 'pink', 'orange'];
@@ -247,7 +247,7 @@ function start() {
       suffix: a.suffix || '', field: a.field || '', text: a.text || '', label: a.label || '', path: a.path || '',
       x: a.x == null ? '' : String(a.x), y: a.y == null ? '' : String(a.y), body: a.body || '', canEdit: String(Boolean(a.can_edit))
     });
-    if (DRAWN.has(a.kind)) Object.assign(li.dataset, { tool: a.tool || '', points: a.points || '', width: String(a.width ?? ''), ref: String(a.ref ?? '') });
+    if (DRAWN.has(a.kind)) Object.assign(li.dataset, { tool: a.tool || '', points: a.points || '', width: String(a.width ?? ''), ref: String(a.ref ?? ''), refh: String(a.refh ?? '') });
     const tag = () => element('span', { className: 'kind-tag', textContent: KIND_WORDS[a.kind] || 'Comment', dataset: { color: a.color || 'yellow' } });
     let head;
     switch (a.kind) {
@@ -480,7 +480,7 @@ function start() {
   const groups = new Map();
   const drawingOf = li => ({
     kind: li.dataset.kind, tool: li.dataset.tool, width: Number(li.dataset.width) || 4,
-    ref: Number(li.dataset.ref) || 1, points: parsePoints(li.dataset.points || '')
+    ref: Number(li.dataset.ref) || 1, refh: Number(li.dataset.refh) || 0, points: parsePoints(li.dataset.points || '')
   });
   function drawDrawings() {
     if (!overlay) return;
@@ -513,10 +513,10 @@ function start() {
     if (!group) return;
     if (!at || at.w === undefined) { group.setAttribute('visibility', 'hidden'); return; }
     const li = document.getElementById(`annotation-${id}`);
-    const s = scaleOf(at.w, Number(li?.dataset.ref) || 1);
+    const pl = li ? placement(drawingOf(li), at) : { x: at.x, y: at.y, s: 1 };
     const off = frameOffset();
     group.setAttribute('visibility', 'visible');
-    group.setAttribute('transform', `translate(${at.x + off.left} ${at.y + off.top}) scale(${s})`);
+    group.setAttribute('transform', `translate(${pl.x + off.left} ${pl.y + off.top}) scale(${pl.s})`);
   }
   function flashDrawing(id) {
     const group = groups.get(id);

@@ -797,9 +797,10 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) 
         can_edit = review.can_edit(row),
         drawing = match (&row.tool, &row.points, row.stroke_width, row.ref_width) {
             (Some(tool), Some(points), Some(width), Some(reference)) => format!(
-                r#" data-tool="{}" data-points="{}" data-width="{width}" data-ref="{reference}""#,
+                r#" data-tool="{}" data-points="{}" data-width="{width}" data-ref="{reference}" data-refh="{}""#,
                 escape(tool),
-                escape(points)
+                escape(points),
+                row.ref_height.map(|h| h.to_string()).unwrap_or_default()
             ),
             _ => String::new(),
         },

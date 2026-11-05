@@ -531,6 +531,23 @@
     if (at < 0) return { prefix: '', suffix: '' };
     return { prefix: model.text.slice(Math.max(0, at - MAX.around), at), suffix: model.text.slice(at, at + MAX.around) };
   }
+  // Text blocks a mark can hold on to. A point in the space between them (a margin, the gap under
+  // a paragraph) belongs to the nearest one, not to the large box around them, so the mark moves
+  // with that text when the page reflows on another screen.
+  var TEXT_BLOCKS = 'p,li,h1,h2,h3,h4,h5,h6,blockquote,pre,td,th,dd,dt,figcaption,caption,label,summary,img,figure';
+  function nearestTextBlock(container, x, y) {
+    var list = container.querySelectorAll(TEXT_BLOCKS);
+    var best = null, bestDistance = Infinity;
+    for (var i = 0; i < list.length && i < 3000; i++) {
+      var r = list[i].getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      var dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      var dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      var distance = dy * 2 + dx; // a mark under a line belongs to that line's block
+      if (distance < bestDistance) { bestDistance = distance; best = list[i]; }
+    }
+    return bestDistance <= 240 ? best : null;
+  }
   function blockAt(x, y) {
     var el = document.elementFromPoint(x, y);
     while (el && el !== document.body && el !== document.documentElement) {
@@ -539,6 +556,7 @@
       el = el.parentElement;
     }
     if (!el || el === document.documentElement) el = document.body;
+    if (!el.matches(TEXT_BLOCKS) && el.querySelector(TEXT_BLOCKS)) el = nearestTextBlock(el, x, y) || el;
     return el;
   }
   function anchorInfo(x, y) {

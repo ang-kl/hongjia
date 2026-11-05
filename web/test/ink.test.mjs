@@ -113,3 +113,19 @@ test('positions and places from the frame carry element boxes, checked', () => {
   assert.deepEqual([place.bx, place.by, place.bw, place.bh], [8, 100, 640, 40]);
   assert.equal(validMessage({ type: 'hj:located', req: '3', path: 'body:1/p:2', fx: 0.5, fy: 0.25, bw: Infinity }), null);
 });
+
+test('a drawing keeps its place against its paragraph when the text reflows', async () => {
+  const { placement } = await import('../assets/ink.mjs');
+  const under = { ref: 600, refh: 30, points: [{ x: 10, y: 40 }] }; // 10 px below a 30 px paragraph
+  const narrow = placement(under, { x: 0, y: 100, w: 300, h: 90 }); // half as wide, three times as tall
+  assert.equal(narrow.s, 0.5);
+  assert.equal(narrow.y + under.points[0].y * narrow.s, 100 + 90 + 5, 'still 10 px (scaled) below the bottom');
+  const inside = { ref: 600, refh: 30, points: [{ x: 10, y: 15 }] }; // half-way down the paragraph
+  const p = placement(inside, { x: 0, y: 100, w: 300, h: 90 });
+  assert.equal(p.y + inside.points[0].y * p.s, 145, 'still half-way down');
+  const above = { ref: 600, refh: 30, points: [{ x: 10, y: -20 }] };
+  const q = placement(above, { x: 0, y: 100, w: 300, h: 90 });
+  assert.equal(q.y + above.points[0].y * q.s, 90, 'the same scaled distance above the top');
+  const old = { ref: 600, points: [{ x: 10, y: 40 }] }; // saved before heights were kept
+  assert.deepEqual(placement(old, { x: 0, y: 100, w: 300, h: 90 }), { x: 0, y: 100, s: 0.5 });
+});
