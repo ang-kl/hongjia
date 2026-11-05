@@ -177,3 +177,11 @@ Owner request in chat: the menu "should be short and categorised and contextuali
     - Redact greyed for another member and on pictures.
     Every earlier menu step now reaches its item through its submenu.
 - **Not verifiable here:** whether iPadOS shows its own Copy bar and ✎ Mark Up together without overlap on a real iPad. Apple Pencil Pro's squeeze is not available to web pages.
+
+## Owner follow-up: ✎ Mark Up with the Pencil (6 November 2026)
+
+Owner report in chat: "Issue with Pencil: I click "Mark Up" but show default context menu and not you created."
+
+- **Likely cause (inferred, not seen on a device):** iPad keeps its own edit menu (Copy, Look Up, Translate and so on) for as long as words are selected in the page. Tapping ✎ Mark Up opened our menu, but the selection stayed, so iPad's menu sat on top of ours. A tap outside the page can also clear the selection a moment before the menu asks for the words, which leaves the word tools grey.
+- **Change:** once our menu opens with the words from a finger or the Pencil, the page lets go of its own selection, and iPad's edit menu goes with it. The menu keeps the words, so highlight, underline, comment and the rest still apply to them. When the tap on ✎ Mark Up has already cleared the selection, the menu uses the words reported just before (within 3 seconds of their going). Mouse and keyboard keep the selection as before.
+- **Checks:** `tests/browser/p1-flow.mjs` selects words by touch and by Pencil, taps ✎ Mark Up, and checks that the menu opens with the word tools ready and the page's own selection is gone. It also clears the selection before the menu is asked for, and checks that the menu still has the words. iPad itself cannot be driven from the test machine, so the owner's check on the iPad is the final one.
