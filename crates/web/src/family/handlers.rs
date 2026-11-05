@@ -138,11 +138,16 @@ async fn current(state: &FamilyState, headers: &HeaderMap) -> Result<Option<Sess
     }
 }
 
-fn nav(session: &Session) -> Nav<'_> {
+/// Where a signed-in person lands: the latest document (the owner's request, 5 November 2026), or
+/// the documents list while there are none.
+pub(super) const LANDING: &str = "/documents/latest";
+
+pub(super) fn nav(session: &Session) -> Nav<'_> {
     Nav {
         handle: &session.handle,
         is_owner: session.is_owner,
         csrf: &session.csrf,
+        locate: session.location_allowed == Some(true) && !session.has_location,
     }
 }
 
@@ -189,7 +194,7 @@ async fn signin_page(
 
 pub async fn start(State(state): State<FamilyState>, headers: HeaderMap) -> Result {
     if current(&state, &headers).await?.is_some() {
-        return Ok(see_other("/home"));
+        return Ok(see_other(LANDING));
     }
     signin_page(&state, &headers, StatusCode::OK, None).await
 }
@@ -259,7 +264,7 @@ pub async fn signin(
     let has_consent = store::live_session(&state.pool, &token)
         .await?
         .is_some_and(|s| s.location_allowed.is_some());
-    let mut response = see_other(if has_consent { "/home" } else { "/consent" });
+    let mut response = see_other(if has_consent { LANDING } else { "/consent" });
     add_cookie(
         &mut response,
         web::set_cookie(
@@ -330,10 +335,18 @@ pub async fn consent(
         Some(&label),
     )
     .await?;
-    Ok(see_other("/home"))
+    Ok(see_other(LANDING))
 }
 
+/// `/home` was the page after signing in; old links and bookmarks now go to the latest document.
 pub async fn home(State(state): State<FamilyState>, headers: HeaderMap) -> Result {
+    Ok(match current(&state, &headers).await? {
+        Some(_) => see_other(LANDING),
+        None => see_other("/"),
+    })
+}
+
+pub async fn about(State(state): State<FamilyState>, headers: HeaderMap) -> Result {
     let Some(session) = current(&state, &headers).await? else {
         return Ok(see_other("/"));
     };
@@ -345,11 +358,10 @@ pub async fn home(State(state): State<FamilyState>, headers: HeaderMap) -> Resul
         None => None,
     }
     .unwrap_or_else(|| web::ua_summary(&headers));
-    let pending = session.location_allowed == Some(true) && !session.has_location;
     let mentioned = super::review::mentions_for(&state.pool, session.profile_id).await?;
     Ok(page(
         StatusCode::OK,
-        pages::home(&nav(&session), &device, pending, &mentioned),
+        pages::about(&nav(&session), &device, &mentioned),
     ))
 }
 
@@ -390,7 +402,7 @@ async fn owner_session(
             pages::message(
                 "Owner only",
                 "This page is for the site owner.",
-                ("/home", "Home"),
+                (LANDING, "Latest document"),
             ),
         ))),
         Some(s) => Ok(Ok(s)),

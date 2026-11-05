@@ -183,6 +183,7 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             get(handlers::consent_page).post(handlers::consent),
         )
         .route("/home", get(handlers::home))
+        .route("/about", get(handlers::about))
         .route("/journal", get(handlers::journal))
         .route("/owner", get(handlers::owner_page))
         .route("/owner/end-sessions", post(handlers::owner_end_sessions))

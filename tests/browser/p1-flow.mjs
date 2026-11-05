@@ -58,8 +58,10 @@ await page.click('form[action="/signin"] button[type=submit]');
 await page.waitForURL(base + '/consent');
 await page.fill('input[name=device_label]', 'browser test');
 await page.click('form[action="/consent"] button[type=submit]');
-await page.waitForURL(base + '/home');
-if (!(await page.textContent('h1')).includes('Hello, delta')) failures.push('home greeting missing');
+// No documents yet, so the landing (the latest document) is the documents list.
+await page.waitForURL(base + '/documents');
+await page.goto(base + '/about');
+if (!(await page.textContent('h1')).includes('Hello, delta')) failures.push('About greeting missing');
 const SAMPLE = `<!doctype html><html><head><meta charset="utf-8"><title>Sample</title>
 <style>body{font:16px system-ui;margin:24px}section{min-height:60vh}</style></head><body>
 <h1 id="top">Sample trip</h1><section id="days"><h2>Day by day</h2><label><input type="checkbox"> Book the car</label></section>
@@ -82,7 +84,7 @@ async function signIn(context, profile) {
   await p.click('form[action="/signin"] button[type=submit]');
   await p.waitForURL(base + '/consent');
   await p.click('form[action="/consent"] button[type=submit]');
-  await p.waitForURL(base + '/home');
+  await p.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
   return p;
 }
 const frameOf = p => p.frameLocator('.doc-frame');
@@ -270,7 +272,7 @@ else {
   await page.keyboard.press('Escape');
   if (await menuOpen(page)) failures.push('Escape did not close the menu');
 }
-// A comment that mentions another member shows on their Home.
+// A comment that mentions another member shows on their About page (Settings, About).
 await rightClick(page, 'Granite lotus', 'Granite lotus');
 await page.click('.anno-menu [data-act=comment]');
 await page.fill('[data-composer-body]', '@beta please check this');
@@ -279,8 +281,9 @@ await page.waitForFunction(() => [...document.querySelectorAll('.annotation-body
 {
   const other = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const b = await signIn(other, 'beta');
+  await b.goto(base + '/about');
   const home = await b.textContent('main');
-  if (!home.includes('Mentioned you') || !home.includes('markup')) failures.push('the mention is not on the other member\'s Home');
+  if (!home.includes('Mentioned you') || !home.includes('markup')) failures.push('the mention is not on the other member\'s About page');
   await b.goto(base + markupPath, { waitUntil: 'networkidle' });
   if ((await b.locator('li.mentions-me').count()) < 1) failures.push('the panel does not mark mentions of the viewer');
   if ((await b.locator('li[data-can-edit=true]').count()) !== 0) failures.push('another member may edit marks that are not theirs');
@@ -873,7 +876,7 @@ async function checkFabs(p, label, width, height, problems, shot) {
   if (csp.length) problems.push(`CSP after the buttons: ${csp.join('; ')}`);
 }
 
-const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['sketch', sketchPath, true], ['signing', signPath, true], ['picture', picturePath, true], ['redaction', redactPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
+const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['sketch', sketchPath, true], ['signing', signPath, true], ['picture', picturePath, true], ['redaction', redactPath, true], ['consent', '/consent', true], ['about', '/about', true], ['journal', '/journal', true], ['owner', '/owner', true]];
 
 // The menu button (bottom left) on every signed-in page: inside the window, at least 44px, and its
 // panel lists Latest document, Documents (which folds open to the documents), Journal and Settings
@@ -884,7 +887,7 @@ async function checkMenu(p, label, width, height, problems) {
   if (!b) { problems.push('menu button missing'); return; }
   if (b.x < 0 || b.y + b.height > height + 1 || b.width < 44 || b.height < 44) problems.push('menu button outside the window or too small');
   if (await p.locator('header.bar nav').count()) problems.push('the header still has its own links');
-  if (!['documents', 'document', 'home'].includes(label)) return;
+  if (!['documents', 'document', 'about'].includes(label)) return;
   await button.click();
   const panel = await p.locator('.menu-panel').boundingBox();
   if (!panel || panel.x < 0 || panel.y < 0 || panel.x + panel.width > width + 1) problems.push('menu panel outside the window');
@@ -906,6 +909,7 @@ async function checkMenu(p, label, width, height, problems) {
   }
   await p.click('.menu-group:not([data-menu-documents]) > summary');
   if (!(await p.isVisible('text=Sign out delta'))) problems.push('Settings did not show Sign out');
+  if (!(await p.isVisible('.menu-list a[href="/about"]'))) problems.push('Settings did not show About');
   await p.keyboard.press('Escape');
   if (await p.isVisible('.menu-panel')) problems.push('Escape did not close the menu');
 }

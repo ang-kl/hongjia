@@ -458,11 +458,7 @@ pub(super) async fn signed_in(
 }
 
 pub(super) fn nav(session: &Session) -> Nav<'_> {
-    Nav {
-        handle: &session.handle,
-        is_owner: session.is_owner,
-        csrf: &session.csrf,
-    }
+    super::handlers::nav(session)
 }
 
 pub(super) fn not_found() -> Response {

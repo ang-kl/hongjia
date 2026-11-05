@@ -12,6 +12,9 @@ pub struct Nav<'a> {
     pub handle: &'a str,
     pub is_owner: bool,
     pub csrf: &'a str,
+    /// This device allowed one approximate location and none is saved yet this session, so the
+    /// page asks for it (session.mjs). Any signed-in page can, since the landing page is a document.
+    pub locate: bool,
 }
 
 fn layout(title: &str, nav: Option<&Nav>, body_attrs: &str, main: &str) -> String {
@@ -45,7 +48,7 @@ fn explorer(contents: &str) -> String {
 
 /// The menu button at the bottom left of every signed-in page (the owner's request, 5 November
 /// 2026): Latest document, the sidebar switch on a document page (Ö on, ø off), Documents (folds
-/// open), Journal, and Settings (folds open) with the owner page and Sign out. It works without
+/// open), Journal, and Settings (folds open) with About, the owner page and Sign out. It works without
 /// script as nested `<details>`; menu.mjs adds closing, the document list and the sidebar switch.
 fn menu(nav: &Nav, viewer: bool) -> String {
     let sidebar = if viewer {
@@ -64,7 +67,7 @@ fn menu(nav: &Nav, viewer: bool) -> String {
 {sidebar}
 <details class="menu-group" data-menu-documents><summary class="menu-item">Documents</summary><div class="menu-list" data-menu-docs><a class="menu-sub" href="/documents">All documents</a></div></details>
 <a class="menu-item" href="/journal">Journal</a>
-<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list">{owner}<form method="post" action="/signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="menu-sub">Sign out {handle}</button></form></div></details>
+<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list"><a class="menu-sub" href="/about">About</a>{owner}<form method="post" action="/signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="menu-sub">Sign out {handle}</button></form></div></details>
 </div></details></nav>"#,
         csrf = escape(nav.csrf),
         handle = escape(nav.handle),
@@ -85,7 +88,7 @@ fn page_shell(
     let viewer = body_class.split_whitespace().any(|c| c == "viewer-page");
     let header = match nav {
         Some(_) if viewer => String::new(),
-        Some(_) => r#"<header class="bar"><a class="brand" href="/home"><span lang="zh">洪家</span> · hongjia</a></header>"#.to_string(),
+        Some(_) => r#"<header class="bar"><a class="brand" href="/documents/latest"><span lang="zh">洪家</span> · hongjia</a></header>"#.to_string(),
         None => r#"<header class="bar"><a class="brand" href="/"><span lang="zh">洪家</span> · hongjia</a></header>"#.to_string(),
     };
     let session_script = if nav.is_some() {
@@ -102,6 +105,10 @@ fn page_shell(
             explorer(contents.unwrap_or(LIBRARY_CONTENTS))
         ),
         None => String::new(),
+    };
+    let body_attrs = match nav {
+        Some(nav) if nav.locate => format!(r#"{body_attrs} data-location="yes""#),
+        _ => body_attrs.to_string(),
     };
     format!(
         r#"<!doctype html>
@@ -266,14 +273,12 @@ fn mentioned_list(mentioned: &[MentionRow]) -> String {
     )
 }
 
-pub fn home(nav: &Nav, device: &str, location_pending: bool, mentioned: &[MentionRow]) -> String {
-    let attrs = format!(
-        r#" data-csrf="{}" data-location="{}""#,
-        escape(nav.csrf),
-        if location_pending { "yes" } else { "no" }
-    );
+/// The page that used to greet people after signing in; since 5 November 2026 they land on the
+/// latest document and reach this from Settings, About (the owner's request).
+pub fn about(nav: &Nav, device: &str, mentioned: &[MentionRow]) -> String {
+    let attrs = format!(r#" data-csrf="{}""#, escape(nav.csrf));
     layout(
-        "Home",
+        "About",
         Some(nav),
         &attrs,
         &format!(
@@ -1187,8 +1192,9 @@ mod tests {
             handle: "<x>",
             is_owner: true,
             csrf: "\"q\"",
+            locate: false,
         };
-        let page = home(&nav, "Safari on iPhone", false, &[]);
+        let page = about(&nav, "Safari on iPhone", &[]);
         assert!(page.contains("&lt;x&gt;") && !page.contains("<x>"));
         assert!(page.contains("&quot;q&quot;"));
         for text in [page, privacy("alpha", 180, 90), signin(&[], "t", Some("m"))] {
@@ -1202,19 +1208,23 @@ mod tests {
             handle: "delta",
             is_owner: true,
             csrf: "t",
+            locate: false,
         };
         let member = Nav {
             handle: "beta",
             is_owner: false,
             csrf: "t",
+            locate: false,
         };
-        let page = home(&owner, "Safari on iPhone", false, &[]);
-        assert!(page.contains(r#"<header class="bar"><a class="brand" href="/home">"#));
-        assert!(!page.contains("<header class=\"bar\"><a class=\"brand\" href=\"/home\"><span lang=\"zh\">洪家</span> · hongjia</a><nav>"));
+        let page = about(&owner, "Safari on iPhone", &[]);
+        assert!(page.contains(r#"<header class="bar"><a class="brand" href="/documents/latest">"#));
+        assert!(!page.contains("hongjia</a><nav>"));
+        assert!(!page.contains("data-location"));
         for item in [
             "/documents/latest",
             "data-menu-documents",
             r#"href="/journal""#,
+            r#"href="/about""#,
             r#"href="/owner""#,
             "Sign out delta",
         ] {
@@ -1224,7 +1234,22 @@ mod tests {
             !page.contains("data-sidebar-toggle"),
             "the sidebar switch is for documents only"
         );
-        let other = home(&member, "Safari on iPhone", false, &[]);
+        let other = about(&member, "Safari on iPhone", &[]);
         assert!(!other.contains(r#"href="/owner""#) && other.contains("Sign out beta"));
+    }
+
+    #[test]
+    fn a_page_asks_for_the_location_only_while_one_is_wanted() {
+        let mut nav = Nav {
+            handle: "delta",
+            is_owner: false,
+            csrf: "t",
+            locate: true,
+        };
+        assert!(
+            about(&nav, "Safari on iPhone", &[]).contains(r#"data-csrf="t" data-location="yes""#)
+        );
+        nav.locate = false;
+        assert!(!about(&nav, "Safari on iPhone", &[]).contains("data-location"));
     }
 }
