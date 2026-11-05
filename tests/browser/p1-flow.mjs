@@ -300,7 +300,9 @@ else {
   if (!(subFont < mainFont)) failures.push(`submenu font ${subFont}px is not smaller than the main menu's ${mainFont}px`);
   await page.click('.anno-menu [data-nav=fold]');
   if (await page.isVisible('.anno-menu .anno-body')) failures.push('▼ did not fold the menu');
-  if ((await page.textContent('.anno-menu [data-nav=fold]')) !== '▲') failures.push('the folded menu does not offer ▲');
+  if ((await page.getAttribute('.anno-menu [data-nav=fold]', 'data-icon')) !== 'up') failures.push('the folded menu does not offer ▲');
+  const sizes = await page.$$eval('.anno-menu .anno-icon', icons => icons.map(i => { const r = i.getBoundingClientRect(); return `${Math.round(r.width)}x${Math.round(r.height)}`; }));
+  if (new Set(sizes).size !== 1) failures.push(`the bar's symbols differ in size: ${sizes.join(' ')}`);
   await page.click('.anno-menu [data-nav=fold]');
   if (!(await page.isVisible('.anno-menu [data-act=underline]'))) failures.push('▲ did not unfold the menu');
   await page.click('.anno-menu [data-nav=back]');

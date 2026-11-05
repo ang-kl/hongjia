@@ -756,12 +756,33 @@ function start() {
   let folded = false;
   let signatureSaved;
   const menu = element('div', { className: 'anno-menu glass', role: 'menu', ariaLabel: 'Mark up', tabIndex: -1, hidden: true });
-  const navButton = (nav, text, label) => element('button', { type: 'button', className: 'anno-nav', textContent: text, title: label, ariaLabel: label, dataset: { nav } });
-  const backButton = navButton('back', '◀', 'Back');
+  // The bar's symbols are drawn, all in one 16 by 16 box, so ◀ ▼ ▲ … × are the same size everywhere.
+  const SVG = 'http://www.w3.org/2000/svg';
+  const ICONS = {
+    back: '<path d="M11 2.5 3.5 8l7.5 5.5z"/>',
+    down: '<path d="M2.5 5h11L8 12.5z"/>',
+    up: '<path d="M2.5 11h11L8 3.5z"/>',
+    more: '<circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/>',
+    close: '<path d="M3.5 3.5l9 9M12.5 3.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>'
+  };
+  const icon = name => {
+    const svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('class', 'anno-icon');
+    svg.innerHTML = ICONS[name];
+    return svg;
+  };
+  const navButton = (nav, shape, label) => {
+    const b = element('button', { type: 'button', className: 'anno-nav', title: label, ariaLabel: label, dataset: { nav, icon: shape } });
+    b.append(icon(shape));
+    return b;
+  };
+  const backButton = navButton('back', 'back', 'Back');
   const titleText = element('span', { className: 'anno-title' });
-  const foldButton = navButton('fold', '▼', 'Fold the menu');
-  const moreButton = navButton('more', '…', 'More, and why items are grey');
-  const closeButton = navButton('close', '×', 'Close (Esc)');
+  const foldButton = navButton('fold', 'down', 'Fold the menu');
+  const moreButton = navButton('more', 'more', 'More, and why items are grey');
+  const closeButton = navButton('close', 'close', 'Close (Esc)');
   const head = element('div', { className: 'anno-head' }, backButton, titleText, foldButton, moreButton, closeButton);
   const bodyBox = element('div', { className: 'anno-body' });
   const why = element('p', { className: 'anno-why', role: 'status', dataset: { annoWhy: '' } });
@@ -817,7 +838,10 @@ function start() {
     menu.dataset.view = name;
     titleText.textContent = viewTitle(name);
     backButton.setAttribute('aria-disabled', String(stack.length === 1));
-    foldButton.textContent = folded ? '▲' : '▼';
+    if (foldButton.dataset.icon !== (folded ? 'up' : 'down')) {
+      foldButton.dataset.icon = folded ? 'up' : 'down';
+      foldButton.replaceChildren(icon(foldButton.dataset.icon));
+    }
     foldButton.setAttribute('aria-label', folded ? 'Unfold the menu' : 'Fold the menu');
     foldButton.title = foldButton.getAttribute('aria-label');
     bodyBox.hidden = folded;

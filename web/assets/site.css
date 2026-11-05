@@ -727,7 +727,10 @@ button.pill[hidden] { display: none; }
   font-size: 1rem;
   line-height: 1;
   cursor: pointer;
+  display: inline-grid;
+  place-items: center;
 }
+.anno-icon { width: 14px; height: 14px; fill: currentColor; }
 .anno-nav:hover:not([aria-disabled="true"]), .anno-nav:focus-visible { background: var(--soft); outline: none; }
 .anno-nav[aria-disabled="true"] { opacity: 0.35; cursor: default; }
 .anno-body { display: grid; gap: 2px; padding-top: 4px; overflow-y: auto; min-height: 0; }
