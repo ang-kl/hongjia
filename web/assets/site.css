@@ -648,8 +648,18 @@ button.pill[hidden] { display: none; }
 .menu-group[open] > summary::after { content: "▲"; }
 .menu-list { display: grid; gap: 2px; padding: 0 0 4px 10px; }
 .menu-sub { font-size: 0.95rem; }
-.menu-doc { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; padding-top: 6px; padding-bottom: 6px; }
-.menu-doc-label { font: 600 0.78rem/1.3 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
+/* Documents in the menu: a two-column table, name and last change | org (download). */
+.menu-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; margin: 0 0 4px; }
+.menu-table th { font: 600 0.72rem/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.menu-table th:last-child, .menu-table td:last-child { text-align: right; width: 1%; white-space: nowrap; }
+.menu-table td { padding: 0; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.menu-table tr:last-child td { border-bottom: 0; }
+.menu-panel a.menu-doc { display: flex; flex-direction: column; justify-content: center; min-height: 44px; padding: 6px 8px; color: var(--ink); text-decoration: none; border-radius: 10px; }
+.menu-panel a.menu-doc:hover, .menu-panel a.menu-doc:focus-visible { background: var(--soft); outline: none; }
+.menu-doc-title { overflow-wrap: anywhere; }
+.menu-doc-when { font: 0.78rem/1.3 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
+.menu-panel a.menu-org { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 10px; border-radius: 10px; color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.menu-panel a.menu-org:hover, .menu-panel a.menu-org:focus-visible { background: var(--soft); outline: none; }
 .menu-glyph { display: inline-block; width: 1.4em; font-weight: 600; }
 @media not all and (min-aspect-ratio: 1/1) and (min-width: 720px) {
   body:has(.panel:target) .menu-fab { visibility: hidden; }

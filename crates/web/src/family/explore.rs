@@ -160,6 +160,7 @@ pub async fn library(
                 ("title", json::string(&d.title)),
                 ("tags", json::strings(&d.tags)),
                 ("month", json::string(&d.month)),
+                ("changed", json::string(&d.changed)),
             ])
         })
         .collect();

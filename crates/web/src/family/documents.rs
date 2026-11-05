@@ -89,6 +89,10 @@ pub struct DocumentRow {
     pub tags: Vec<String>,
     /// Whether what people fill in is one family copy ("shared") or kept per person ("personal").
     pub fields_mode: String,
+    /// The last change in Singapore time, as the owner asked: "03:15PM 05-11" (hh:mmAM/PM DD-MM).
+    /// A new version, a comment, or a shared saved field counts; personal answers and a page's own
+    /// browser storage do not.
+    pub changed: String,
 }
 
 #[derive(Debug, FromRow)]
@@ -115,7 +119,12 @@ pub(super) async fn list(pool: &PgPool) -> sqlx::Result<Vec<DocumentRow>> {
                 v.version_no, v.filename, v.kind, v.size_bytes, p.handle AS uploaded_by,
                 to_char(v.uploaded_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') AS uploaded_at,
                 COALESCE((SELECT array_agg(t.tag ORDER BY t.pos, t.tag) FROM document_tags t WHERE t.document_id = d.id), '{}') AS tags,
-                d.fields_mode
+                d.fields_mode,
+                to_char(GREATEST(v.uploaded_at,
+                    COALESCE((SELECT max(a.created_at) FROM annotations a WHERE a.document_id = d.id), v.uploaded_at),
+                    COALESCE((SELECT max(f.updated_at) FROM document_fields f
+                              WHERE f.document_id = d.id AND f.scope_profile_id IS NULL AND f.kind = 'field'), v.uploaded_at))
+                    AT TIME ZONE 'Asia/Singapore', 'HH12:MIAM DD-MM') AS changed
          FROM documents d
          JOIN LATERAL (SELECT * FROM document_versions WHERE document_id = d.id ORDER BY version_no DESC LIMIT 1) v ON TRUE
          LEFT JOIN profiles p ON p.id = v.uploaded_by
@@ -134,7 +143,12 @@ async fn find(pool: &PgPool, filing: &Filing) -> sqlx::Result<Option<DocumentRow
                 v.version_no, v.filename, v.kind, v.size_bytes, p.handle AS uploaded_by,
                 to_char(v.uploaded_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') AS uploaded_at,
                 COALESCE((SELECT array_agg(t.tag ORDER BY t.pos, t.tag) FROM document_tags t WHERE t.document_id = d.id), '{}') AS tags,
-                d.fields_mode
+                d.fields_mode,
+                to_char(GREATEST(v.uploaded_at,
+                    COALESCE((SELECT max(a.created_at) FROM annotations a WHERE a.document_id = d.id), v.uploaded_at),
+                    COALESCE((SELECT max(f.updated_at) FROM document_fields f
+                              WHERE f.document_id = d.id AND f.scope_profile_id IS NULL AND f.kind = 'field'), v.uploaded_at))
+                    AT TIME ZONE 'Asia/Singapore', 'HH12:MIAM DD-MM') AS changed
          FROM documents d
          JOIN LATERAL (SELECT * FROM document_versions WHERE document_id = d.id ORDER BY version_no DESC LIMIT 1) v ON TRUE
          LEFT JOIN profiles p ON p.id = v.uploaded_by
@@ -651,6 +665,90 @@ pub async fn view(
     }
 }
 
+/// The original file exactly as uploaded (the latest version, or `?v=2`), as a download. Members
+/// only. No helper is added and nothing is changed; it carries the sandbox policy in case a browser
+/// opens it instead of saving it.
+pub async fn original(
+    State(state): State<FamilyState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Path(key): Path<String>,
+) -> Result<Response, super::handlers::Fail> {
+    if signed_in(&state, &headers).await?.is_none() {
+        return Ok(see_other("/"));
+    }
+    let doc = match resolve(&state, &key, "/original").await? {
+        Ok(doc) => doc,
+        Err(response) => return Ok(response),
+    };
+    let version = uri
+        .query()
+        .unwrap_or("")
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("v="))
+        .and_then(|v| v.parse::<i32>().ok());
+    let Some((filename, kind, bytes)): Option<(String, String, Vec<u8>)> = sqlx::query_as(
+        "SELECT filename, kind, content FROM document_versions
+         WHERE document_id = $1 AND ($2::int IS NULL OR version_no = $2)
+         ORDER BY version_no DESC LIMIT 1",
+    )
+    .bind(doc.id)
+    .bind(version)
+    .fetch_optional(&state.pool)
+    .await?
+    else {
+        return Ok(not_found());
+    };
+    let content_type = if kind == "html" {
+        "text/html; charset=utf-8"
+    } else {
+        "text/plain; charset=utf-8"
+    };
+    let disposition = axum::http::HeaderValue::from_str(&attachment(&filename))
+        .unwrap_or(axum::http::HeaderValue::from_static("attachment"));
+    let mut response = (
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CONTENT_SECURITY_POLICY, DOCUMENT_CSP),
+            (header::REFERRER_POLICY, "no-referrer"),
+            (header::CACHE_CONTROL, "private, no-store"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        bytes,
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(header::CONTENT_DISPOSITION, disposition);
+    Ok(response)
+}
+
+/// A Content-Disposition value that saves the file under its own name: a plain ASCII fallback and
+/// the exact name in RFC 5987 form for names with other characters.
+pub fn attachment(filename: &str) -> String {
+    let ascii: String = filename
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "._- ()".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let encoded: String = filename
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"._-".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect();
+    format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")
+}
+
 /// The document itself, for the sandboxed frame (`?v=2` for an earlier version). Members only.
 pub async fn raw(
     State(state): State<FamilyState>,
@@ -932,6 +1030,22 @@ mod tests {
         assert_eq!(clean_title("  My\u{0}trip  ", "x.html"), "Mytrip");
         assert_eq!(clean_title(&"a".repeat(200), "x.html").chars().count(), 120);
         assert_eq!(clean_title("", ".html"), "Untitled");
+    }
+
+    #[test]
+    fn downloads_keep_their_name_safely() {
+        assert_eq!(
+            attachment("Trip plan.html"),
+            "attachment; filename=\"Trip plan.html\"; filename*=UTF-8''Trip%20plan.html"
+        );
+        let odd = attachment("a\"b\r\n家.html");
+        assert!(
+            odd.starts_with(
+                "attachment; filename=\"a_b___.html\"; filename*=UTF-8''a%22b%0D%0A%E5%AE%B6.html"
+            ),
+            "{odd}"
+        );
+        assert!(axum::http::HeaderValue::from_str(&odd).is_ok());
     }
 
     #[test]
