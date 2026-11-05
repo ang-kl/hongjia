@@ -951,8 +951,8 @@ async function checkFabs(p, label, width, height, problems, shot) {
 const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['sketch', sketchPath, true], ['signing', signPath, true], ['picture', picturePath, true], ['redaction', redactPath, true], ['consent', '/consent', true], ['about', '/about', true], ['journal', '/journal', true], ['owner', '/owner', true]];
 
 // The menu button (bottom left) on every signed-in page: inside the window, at least 44px, and its
-// panel lists Latest document, Documents (which folds open to the documents), Journal and Settings
-// (which folds open to Sign out); Escape closes it.
+// panel lists Latest document, Documents (which folds open to the documents), Journal, Settings
+// (which folds open to About) and Sign out, in sight without opening anything; Escape closes it.
 async function checkMenu(p, label, width, height, problems) {
   const button = p.locator('[data-menu-details] > summary');
   const b = await button.boundingBox();
@@ -966,6 +966,8 @@ async function checkMenu(p, label, width, height, problems) {
   const text = (await p.textContent('.menu-panel')).replace(/\s+/g, ' ');
   for (const item of ['Latest document', 'Documents', 'Journal', 'Settings']) if (!text.includes(item)) problems.push(`menu has no ${item}`);
   if ((label === 'document') !== text.includes('Sidebar')) problems.push('the Sidebar switch belongs to document pages only');
+  if (!(await p.isVisible('.menu-panel [data-signout]'))) problems.push('Sign out is not in sight when the menu opens');
+  if ((await p.textContent('.menu-panel [data-signout]').catch(() => '')) !== 'Sign out delta') problems.push('Sign out does not name who is signed in');
   await p.click('[data-menu-documents] > summary');
   await p.waitForSelector('[data-menu-docs] .menu-doc', { timeout: 3000 }).catch(() => problems.push('Documents did not list the documents'));
   // The owner's table: name and last change (hh:mmAM/PM DD-MM) | org, which downloads the original.
@@ -980,7 +982,6 @@ async function checkMenu(p, label, width, height, problems) {
     else if (download.suggestedFilename() !== 'sample-trip.html') problems.push(`download named ${download.suggestedFilename()}`);
   }
   await p.click('.menu-group:not([data-menu-documents]) > summary');
-  if (!(await p.isVisible('text=Sign out delta'))) problems.push('Settings did not show Sign out');
   if (!(await p.isVisible('.menu-list a[href="/about"]'))) problems.push('Settings did not show About');
   await p.keyboard.press('Escape');
   if (await p.isVisible('.menu-panel')) problems.push('Escape did not close the menu');

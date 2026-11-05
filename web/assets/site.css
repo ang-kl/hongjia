@@ -623,6 +623,7 @@ button.pill[hidden] { display: none; }
   color: var(--ink);
 }
 .menu-panel form { margin: 0; }
+.menu-panel .menu-signout { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
 .menu-item, .menu-sub, .menu-panel a.menu-item, .menu-panel a.menu-sub {
   display: flex;
   align-items: center;
