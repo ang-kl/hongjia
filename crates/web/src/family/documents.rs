@@ -558,9 +558,15 @@ pub async fn latest(
     if signed_in(&state, &headers).await?.is_none() {
         return Ok(see_other("/"));
     }
+    // The newest web page (by its latest version), so a text file such as a sources list never
+    // becomes the landing page (the owner's choice, 5 November 2026); otherwise the newest of any kind.
     let key: Option<String> = sqlx::query_scalar(
-        "SELECT to_char(filed_on, 'YYYY-MMDD') || '_' || day_no FROM documents
-         WHERE deleted_at IS NULL ORDER BY filed_on DESC, day_no DESC LIMIT 1",
+        "SELECT to_char(d.filed_on, 'YYYY-MMDD') || '_' || d.day_no FROM documents d
+         WHERE d.deleted_at IS NULL
+         ORDER BY COALESCE((SELECT v.kind FROM document_versions v WHERE v.document_id = d.id
+                            ORDER BY v.version_no DESC LIMIT 1) = 'html', FALSE) DESC,
+                  d.filed_on DESC, d.day_no DESC
+         LIMIT 1",
     )
     .fetch_optional(&state.pool)
     .await?;
