@@ -204,6 +204,17 @@ const entryCount = p => p.locator('li[data-annotation-id]').count();
 const added = async (p, before) => p.waitForFunction(n => document.querySelectorAll('li[data-annotation-id]').length > n, before, { timeout: 4000 }).then(() => true, () => false);
 const frameMarks = (p, selector) => rawFrame(p).evaluate(sel => document.querySelectorAll(sel).length, selector);
 const fill = async (p, words) => { await p.fill('.anno-form textarea', words); await p.click('.anno-form button[type=submit]'); };
+// The menu (the owner's design, 6 November 2026): items sit in the main menu or in a submenu that
+// pops up in its place; Loupe is under … (more).
+const SUBMENU_OF = { underline: 'text', strike: 'text', replace: 'text', insert: 'text', copy: 'text', note: 'note', textbox: 'note', attach: 'note', stamp: 'stamp', signature: 'signature', mysignature: 'signature', ink: 'draw' };
+async function menuPick(p, selector) {
+  const act = (selector.match(/data-act=([a-z]+)/) || [])[1];
+  if (!(await p.isVisible(`.anno-menu ${selector}`))) {
+    if (act === 'loupe') await p.click('.anno-menu [data-nav=more]');
+    else if (SUBMENU_OF[act]) await p.click(`.anno-menu [data-open=${SUBMENU_OF[act]}]`);
+  }
+  await p.click(`.anno-menu ${selector}`);
+}
 
 await page.waitForTimeout(500);
 await rawFrame(page).evaluate(() => document.addEventListener('contextmenu', e => { window.__prevented = e.defaultPrevented; }));
@@ -216,7 +227,7 @@ if (!(await added(page, before)) || await frameMarks(page, 'mark[data-hj-kind=hi
 const markWith = async (selectWords, act, words, colorCheck) => {
   await rightClick(page, selectWords, selectWords);
   const n = await entryCount(page);
-  await page.click(`.anno-menu [data-act=${act}]`);
+  await menuPick(page, `[data-act=${act}]`);
   if (words) await fill(page, words);
   if (!(await added(page, n))) failures.push(`${act} was not saved`);
   if (colorCheck && await frameMarks(page, colorCheck) < 1) failures.push(`${act} not drawn in the document`);
@@ -230,7 +241,7 @@ if ((await page.textContent('.ov-replace').catch(() => '')).trim() !== 'flame') 
 // A sticky note in pink, dragged, then kept in place across a reload.
 await rightClick(page, 'saffron');
 before = await entryCount(page);
-await page.click('.anno-menu [data-act=note]');
+await menuPick(page, '[data-act=note]');
 await page.check('.anno-colors input[value=pink]', { force: true });
 await fill(page, 'Invented note for @beta');
 if (!(await added(page, before))) failures.push('sticky note was not saved');
@@ -251,13 +262,12 @@ else {
 }
 await rightClick(page, 'sparrow');
 before = await entryCount(page);
-await page.click('.anno-menu [data-act=textbox]');
+await menuPick(page, '[data-act=textbox]');
 await fill(page, 'Invented text box');
 if (!(await added(page, before)) || !(await page.isVisible('.ov-textbox'))) failures.push('text box not shown');
 await rightClick(page, 'lotus');
 before = await entryCount(page);
-await page.click('.anno-menu [data-act=stamps]');
-await page.click('.anno-menu [data-stamp=approved]');
+await menuPick(page, '[data-act=stamp][data-stamp=approved]');
 if (!(await added(page, before)) || (await page.textContent('.ov-stamp').catch(() => '')) !== 'Approved') failures.push('Approved stamp not shown');
 // Keyboard: Shift+F10 in the document opens the menu, arrows move, Escape closes.
 await page.locator('.doc-frame').focus();
@@ -272,18 +282,60 @@ else {
   await page.keyboard.press('Escape');
   if (await menuOpen(page)) failures.push('Escape did not close the menu');
 }
-// The menu's Esc button closes it (touch and Pencil have no Escape key), and so does the Escape key
-// while the document still has the keyboard after a right-click (the owner's report, 5 November).
+// The menu bar (the owner's design, 6 November 2026): ◀ back, ▼/▲ fold and unfold, … more and the
+// reasons for grey items, × close; submenus pop up in place of the main menu, one font size smaller.
 await rightClick(page, 'river orchard');
 if (!(await menuOpen(page))) failures.push('right-click did not reopen the menu');
 else {
-  const esc = await page.locator('.anno-menu .anno-esc').boundingBox();
-  const lastSwatch = await page.locator('.anno-menu .swatch').last().boundingBox();
-  if (!esc || esc.width < 44) failures.push('the Esc button is missing or too narrow');
-  else if (lastSwatch && lastSwatch.x + lastSwatch.width > esc.x && lastSwatch.y < esc.y + esc.height) failures.push('the Esc button covers a highlight colour');
-  await page.click('.anno-menu .anno-esc');
-  if (await menuOpen(page)) failures.push('the Esc button did not close the menu');
+  const bar = await page.$$eval('.anno-menu .anno-nav', bs => bs.map(b => b.dataset.nav).join(','));
+  if (bar !== 'back,fold,more,close') failures.push(`menu bar is ${bar}`);
+  if ((await page.getAttribute('.anno-menu [data-nav=back]', 'aria-disabled')) !== 'true') failures.push('◀ is not greyed on the main menu');
+  const rows = await page.$$eval('.anno-menu .anno-body > *', els => els.filter(e => !e.classList.contains('anno-sep')).length);
+  if (rows > 8) failures.push(`the main menu has ${rows} rows`);
+  const mainFont = await page.$eval('.anno-menu [data-open=text]', b => parseFloat(getComputedStyle(b).fontSize));
+  await page.click('.anno-menu [data-open=text]');
+  if (await page.isVisible('.anno-menu [data-open=note]')) failures.push('the main menu still shows under the Text submenu');
+  if (!(await page.isVisible('.anno-menu [data-act=underline]'))) failures.push('the Text submenu did not open');
+  const subFont = await page.$eval('.anno-menu [data-act=underline]', b => parseFloat(getComputedStyle(b).fontSize));
+  if (!(subFont < mainFont)) failures.push(`submenu font ${subFont}px is not smaller than the main menu's ${mainFont}px`);
+  await page.click('.anno-menu [data-nav=fold]');
+  if (await page.isVisible('.anno-menu .anno-body')) failures.push('▼ did not fold the menu');
+  if ((await page.textContent('.anno-menu [data-nav=fold]')) !== '▲') failures.push('the folded menu does not offer ▲');
+  await page.click('.anno-menu [data-nav=fold]');
+  if (!(await page.isVisible('.anno-menu [data-act=underline]'))) failures.push('▲ did not unfold the menu');
+  await page.click('.anno-menu [data-nav=back]');
+  if (!(await page.isVisible('.anno-menu [data-open=note]'))) failures.push('◀ did not go back to the main menu');
+  await page.click('.anno-menu [data-nav=close]');
+  if (await menuOpen(page)) failures.push('× did not close the menu');
 }
+// With nothing selected, word tools are greyed with their reason, and … explains them.
+await rightClick(page, 'meadow');
+if ((await page.getAttribute('.anno-menu .swatch >> nth=0', 'aria-disabled')) !== 'true') failures.push('highlight colours are not greyed with nothing selected');
+await page.click('.anno-menu [data-open=text]');
+await page.click('.anno-menu [data-act=underline]');
+if ((await page.textContent('.anno-menu .anno-why')).trim() !== 'Select words first') failures.push('a grey item did not say why');
+await page.click('.anno-menu [data-nav=back]');
+await page.click('.anno-menu [data-nav=more]');
+const moreText = (await page.textContent('.anno-menu .anno-body')).replace(/\s+/g, ' ');
+if (!moreText.includes('Loupe') || !moreText.includes('Highlight: Select words first')) failures.push(`… did not show Loupe and the reasons: ${moreText.slice(0, 120)}`);
+await page.click('.anno-menu [data-nav=close]');
+// ✎ Mark Up beside words selected with a finger opens the menu with the word tools ready.
+await rawFrame(page).evaluate(() => {
+  document.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true }));
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const at = n.data.indexOf('river orchard');
+    if (at !== -1) { const r = document.createRange(); r.setStart(n, at); r.setEnd(n, at + 13); getSelection().removeAllRanges(); getSelection().addRange(r); break; }
+  }
+});
+await page.waitForSelector('.anno-pill:not([hidden])', { timeout: 3000 }).catch(() => failures.push('✎ Mark Up did not appear beside a touch selection'));
+if (await page.isVisible('.anno-pill')) {
+  await page.click('.anno-pill');
+  await page.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => failures.push('✎ Mark Up did not open the menu'));
+  if ((await page.getAttribute('.anno-menu .swatch >> nth=0', 'aria-disabled')) === 'true') failures.push('✎ Mark Up opened the menu without the selected words');
+  await page.click('.anno-menu [data-nav=close]');
+}
+await rawFrame(page).evaluate(() => getSelection().removeAllRanges());
 await rightClick(page, 'river orchard');
 await page.locator('.doc-frame').focus();
 await rawFrame(page).evaluate(() => document.body.focus());
@@ -292,7 +344,7 @@ await page.waitForTimeout(300);
 if (await menuOpen(page)) failures.push('Escape in the document did not close the menu');
 // A comment that mentions another member shows on their About page (Settings, About).
 await rightClick(page, 'Granite lotus', 'Granite lotus');
-await page.click('.anno-menu [data-act=comment]');
+await menuPick(page, '[data-act=comment]');
 await page.fill('[data-composer-body]', '@beta please check this');
 await page.click('form[data-composer] button[type=submit]');
 await page.waitForFunction(() => [...document.querySelectorAll('.annotation-body')].some(el => el.textContent.includes('please check')), null, { timeout: 4000 }).catch(() => failures.push('the mention comment was not saved'));
@@ -368,7 +420,7 @@ const inkCount = (p, selector = 'li[data-kind=ink], li[data-kind=shape]') => p.l
 const inkAdded = (p, selector, before) => p.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length > n, [selector, before], { timeout: 5000 }).then(() => true, () => false);
 const startInk = async (p, tool, word) => {
   await rightClick(p, word);
-  await p.click(`.anno-menu [data-act=ink][data-tool=${tool}]`);
+  await menuPick(p, `[data-act=ink][data-tool=${tool}]`);
   await p.waitForSelector('[data-ink-bar]:not([hidden])', { timeout: 3000 }).catch(() => failures.push(`${tool} did not open the drawing toolbar`));
 };
 const drag = async (p, points) => {
@@ -549,7 +601,7 @@ const signPath = new URL(page.url()).pathname;
 await page.waitForTimeout(800);
 {
   await rightClick(page, 'Copper');
-  await page.click('.anno-menu [data-act=signature]');
+  await menuPick(page, '[data-act=signature]');
   if (!(await page.waitForSelector('[data-sig-pad]:not([hidden])', { timeout: 3000 }).then(() => true, () => false))) failures.push('the signature pad did not open without a saved signature');
   const pad = await page.locator('[data-sig-area]').boundingBox();
   await drag(page, Array.from({ length: 24 }, (_, i) => ({ x: pad.x + 40 + i * 14, y: pad.y + pad.height * 0.55 + Math.sin(i / 2) * 14 })));
@@ -569,7 +621,7 @@ await page.waitForTimeout(800);
   // With a signature saved, Signature places it at once.
   const again = await signatures(page);
   await rightClick(page, 'Thistle');
-  await page.click('.anno-menu [data-act=signature]');
+  await menuPick(page, '[data-act=signature]');
   if (!(await signatureAdded(page, again))) failures.push('a saved signature was not placed straight away');
   if (await page.isVisible('[data-sig-pad]')) failures.push('the pad opened although a signature was saved');
 }
@@ -579,7 +631,7 @@ await page.waitForTimeout(800);
   await bp.goto(base + signPath, { waitUntil: 'networkidle' });
   await bp.waitForTimeout(600);
   await rightClick(bp, 'Velvet');
-  await bp.click('.anno-menu [data-act=signature]');
+  await menuPick(bp, '[data-act=signature]');
   if (!(await bp.waitForSelector('[data-sig-pad]:not([hidden])', { timeout: 3000 }).then(() => true, () => false))) failures.push('another member got no pad (they have no signature of their own)');
   await bp.click('[data-sig-tab=typed]');
   await bp.fill('[data-sig-input]', 'Invented Name');
@@ -603,7 +655,7 @@ await page.waitForTimeout(800);
   });
   const frameBox = await page.locator('.doc-frame').boundingBox();
   await rightClick(page, 'Lantern');
-  await page.click('.anno-menu [data-act=loupe]');
+  await menuPick(page, '[data-act=loupe]');
   await page.waitForTimeout(250);
   if (!(await page.isVisible('[data-loupe-chip]'))) failures.push('the loupe controls did not show');
   {
@@ -631,7 +683,7 @@ await page.waitForTimeout(800);
   await page.waitForTimeout(250);
   if ((await lens()) || (await page.isVisible('[data-loupe-chip]'))) failures.push('Escape did not close the loupe');
   await rightClick(page, 'Lantern');
-  await page.click('.anno-menu [data-act=loupe]');
+  await menuPick(page, '[data-act=loupe]');
   await page.waitForTimeout(250);
   await page.mouse.click(a.x, a.y);
   await page.waitForTimeout(300);
@@ -661,12 +713,12 @@ let notePlace = null, inkPlace = null;
   await page.mouse.click(pic.x + pic.w * 0.3, pic.y + pic.h * 0.4, { button: 'right' });
   await page.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => failures.push('right-click on a picture opened no menu'));
   const notes = await page.locator('li[data-kind=note]').count();
-  await page.click('.anno-menu [data-act=note]');
+  await menuPick(page, '[data-act=note]');
   await fill(page, 'Invented note on the picture');
   await page.waitForFunction(n => document.querySelectorAll('li[data-kind=note]').length > n, notes, { timeout: 5000 }).catch(() => failures.push('no note on the picture'));
   await page.mouse.click(pic.x + pic.w * 0.6, pic.y + pic.h * 0.7, { button: 'right' });
   await page.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => {});
-  await page.click('.anno-menu [data-act=ink][data-tool=draw]');
+  await menuPick(page, '[data-act=ink][data-tool=draw]');
   const drawings = await inkCount(page, 'li[data-kind=ink]');
   await drag(page, Array.from({ length: 16 }, (_, i) => ({ x: pic.x + pic.w * 0.55 + i * 8, y: pic.y + pic.h * 0.7 + Math.sin(i / 2) * 8 })));
   if (!(await inkAdded(page, 'li[data-kind=ink]', drawings))) failures.push('no drawing on the picture');
@@ -693,7 +745,7 @@ let notePlace = null, inkPlace = null;
   // The loupe's controls fit a phone.
   await pp.mouse.click(pic.x + pic.w * 0.5, pic.y + pic.h * 0.2, { button: 'right' });
   await pp.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => failures.push('no menu on the phone picture'));
-  await pp.click('.anno-menu [data-act=loupe]');
+  await menuPick(pp, '[data-act=loupe]');
   await pp.waitForTimeout(250);
   const chip = await pp.locator('[data-loupe-chip]').boundingBox();
   const close = await pp.locator('[data-loupe-close]').boundingBox();
@@ -719,7 +771,7 @@ const kindCount = (p, kind) => p.locator(`li[data-kind=${kind}]`).count();
 const kindAdded = (p, kind, n) => p.waitForFunction(([k, m]) => document.querySelectorAll(`li[data-kind=${k}]`).length > m, [kind, n], { timeout: 5000 }).then(() => true, () => false);
 const attachAt = async (p, word, file) => {
   await rightClick(p, word);
-  const [chooser] = await Promise.all([p.waitForEvent('filechooser', { timeout: 4000 }).catch(() => null), p.click('.anno-menu [data-act=attach]')]);
+  const [chooser] = await Promise.all([p.waitForEvent('filechooser', { timeout: 4000 }).catch(() => null), menuPick(p, '[data-act=attach]')]);
   if (!chooser) { failures.push(`Attach file opened no file picker (${file.name})`); return; }
   await chooser.setFiles(file);
 };
@@ -736,7 +788,7 @@ const downloadOf = async (p, name) => {
   await bp.waitForTimeout(600);
   await rightClick(bp, 'Quillon Marsh', 'Quillon Marsh');
   if (!(await menuOpen(bp))) failures.push('no menu for another member');
-  if (await bp.locator('.anno-menu [data-act=redaction]').count()) failures.push('Redact offered to a member who did not add the document');
+  if ((await bp.getAttribute('.anno-menu [data-act=redaction]', 'aria-disabled').catch(() => null)) !== 'true') failures.push('Redact is not greyed out for a member who did not add the document');
   await bp.keyboard.press('Escape');
   const refused = await bp.evaluate(async path => (await fetch(`${path}/annotations`, {
     method: 'POST', credentials: 'same-origin',
@@ -752,7 +804,7 @@ const downloadOf = async (p, name) => {
   for (const words of ['Quillon Marsh', '4417']) {
     await rightClick(page, words, words);
     const n = await kindCount(page, 'redaction');
-    await page.click('.anno-menu [data-act=redaction]');
+    await menuPick(page, '[data-act=redaction]');
     if (!(await kindAdded(page, 'redaction', n))) failures.push(`"${words}" was not marked for redaction`);
   }
   await noSelection(page);
@@ -803,7 +855,7 @@ const downloadOf = async (p, name) => {
   const pic = await pictureAt(page);
   await page.mouse.click(pic.x + pic.w * 0.5, pic.y + pic.h * 0.5, { button: 'right' });
   await page.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => {});
-  if (!(await page.isDisabled('.anno-menu [data-act=redaction]').catch(() => false))) failures.push('Redact is not greyed out on a picture');
+  if ((await page.getAttribute('.anno-menu [data-act=redaction]', 'aria-disabled').catch(() => null)) !== 'true') failures.push('Redact is not greyed out on a picture');
   await page.keyboard.press('Escape');
 }
 
@@ -1027,7 +1079,7 @@ for (const scheme of ['light', 'dark']) {
         const drawn = await p.locator('.ink-layer g').count();
         if (drawn !== expectedDrawings) problems.push(`expected ${expectedDrawings} drawings, found ${drawn}`);
         await rightClick(p, 'Orchard');
-        await p.click('.anno-menu [data-act=ink][data-tool=sketch]').catch(() => problems.push('no Sketch in the annotation menu'));
+        await menuPick(p, '[data-act=ink][data-tool=sketch]').catch(() => problems.push('no Sketch in the annotation menu'));
         const bar = await p.locator('[data-ink-bar]').boundingBox();
         if (!bar) problems.push('the drawing toolbar did not open');
         else if (bar.x < 0 || bar.y < 0 || bar.x + bar.width > width + 1 || bar.y + bar.height > height + 1) problems.push(`the drawing toolbar runs outside the window (${Math.round(bar.x)},${Math.round(bar.y)} ${Math.round(bar.width)}x${Math.round(bar.height)})`);

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { validMessage, placeMenu, mentionPieces, mentionQuery, COLORS, STAMPS } from '../assets/doc-view.mjs';
+import { validMessage, placeMenu, mentionPieces, mentionQuery, COLORS, STAMPS, MENU, unavailable } from '../assets/doc-view.mjs';
 
 const source = await readFile(new URL('../assets/frame-helper.js', import.meta.url), 'utf8');
 const pure = source.slice(source.indexOf('/* PURE START'), source.indexOf('/* PURE END'));
@@ -102,4 +102,40 @@ test('menu, position and locate messages are checked', () => {
   for (const forged of ['hj:create', 'hj:delete', 'hj:move', 'hj:edit']) assert.equal(validMessage({ type: forged, id: '1' }), null, `${forged} is not a message the page accepts`);
   assert.deepEqual(COLORS, ['yellow', 'green', 'blue', 'pink', 'orange']);
   assert.equal(STAMPS.length, 5);
+});
+
+test('the menu is short and grouped: a small main menu, submenus one level deep, Redact last in red', () => {
+  const rows = MENU.main.groups.flat();
+  assert.ok(rows.length <= 8, `main menu has ${rows.length} rows`);
+  for (const [name, view] of Object.entries(MENU)) {
+    assert.ok(view.groups.length <= 3, `${name} has at most three groups`);
+    assert.ok(view.groups.flat().length <= (name === 'main' ? 8 : 7), `${name} is short`);
+    if (name !== 'main') assert.ok(view.groups.flat().every(item => !item.open), `${name} opens no further submenu`);
+  }
+  for (const item of rows.filter(r => r.open)) assert.ok(MENU[item.open], `${item.label} opens a submenu that exists`);
+  const last = MENU.main.groups.at(-1);
+  assert.equal(last.length, 1);
+  assert.equal(last[0].act, 'redaction');
+  assert.ok(last[0].destructive);
+  const known = new Set(['quote', 'point', 'place', 'redact', 'attach', 'signature', undefined]);
+  for (const view of Object.values(MENU)) for (const item of view.groups.flat().concat(view.more || [])) assert.ok(known.has(item.needs), `${item.label || 'swatches'} needs a known rule`);
+});
+
+test('unavailable items are greyed with a plain reason', () => {
+  const none = { quote: false, point: false, place: true, picture: false, manager: true };
+  assert.equal(unavailable('quote', none), 'Select words first');
+  assert.equal(unavailable('quote', { ...none, picture: true }), 'Not on pictures');
+  assert.equal(unavailable('point', none), 'Press inside the text first');
+  assert.equal(unavailable('place', { ...none, place: false }), 'Press on the document first');
+  assert.equal(unavailable('signature', { signature: false }), 'No signature yet: Place My Signature draws one first');
+  assert.equal(unavailable('signature', { signature: undefined }), '', 'not known yet: offered');
+  assert.equal(unavailable(undefined, none), '');
+});
+
+test('a selection may say where the words are and how they were selected, for Mark Up', () => {
+  const sel = { type: 'hj:selection', quote: 'Two', prefix: '', suffix: '', input: 'touch', box: { x: 10, y: 20, w: 30, h: 16 } };
+  assert.deepEqual(validMessage(sel), sel);
+  assert.equal(validMessage({ ...sel, input: 'voice' }), null);
+  assert.equal(validMessage({ ...sel, box: { x: 1, y: 2, w: -3, h: 4 } }), null);
+  assert.equal(validMessage({ ...sel, box: null }), null);
 });

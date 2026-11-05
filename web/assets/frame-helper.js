@@ -344,6 +344,11 @@
 
   var lastQuote = '';
   var selectionTimer = 0;
+  var lastPointer = 'mouse';
+  document.addEventListener('pointerdown', function (event) {
+    lastPointer = event.pointerType === 'touch' || event.pointerType === 'pen' ? event.pointerType : 'mouse';
+  }, true);
+  document.addEventListener('keydown', function () { lastPointer = 'keyboard'; }, true);
   function reportSelection() {
     var sel = window.getSelection && window.getSelection();
     var quote = '', found = null;
@@ -358,10 +363,23 @@
         if (found.quote.trim()) quote = found.quote;
       }
     }
-    if (quote === lastQuote) return;
-    lastQuote = quote;
-    send(quote ? { type: 'hj:selection', quote: found.quote, prefix: found.prefix, suffix: found.suffix } : { type: 'hj:selection', quote: '', prefix: '', suffix: '' });
+    // Where the words are (for ✎ Mark Up beside a touch selection); reported again when they move.
+    var box = null;
+    if (quote) {
+      var rect = sel.getRangeAt(0).getBoundingClientRect();
+      box = { x: Math.round(rect.left), y: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) };
+    }
+    var key = quote + (box ? '|' + box.x + ',' + box.y + ',' + box.w + ',' + box.h : '');
+    if (key === lastQuote) return;
+    lastQuote = key;
+    send(quote ? { type: 'hj:selection', quote: found.quote, prefix: found.prefix, suffix: found.suffix, input: lastPointer, box: box } : { type: 'hj:selection', quote: '', prefix: '', suffix: '' });
   }
+  window.addEventListener('scroll', function () {
+    var sel = window.getSelection && window.getSelection();
+    if (!sel || sel.isCollapsed) return;
+    clearTimeout(selectionTimer);
+    selectionTimer = setTimeout(reportSelection, 150);
+  }, true);
   document.addEventListener('selectionchange', function () {
     clearTimeout(selectionTimer);
     selectionTimer = setTimeout(reportSelection, 250);
@@ -784,6 +802,10 @@
         if (placed) target = placedTarget(placed);
       }
       if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    } else if (d.type === 'hj:menu-at' && isFinite(d.x) && isFinite(d.y)) {
+      // ✎ Mark Up on the page: open the menu for the selected words, as a long press would.
+      var mx = clamp(Number(d.x), 0, window.innerWidth - 1), my = clamp(Number(d.y), 0, window.innerHeight - 1);
+      menuAt(mx, my, 'touch', document.elementFromPoint(mx, my));
     } else if (d.type === 'hj:tool' && typeof d.color === 'string' && PALETTE[d.color]) {
       toolColor = d.color;
     } else if (d.type === 'hj:locate' && typeof d.req === 'string' && /^[0-9]{1,12}$/.test(d.req) && isFinite(d.x) && isFinite(d.y)) {

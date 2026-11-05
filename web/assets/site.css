@@ -702,33 +702,46 @@ button.pill[hidden] { display: none; }
 .anno-menu {
   position: fixed;
   z-index: 55;
-  width: min(260px, calc(100vw - 16px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: 200px;
+  max-width: min(300px, calc(100vw - 16px));
   border-radius: 14px;
-  padding: 6px;
-  display: grid;
-  gap: 2px;
+  padding: 4px 6px 6px;
   color: var(--ink);
+  overscroll-behavior: contain;
 }
-.anno-esc {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  min-width: 44px;
-  min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--card);
+.anno-menu[data-view="form"] { width: min(300px, calc(100vw - 16px)); }
+.anno-head { display: flex; align-items: center; gap: 2px; padding: 0 0 4px; border-bottom: 1px solid var(--line); flex: none; }
+.anno-title { flex: 1 1 auto; min-width: 0; padding: 0 6px; font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.anno-nav {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
   color: var(--ink);
   font: inherit;
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1;
   cursor: pointer;
 }
-.anno-esc:hover, .anno-esc:focus-visible { background: var(--soft); outline: 2px solid var(--ink); outline-offset: 1px; }
-.anno-menu[hidden], .anno-sub[hidden], .anno-form[hidden], .mention-list[hidden], .anno-colors[hidden] { display: none; }
+.anno-nav:hover:not([aria-disabled="true"]), .anno-nav:focus-visible { background: var(--soft); outline: none; }
+.anno-nav[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+.anno-body { display: grid; gap: 2px; padding-top: 4px; overflow-y: auto; min-height: 0; }
+.anno-body[hidden] { display: none; }
+.anno-sep { height: 1px; margin: 3px 6px; background: var(--line); }
+.anno-why { margin: 4px 8px 0; color: var(--muted); font-size: 0.8rem; }
+.anno-why:empty { display: none; }
+.anno-reasons { margin: 0; padding: 0 10px 4px 26px; font-size: 0.8rem; color: var(--ink); }
+.anno-reasons li { margin: 2px 0; }
+.anno-chev { margin-left: auto; padding-left: 16px; color: var(--muted); }
+.anno-danger { color: #a3261b; }
+.anno-pill { position: fixed; z-index: 54; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+.anno-pill[hidden] { display: none; }
+.anno-menu[hidden], .anno-form[hidden], .mention-list[hidden], .anno-colors[hidden] { display: none; }
 .anno-item {
   display: flex;
   align-items: center;
@@ -744,13 +757,16 @@ button.pill[hidden] { display: none; }
   text-align: left;
   cursor: pointer;
 }
-.anno-item:hover:not(:disabled), .anno-item:focus-visible { background: var(--soft); outline: none; }
-.anno-item:disabled, .swatch:disabled { opacity: 0.4; cursor: default; }
+.anno-item:hover:not([aria-disabled="true"]), .anno-item:focus-visible { background: var(--soft); outline: none; }
+.anno-item[aria-disabled="true"], .swatch[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+/* submenus one font size smaller than the main menu (the owner's choice) */
+.anno-menu[data-view="main"] .anno-item { font-size: 1rem; }
+.anno-menu:not([data-view="main"]) .anno-item { font-size: 0.875rem; min-height: 36px; }
+@media (pointer: coarse) { .anno-item, .anno-menu:not([data-view="main"]) .anno-item { min-height: 44px; } .anno-nav { min-width: 44px; min-height: 44px; } }
 .anno-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 10px; }
 .anno-label { flex: 1 0 100%; color: var(--muted); font-size: 0.85rem; }
 .swatch { width: 28px; height: 28px; min-height: 28px; padding: 0; border: 2px solid var(--line-c); border-radius: 50%; background: var(--fill); cursor: pointer; }
 .swatch:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-.anno-sub { display: grid; gap: 2px; padding-left: 12px; }
 .anno-form { display: grid; gap: 6px; padding: 6px 8px; }
 .anno-form textarea, .annotation-editor textarea, .annotation-editor input[type="text"] {
   width: 100%;
