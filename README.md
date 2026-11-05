@@ -3,7 +3,7 @@
 
 A private family review site for hongjia.org. Updated 5 November 2026.
 
-**Status: phase P2b.** Without a database the site shows the placeholder page. With one (`DATABASE_URL`) and a family password, family members tap their name and type the family password; the site then offers documents (HTML and text, viewed in a locked-down frame that fills the window), the login journal and location consent. Each document is filed under a dated number (`2026-1105_#1`) and has a management panel beside it: hashtags, versions, an upload check, rename and permanent delete (the uploader and the owner only). Every signed-in page has the 🛰️ satellite (search across all documents), the globe (documents as pins on islands of shared hashtags) and the 📁 folder (the open document's headings, or all documents). Family members can annotate any document (select text or a field, then Comment), and what they fill in is saved, shared or personal as the uploader chooses; pages that keep their own progress in browser storage keep working.
+**Status: phase D1.** Without a database the site shows the placeholder page. With one (`DATABASE_URL`) and a family password, family members tap their name and type the family password; the site then offers documents (HTML and text, viewed in a locked-down frame that fills the window), the login journal and location consent. Each document is filed under a dated number (`2026-1105_#1`) and has a management panel beside it: hashtags, versions, an upload check, rename and permanent delete (the uploader and the owner only). Every signed-in page has the 🛰️ satellite (search across all documents), the globe (documents as pins on islands of shared hashtags) and the 📁 folder (the open document's headings, or all documents). Family members can mark up any document: right-click it (press and hold on a touch screen, or tap twice with the Pencil) to highlight in five colours, underline, strike through, insert or replace words, add a sticky note, a text box or a stamp, or comment; @mentions show under "Mentioned you" on Home. What they fill in is saved, shared or personal as the uploader chooses; pages that keep their own progress in browser storage keep working.
 
 ## Plan and specs
 
@@ -13,6 +13,7 @@ A private family review site for hongjia.org. Updated 5 November 2026.
 - [`docs/specs/2026-11-05_P1-signin-journal.md`](docs/specs/2026-11-05_P1-signin-journal.md): phase P1, sign-in and the login journal.
 - [`docs/specs/2026-11-05_P2a-documents.md`](docs/specs/2026-11-05_P2a-documents.md): phase P2a, upload and view documents.
 - [`docs/specs/2026-11-05_P2b-documents-panel.md`](docs/specs/2026-11-05_P2b-documents-panel.md): phase P2b, filing numbers, the management panel and the full-window viewer.
+- [`docs/specs/2026-11-05_D1-annotation-tools.md`](docs/specs/2026-11-05_D1-annotation-tools.md): D1, the annotation tools (right-click, long press and Pencil menu).
 
 ## Layout
 

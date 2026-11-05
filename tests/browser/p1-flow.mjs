@@ -164,6 +164,169 @@ if (shots) {
   await pp.screenshot({ path: `${shots}/phone-annotations.png` });
   await phone.close();
 }
+// 3. D1 annotation tools, on a second document (the first keeps the checks above).
+const MARKUP = `<!doctype html><html><head><meta charset="utf-8"><title>Markup</title>
+<style>body{font:16px system-ui;margin:24px}p{margin:0 0 16px}</style></head><body>
+<h1>Markup sample</h1><section><p id="p1">Lantern river orchard meadow harbour.</p><p id="p2">Copper willow ember thistle juniper.</p>
+<p id="p3">Pebble saffron quill marble cedar.</p><p id="p4">Velvet acorn sparrow tundra fennel.</p><p id="p5">Granite lotus amber prairie.</p></section></body></html>`;
+await page.goto(base + '/documents/new');
+await page.setInputFiles('input[name=file]', { name: 'markup.html', mimeType: 'text/html', buffer: Buffer.from(MARKUP) });
+await page.click('form[action="/documents"] button[type=submit]');
+await page.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
+const markupPath = new URL(page.url()).pathname;
+const rawFrame = p => p.frames().find(f => f.url().includes('/raw'));
+const textPoint = async (p, wanted) => {
+  const f = rawFrame(p);
+  const box = await p.locator('.doc-frame').boundingBox();
+  const at = await f.evaluate(text => {
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      const i = n.data.indexOf(text);
+      if (i !== -1) { const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + text.length); const b = r.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }
+    }
+    return null;
+  }, wanted);
+  return { x: box.x + 1 + at.x, y: box.y + 1 + at.y };
+};
+const noSelection = p => rawFrame(p).evaluate(() => getSelection().removeAllRanges());
+const menuOpen = p => p.isVisible('.anno-menu');
+const rightClick = async (p, wanted, select) => {
+  if (select) await selectText(p, select); else await noSelection(p);
+  const at = await textPoint(p, wanted);
+  await p.mouse.click(at.x, at.y, { button: 'right' });
+  await p.waitForSelector('.anno-menu:not([hidden])', { timeout: 3000 }).catch(() => {});
+};
+const entryCount = p => p.locator('li[data-annotation-id]').count();
+const added = async (p, before) => p.waitForFunction(n => document.querySelectorAll('li[data-annotation-id]').length > n, before, { timeout: 4000 }).then(() => true, () => false);
+const frameMarks = (p, selector) => rawFrame(p).evaluate(sel => document.querySelectorAll(sel).length, selector);
+const fill = async (p, words) => { await p.fill('.anno-form textarea', words); await p.click('.anno-form button[type=submit]'); };
+
+await page.waitForTimeout(500);
+await rawFrame(page).evaluate(() => document.addEventListener('contextmenu', e => { window.__prevented = e.defaultPrevented; }));
+await rightClick(page, 'river orchard', 'river orchard');
+if (!(await menuOpen(page))) failures.push('right-click did not open the annotation menu');
+if (await rawFrame(page).evaluate(() => window.__prevented) !== true) failures.push("right-click still showed the browser's own menu");
+let before = await entryCount(page);
+await page.click('.anno-menu .swatch[data-color=green]');
+if (!(await added(page, before)) || await frameMarks(page, 'mark[data-hj-kind=highlight][data-hj-color=green]') < 1) failures.push('green highlight not drawn');
+const markWith = async (selectWords, act, words, colorCheck) => {
+  await rightClick(page, selectWords, selectWords);
+  const n = await entryCount(page);
+  await page.click(`.anno-menu [data-act=${act}]`);
+  if (words) await fill(page, words);
+  if (!(await added(page, n))) failures.push(`${act} was not saved`);
+  if (colorCheck && await frameMarks(page, colorCheck) < 1) failures.push(`${act} not drawn in the document`);
+};
+await markWith('meadow', 'underline', '', 'mark[data-hj-kind=underline]');
+await markWith('harbour', 'strike', '', 'mark[data-hj-kind=strike]');
+await markWith('willow', 'insert', 'weeping', 'hj-caret');
+await markWith('ember', 'replace', 'flame', 'mark[data-hj-kind=replace]');
+if ((await page.textContent('.ov-insert').catch(() => '')).trim() !== '‸ weeping') failures.push('inserted words not shown over the document');
+if ((await page.textContent('.ov-replace').catch(() => '')).trim() !== 'flame') failures.push('replacement words not shown over the document');
+// A sticky note in pink, dragged, then kept in place across a reload.
+await rightClick(page, 'saffron');
+before = await entryCount(page);
+await page.click('.anno-menu [data-act=note]');
+await page.check('.anno-colors input[value=pink]', { force: true });
+await fill(page, 'Invented note for @beta');
+if (!(await added(page, before))) failures.push('sticky note was not saved');
+const note = page.locator('.ov-note');
+await page.waitForTimeout(400);
+const noteBefore = await note.boundingBox();
+if (!noteBefore || (await note.getAttribute('data-color')) !== 'pink') failures.push('sticky note not shown in pink');
+else {
+  await page.mouse.move(noteBefore.x + 10, noteBefore.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(noteBefore.x + 80, noteBefore.y + 60, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForResponse(r => r.url().includes('/update') && r.status() === 200, { timeout: 4000 }).catch(() => failures.push('the dragged note was not saved'));
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const noteAfter = await page.locator('.ov-note').boundingBox();
+  if (!noteAfter || Math.abs(noteAfter.x - (noteBefore.x + 70)) > 8 || Math.abs(noteAfter.y - (noteBefore.y + 52)) > 8) failures.push(`the note did not keep its new place (${JSON.stringify(noteBefore)} then ${JSON.stringify(noteAfter)})`);
+}
+await rightClick(page, 'sparrow');
+before = await entryCount(page);
+await page.click('.anno-menu [data-act=textbox]');
+await fill(page, 'Invented text box');
+if (!(await added(page, before)) || !(await page.isVisible('.ov-textbox'))) failures.push('text box not shown');
+await rightClick(page, 'lotus');
+before = await entryCount(page);
+await page.click('.anno-menu [data-act=stamps]');
+await page.click('.anno-menu [data-stamp=approved]');
+if (!(await added(page, before)) || (await page.textContent('.ov-stamp').catch(() => '')) !== 'Approved') failures.push('Approved stamp not shown');
+// Keyboard: Shift+F10 in the document opens the menu, arrows move, Escape closes.
+await page.locator('.doc-frame').focus();
+await rawFrame(page).evaluate(() => document.body.focus());
+await page.keyboard.press('Shift+F10');
+await page.waitForTimeout(300);
+if (!(await menuOpen(page))) failures.push('Shift+F10 did not open the menu');
+else {
+  const first = await page.evaluate(() => document.activeElement?.getAttribute('role'));
+  await page.keyboard.press('ArrowDown');
+  if (first !== 'menuitem') failures.push('the menu did not take focus');
+  await page.keyboard.press('Escape');
+  if (await menuOpen(page)) failures.push('Escape did not close the menu');
+}
+// A comment that mentions another member shows on their Home.
+await rightClick(page, 'Granite lotus', 'Granite lotus');
+await page.click('.anno-menu [data-act=comment]');
+await page.fill('[data-composer-body]', '@beta please check this');
+await page.click('form[data-composer] button[type=submit]');
+await page.waitForFunction(() => [...document.querySelectorAll('.annotation-body')].some(el => el.textContent.includes('please check')), null, { timeout: 4000 }).catch(() => failures.push('the mention comment was not saved'));
+{
+  const other = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const b = await signIn(other, 'beta');
+  const home = await b.textContent('main');
+  if (!home.includes('Mentioned you') || !home.includes('markup')) failures.push('the mention is not on the other member\'s Home');
+  await b.goto(base + markupPath, { waitUntil: 'networkidle' });
+  if ((await b.locator('li.mentions-me').count()) < 1) failures.push('the panel does not mark mentions of the viewer');
+  if ((await b.locator('li[data-can-edit=true]').count()) !== 0) failures.push('another member may edit marks that are not theirs');
+  await other.close();
+}
+if (shots) {
+  await rightClick(page, 'quill marble', 'quill marble');
+  await page.screenshot({ path: `${shots}/notebook-markup-menu.png` });
+  await page.keyboard.press('Escape');
+  await page.screenshot({ path: `${shots}/notebook-markup-marks.png` });
+}
+// A long press on a touch screen, and two quick taps with a Pencil, open the menu too.
+{
+  const touch = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, storageState: await setup.storageState() });
+  const tp = await touch.newPage();
+  await tp.goto(base + markupPath, { waitUntil: 'networkidle' });
+  await tp.waitForTimeout(500);
+  const at = await textPoint(tp, 'cedar');
+  const cdp = await touch.newCDPSession(tp);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }] });
+  await tp.waitForTimeout(750);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await tp.waitForTimeout(300);
+  if (!(await menuOpen(tp))) failures.push('a long press did not open the menu');
+  else {
+    const m = await tp.locator('.anno-menu').boundingBox();
+    if (m.x < 0 || m.y < 0 || m.x + m.width > 390 + 1 || m.y + m.height > 844 + 1) failures.push('the long-press menu runs outside the phone screen');
+    if (shots) await tp.screenshot({ path: `${shots}/phone-long-press-menu.png` });
+  }
+  await touch.close();
+  const pen = await browser.newContext({ viewport: { width: 1180, height: 820 }, storageState: await setup.storageState() });
+  const pp = await pen.newPage();
+  await pp.goto(base + markupPath, { waitUntil: 'networkidle' });
+  await pp.waitForTimeout(500);
+  const pt = await textPoint(pp, 'Markup sample');
+  const pcdp = await pen.newCDPSession(pp);
+  const penEvent = (type, extra = {}) => pcdp.send('Input.dispatchMouseEvent', { type, x: pt.x, y: pt.y, pointerType: 'pen', button: 'left', clickCount: 1, ...extra });
+  await penEvent('mouseMoved', { button: 'none' });
+  await pp.waitForTimeout(100);
+  if (!(await rawFrame(pp).evaluate(() => getComputedStyle(document.querySelector('[data-hj-ring]') || document.body).display === 'block'))) failures.push('Pencil hover did not show the tool ring');
+  await penEvent('mousePressed'); await penEvent('mouseReleased');
+  await pp.waitForTimeout(120);
+  await penEvent('mousePressed', { clickCount: 2 }); await penEvent('mouseReleased', { clickCount: 2 });
+  await pp.waitForTimeout(300);
+  if (!(await menuOpen(pp))) failures.push('two Pencil taps did not open the menu');
+  await pen.close();
+}
+
 const state = await setup.storageState();
 await setup.close();
 
@@ -247,7 +410,7 @@ async function checkFabs(p, label, width, height, problems, shot) {
   if (csp.length) problems.push(`CSP after the buttons: ${csp.join('; ')}`);
 }
 
-const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
+const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['consent', '/consent', true], ['home', '/home', true], ['journal', '/journal', true], ['owner', '/owner', true]];
 
 // The menu button (bottom left) on every signed-in page: inside the window, at least 44px, and its
 // panel lists Latest document, Documents (which folds open to the documents), Journal and Settings
@@ -273,7 +436,8 @@ async function checkMenu(p, label, width, height, problems) {
   const org = p.locator('[data-menu-docs] a.menu-org').first();
   if ((await org.textContent()) !== 'org') problems.push('no org link');
   if (label === 'document' && width >= 720) {
-    const [download] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), org.click()]);
+    const sampleOrg = p.locator('[data-menu-docs] tr', { hasText: 'sample-trip' }).locator('a.menu-org');
+    const [download] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), sampleOrg.click()]);
     if (!download) problems.push('org did not download');
     else if (download.suggestedFilename() !== 'sample-trip.html') problems.push(`download named ${download.suggestedFilename()}`);
   }
@@ -360,6 +524,18 @@ for (const scheme of ['light', 'dark']) {
       if (result.scrollWidth > result.clientWidth) problems.push(`sideways scroll ${result.scrollWidth} > ${result.clientWidth}`);
       if (result.csp.length) problems.push(`CSP: ${result.csp.join('; ')}`);
       if (shots && scheme === 'light' && ['notebook', 'phone-small'].includes(name)) await p.screenshot({ path: `${shots}/${name}-${label}.png`, fullPage: label !== 'document' });
+      if (label === 'markup') {
+        // Right-click opens the annotation menu inside the window; the marks are all drawn.
+        await p.waitForTimeout(300);
+        await rightClick(p, 'Pebble');
+        const m = await p.locator('.anno-menu').boundingBox();
+        if (!m) problems.push('right-click did not open the annotation menu');
+        else if (m.x < 0 || m.y < 0 || m.x + m.width > width + 1 || m.y + m.height > height + 1) problems.push(`the annotation menu runs outside the window (${Math.round(m.x)},${Math.round(m.y)} ${Math.round(m.width)}x${Math.round(m.height)})`);
+        await p.keyboard.press('Escape');
+        if (await p.isVisible('.anno-menu')) problems.push('Escape did not close the annotation menu');
+        if ((await p.locator('.ov').count()) !== 5) problems.push(`expected 5 marks over the document, found ${await p.locator('.ov').count()}`);
+        if ((await frameMarks(p, 'mark[data-hj-id]')) < 4) problems.push('the coloured marks are not drawn');
+      }
       if (label === 'document') await checkViewer(p, width, height, problems, shots && scheme === 'light' ? `${shots}/${name}-document-panel.png` : '');
       if (signedIn) await checkFabs(p, label, width, height, problems, shots && scheme === 'light' && label === 'documents' && ['notebook', 'phone-small'].includes(name) ? `${shots}/${name}-globe.png` : '');
       if (signedIn) await checkMenu(p, label, width, height, problems);
@@ -381,5 +557,7 @@ for (const scheme of ['light', 'dark']) {
 await browser.close();
 server.kill('SIGTERM');
 const total = CLASSES.length * PAGES.length * 2;
+// Problems found before the device loop (sign-in, saved fields, annotation tools) are listed too.
+for (const failure of failures) if (!/^(light|dark) /.test(failure)) console.log(`FAIL ${failure}`);
 console.log(failures.length ? `\n${failures.length} of ${total} checks failed` : `\nall ${total} checks passed`);
 process.exit(failures.length ? 1 : 0);

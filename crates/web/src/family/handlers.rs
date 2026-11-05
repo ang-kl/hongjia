@@ -346,9 +346,10 @@ pub async fn home(State(state): State<FamilyState>, headers: HeaderMap) -> Resul
     }
     .unwrap_or_else(|| web::ua_summary(&headers));
     let pending = session.location_allowed == Some(true) && !session.has_location;
+    let mentioned = super::review::mentions_for(&state.pool, session.profile_id).await?;
     Ok(page(
         StatusCode::OK,
-        pages::home(&nav(&session), &device, pending),
+        pages::home(&nav(&session), &device, pending, &mentioned),
     ))
 }
 

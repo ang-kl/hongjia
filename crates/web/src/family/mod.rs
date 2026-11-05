@@ -220,6 +220,11 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             "/documents/{key}/annotations/{id}/delete",
             post(review::delete_annotation),
         )
+        .route(
+            "/documents/{key}/annotations/{id}/update",
+            post(review::update_annotation),
+        )
+        .route("/api/handles", get(review::handles))
         .route("/healthz", get(handlers::healthz))
         .route("/robots.txt", get(|| async { crate::robots() }))
         .route(

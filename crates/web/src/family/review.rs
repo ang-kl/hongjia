@@ -11,6 +11,13 @@
 //! Rights (owner decisions, 5 November 2026): every family member may fill in fields and annotate;
 //! people delete their own annotations and the owner may delete any; the uploader or the owner
 //! chooses whether fields are shared (one family copy) or personal (each person their own).
+//!
+//! D1 (owner's request, 5 November 2026; open choices taken at the recommended defaults): marks of
+//! nine kinds (comment, highlight, underline, strike, insert, replace, note, textbox, stamp) in five
+//! colours, opened from a menu by right-click, long press or a Pencil double tap. Only a mark's
+//! author edits or moves it; its author or the owner deletes it. @mentions are listed inside the
+//! site only. Text people write (comments, notes, text boxes, inserted and replacement text) never
+//! enters the document frame: the page draws it over the frame.
 
 use super::documents::{self, DocumentRow};
 use super::store::{self, Session};
@@ -34,6 +41,179 @@ pub const MAX_QUOTE: usize = 1000;
 pub const MAX_AROUND: usize = 64;
 pub const MAX_BODY: usize = 4000;
 pub const MAX_ANNOTATIONS: i64 = 1000;
+pub const MAX_TEXT: usize = 500;
+pub const MAX_PATH: usize = 400;
+
+pub const KINDS: [&str; 9] = [
+    "comment",
+    "highlight",
+    "underline",
+    "strike",
+    "insert",
+    "replace",
+    "note",
+    "textbox",
+    "stamp",
+];
+pub const COLORS: [&str; 5] = ["yellow", "green", "blue", "pink", "orange"];
+pub const STAMPS: [&str; 5] = ["check", "cross", "approved", "reviewed", "signedoff"];
+const PLACED: [&str; 3] = ["note", "textbox", "stamp"];
+
+/// An element path inside a document, from `<body>`: `tag:index` steps joined by `/`, where the
+/// index counts siblings of the same tag from 1 (for example `section:2/p:3`).
+pub fn valid_path(path: &str) -> bool {
+    let steps: Vec<&str> = path.split('/').collect();
+    (1..=MAX_PATH).contains(&path.len())
+        && steps.len() <= 25
+        && steps.iter().all(|step| {
+            let Some((tag, index)) = step.split_once(':') else {
+                return false;
+            };
+            let mut chars = tag.chars();
+            chars.next().is_some_and(|c| c.is_ascii_lowercase())
+                && tag.len() <= 31
+                && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+                && (1..=5).contains(&index.len())
+                && index.bytes().all(|b| b.is_ascii_digit())
+                && index.parse::<u32>().is_ok_and(|n| n >= 1)
+        })
+}
+
+/// A fraction of an element's box, 0 to 1.
+pub fn fraction(value: &str) -> Option<f64> {
+    let v: f64 = value.trim().parse().ok()?;
+    (v.is_finite() && (0.0..=1.0).contains(&v)).then_some(v)
+}
+
+/// The family handles named with @ in a text, in order, once each.
+pub fn mentions(text: &str, handles: &[String]) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    for (i, c) in chars.iter().enumerate() {
+        if *c != '@' || (i > 0 && chars[i - 1].is_alphanumeric()) {
+            continue;
+        }
+        let name: String = chars[i + 1..]
+            .iter()
+            .take_while(|c| c.is_ascii_alphabetic())
+            .take(21)
+            .collect::<String>()
+            .to_ascii_lowercase();
+        if handles.contains(&name) && !found.contains(&name) {
+            found.push(name);
+        }
+    }
+    found
+}
+
+/// What a stamp says. A sign-off carries its author and date, set by the server.
+pub fn stamp_label(name: &str, author: &str, date: &str) -> String {
+    match name {
+        "check" => "✓".into(),
+        "cross" => "✗".into(),
+        "approved" => "Approved".into(),
+        "reviewed" => "Reviewed".into(),
+        "signedoff" => format!("Signed off · {author} · {date}"),
+        _ => String::new(),
+    }
+}
+
+/// A mark as submitted, checked for its kind.
+#[derive(Debug, PartialEq)]
+pub struct Mark {
+    pub kind: String,
+    pub color: String,
+    pub quote: String,
+    pub prefix: String,
+    pub suffix: String,
+    pub field_key: Option<String>,
+    pub field_label: String,
+    pub body: String,
+    pub text: String,
+    pub anchor: Option<(String, f64, f64)>,
+}
+
+/// A placed mark's anchor: all three values or none. Err when some are given but not valid.
+fn anchor_of(path: &str, x: &str, y: &str) -> Result<Option<(String, f64, f64)>, &'static str> {
+    if path.is_empty() && x.is_empty() && y.is_empty() {
+        return Ok(None);
+    }
+    match (valid_path(path), fraction(x), fraction(y)) {
+        (true, Some(x), Some(y)) => Ok(Some((path.to_string(), x, y))),
+        _ => Err("the place in the document is not valid"),
+    }
+}
+
+/// Checks a new mark: the kind and colour come from fixed lists, every text has a limit, and
+/// each kind has what it needs (a passage, text, or a place) and nothing it does not use.
+pub fn check_mark(form: &AnnotationForm) -> Result<Mark, &'static str> {
+    let kind = if form.kind.is_empty() {
+        "comment"
+    } else {
+        form.kind.as_str()
+    };
+    if !KINDS.contains(&kind) {
+        return Err("unknown kind");
+    }
+    let color = if form.color.is_empty() {
+        "yellow"
+    } else {
+        form.color.as_str()
+    };
+    if !COLORS.contains(&color) {
+        return Err("unknown colour");
+    }
+    let body = form.body.trim();
+    let text = form.text.trim();
+    if chars(body) > MAX_BODY
+        || chars(text) > MAX_TEXT
+        || chars(&form.quote) > MAX_QUOTE
+        || chars(&form.prefix) > MAX_AROUND
+        || chars(&form.suffix) > MAX_AROUND
+        || chars(&form.field_key) > MAX_KEY
+        || chars(&form.field_label) > MAX_LABEL
+    {
+        return Err("too long");
+    }
+    let anchor = anchor_of(&form.anchor_path, &form.anchor_x, &form.anchor_y)?;
+    let placed = PLACED.contains(&kind);
+    if placed != anchor.is_some() {
+        return Err("only notes, text boxes and stamps are placed");
+    }
+    let has_quote = !form.quote.trim().is_empty();
+    let ok = match kind {
+        "comment" => !body.is_empty() && text.is_empty(),
+        "highlight" | "underline" | "strike" => has_quote && text.is_empty(),
+        "insert" => {
+            !text.is_empty() && (has_quote || !form.prefix.is_empty() || !form.suffix.is_empty())
+        }
+        "replace" => has_quote && !text.is_empty(),
+        "note" | "textbox" => !body.is_empty() && text.is_empty(),
+        "stamp" => STAMPS.contains(&text),
+        _ => false,
+    };
+    if !ok {
+        return Err("this kind of mark is missing something");
+    }
+    let field_key =
+        (kind == "comment" && !form.field_key.is_empty()).then(|| form.field_key.clone());
+    Ok(Mark {
+        kind: kind.to_string(),
+        color: color.to_string(),
+        quote: form.quote.clone(),
+        prefix: form.prefix.clone(),
+        suffix: form.suffix.clone(),
+        field_label: if field_key.is_some() {
+            form.field_label.clone()
+        } else {
+            String::new()
+        },
+        field_key,
+        body: body.to_string(),
+        text: text.to_string(),
+        anchor,
+    })
+}
 
 const HELPER_JS: &str = include_str!("../../../../web/assets/frame-helper.js");
 const PLACEHOLDER: &str = "__HJ_DATA__";
@@ -175,6 +355,29 @@ pub struct AnnotationRow {
     pub field_label: String,
     pub body: String,
     pub created: String,
+    pub created_date: String,
+    pub kind: String,
+    pub color: String,
+    pub text: String,
+    pub anchor_path: Option<String>,
+    pub anchor_x: Option<f64>,
+    pub anchor_y: Option<f64>,
+    pub mentions: Vec<String>,
+}
+
+impl AnnotationRow {
+    /// What a stamp says (empty for other kinds).
+    pub fn label(&self) -> String {
+        if self.kind == "stamp" {
+            stamp_label(
+                &self.text,
+                self.author.as_deref().unwrap_or("someone"),
+                &self.created_date,
+            )
+        } else {
+            String::new()
+        }
+    }
 }
 
 #[derive(Debug, FromRow)]
@@ -195,6 +398,7 @@ pub struct Review {
     /// In personal mode, how many answers this person has saved.
     pub own_count: i64,
     pub viewer: i16,
+    pub viewer_handle: String,
     pub viewer_is_owner: bool,
     pub can_choose_mode: bool,
 }
@@ -203,13 +407,21 @@ impl Review {
     pub fn can_delete(&self, row: &AnnotationRow) -> bool {
         self.viewer_is_owner || row.author_id == Some(self.viewer)
     }
+    /// Only a mark's author edits or moves it.
+    pub fn can_edit(&self, row: &AnnotationRow) -> bool {
+        row.author_id == Some(self.viewer)
+    }
 }
 
 async fn annotations(pool: &PgPool, document_id: i64) -> sqlx::Result<Vec<AnnotationRow>> {
     sqlx::query_as(
         "SELECT a.id, a.version_no, a.author AS author_id, p.handle AS author, a.quote, a.prefix, a.suffix,
                 a.field_key, a.field_label, a.body,
-                to_char(a.created_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') AS created
+                to_char(a.created_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') AS created,
+                to_char(a.created_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY') AS created_date,
+                a.kind, a.color, a.text, a.anchor_path, a.anchor_x, a.anchor_y,
+                COALESCE((SELECT array_agg(mp.handle ORDER BY mp.handle) FROM annotation_mentions m
+                          JOIN profiles mp ON mp.id = m.profile_id WHERE m.annotation_id = a.id), '{}') AS mentions
          FROM annotations a LEFT JOIN profiles p ON p.id = a.author
          WHERE a.document_id = $1 ORDER BY a.created_at, a.id",
     )
@@ -250,6 +462,7 @@ pub async fn page_data(
         recent,
         own_count,
         viewer: session.profile_id,
+        viewer_handle: session.handle.clone(),
         viewer_is_owner: session.is_owner,
         can_choose_mode: documents::can_manage(session, doc),
     })
@@ -415,7 +628,8 @@ pub async fn save_field(
     Ok(status(StatusCode::NO_CONTENT))
 }
 
-fn annotation_json(row: &AnnotationRow, can_delete: bool) -> String {
+fn annotation_json(row: &AnnotationRow, can_delete: bool, can_edit: bool) -> String {
+    let number = |v: Option<f64>| v.map(|v| v.to_string()).unwrap_or_else(|| "null".into());
     json::object(&[
         ("id", json::string(&row.id.to_string())),
         ("version", row.version_no.to_string()),
@@ -423,6 +637,8 @@ fn annotation_json(row: &AnnotationRow, can_delete: bool) -> String {
             "author",
             json::string(row.author.as_deref().unwrap_or("someone")),
         ),
+        ("kind", json::string(&row.kind)),
+        ("color", json::string(&row.color)),
         ("quote", json::string(&row.quote)),
         ("prefix", json::string(&row.prefix)),
         ("suffix", json::string(&row.suffix)),
@@ -432,8 +648,18 @@ fn annotation_json(row: &AnnotationRow, can_delete: bool) -> String {
         ),
         ("field_label", json::string(&row.field_label)),
         ("body", json::string(&row.body)),
+        ("text", json::string(&row.text)),
+        ("label", json::string(&row.label())),
+        (
+            "path",
+            json::string(row.anchor_path.as_deref().unwrap_or("")),
+        ),
+        ("x", number(row.anchor_x)),
+        ("y", number(row.anchor_y)),
+        ("mentions", json::strings(&row.mentions)),
         ("created", json::string(&row.created)),
         ("can_delete", can_delete.to_string()),
+        ("can_edit", can_edit.to_string()),
     ])
 }
 
@@ -454,28 +680,86 @@ pub async fn list_annotations(
             annotation_json(
                 r,
                 session.is_owner || r.author_id == Some(session.profile_id),
+                r.author_id == Some(session.profile_id),
             )
         })
         .collect();
     Ok(reply(StatusCode::OK, format!("[{}]", items.join(","))))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct AnnotationForm {
     #[serde(default)]
-    csrf: String,
+    pub csrf: String,
     #[serde(default)]
-    quote: String,
+    pub kind: String,
     #[serde(default)]
-    prefix: String,
+    pub color: String,
     #[serde(default)]
-    suffix: String,
+    pub quote: String,
     #[serde(default)]
-    field_key: String,
+    pub prefix: String,
     #[serde(default)]
-    field_label: String,
+    pub suffix: String,
     #[serde(default)]
-    body: String,
+    pub field_key: String,
+    #[serde(default)]
+    pub field_label: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub anchor_path: String,
+    #[serde(default)]
+    pub anchor_x: String,
+    #[serde(default)]
+    pub anchor_y: String,
+}
+
+/// The active family handles, for @mentions.
+async fn family_handles(pool: &PgPool) -> sqlx::Result<Vec<String>> {
+    Ok(store::active_profiles(pool)
+        .await?
+        .into_iter()
+        .map(|p| p.handle)
+        .collect())
+}
+
+/// Records who an annotation mentions (replacing any earlier list). The author is left out.
+async fn save_mentions(
+    pool: &PgPool,
+    annotation_id: i64,
+    author: i16,
+    texts: &[&str],
+) -> sqlx::Result<()> {
+    let handles = family_handles(pool).await?;
+    let mut named: Vec<String> = Vec::new();
+    for text in texts {
+        for handle in mentions(text, &handles) {
+            if !named.contains(&handle) {
+                named.push(handle);
+            }
+        }
+    }
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM annotation_mentions WHERE annotation_id = $1")
+        .bind(annotation_id)
+        .execute(&mut *tx)
+        .await?;
+    for handle in named {
+        sqlx::query(
+            "INSERT INTO annotation_mentions (annotation_id, profile_id)
+             SELECT $1, id FROM profiles WHERE handle = $2 AND active AND id <> $3
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(annotation_id)
+        .bind(handle)
+        .bind(author)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await
 }
 
 /// Adds an annotation: from the page's composer (fetch, JSON reply) or a plain form (back to the
@@ -493,27 +777,20 @@ pub async fn create_annotation(
     let Some(fetch) = checked(&state, &headers, &session, &form.csrf) else {
         return Ok(status(StatusCode::FORBIDDEN));
     };
-    let body = form.body.trim();
-    let valid = (1..=MAX_BODY).contains(&chars(body))
-        && chars(&form.quote) <= MAX_QUOTE
-        && chars(&form.prefix) <= MAX_AROUND
-        && chars(&form.suffix) <= MAX_AROUND
-        && chars(&form.field_key) <= MAX_KEY
-        && chars(&form.field_label) <= MAX_LABEL;
-    if !valid {
-        return if fetch {
-            Ok(status(StatusCode::BAD_REQUEST))
-        } else {
-            documents::show(
+    let mark = match check_mark(&form) {
+        Ok(mark) => mark,
+        Err(_) if fetch => return Ok(status(StatusCode::BAD_REQUEST)),
+        Err(_) => {
+            return documents::show(
                 &state,
                 &session,
                 &doc,
                 StatusCode::BAD_REQUEST,
                 Some("The comment was not saved. Write between 1 and 4000 characters."),
             )
-            .await
-        };
-    }
+            .await;
+        }
+    };
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM annotations WHERE document_id = $1")
         .bind(doc.id)
         .fetch_one(&state.pool)
@@ -521,26 +798,38 @@ pub async fn create_annotation(
     if count >= MAX_ANNOTATIONS {
         return Ok(status(StatusCode::PAYLOAD_TOO_LARGE));
     }
-    let field_key = (!form.field_key.is_empty()).then_some(form.field_key.as_str());
-    let field_label = if field_key.is_some() {
-        form.field_label.as_str()
-    } else {
-        ""
+    let (path, x, y) = match &mark.anchor {
+        Some((path, x, y)) => (Some(path.as_str()), Some(*x), Some(*y)),
+        None => (None, None, None),
     };
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO annotations (document_id, version_no, author, quote, prefix, suffix, field_key, field_label, body)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
+        "INSERT INTO annotations (document_id, version_no, author, quote, prefix, suffix, field_key, field_label, body,
+                                  kind, color, text, anchor_path, anchor_x, anchor_y)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id",
     )
     .bind(doc.id)
     .bind(doc.version_no)
     .bind(session.profile_id)
-    .bind(&form.quote)
-    .bind(&form.prefix)
-    .bind(&form.suffix)
-    .bind(field_key)
-    .bind(field_label)
-    .bind(body)
+    .bind(&mark.quote)
+    .bind(&mark.prefix)
+    .bind(&mark.suffix)
+    .bind(mark.field_key.as_deref())
+    .bind(&mark.field_label)
+    .bind(&mark.body)
+    .bind(&mark.kind)
+    .bind(&mark.color)
+    .bind(&mark.text)
+    .bind(path)
+    .bind(x)
+    .bind(y)
     .fetch_one(&state.pool)
+    .await?;
+    save_mentions(
+        &state.pool,
+        id,
+        session.profile_id,
+        &[&mark.body, &mark.text],
+    )
     .await?;
     if !fetch {
         return Ok(documents::back_to_panel(&doc));
@@ -550,9 +839,162 @@ pub async fn create_annotation(
         .into_iter()
         .find(|r| r.id == id);
     Ok(match row {
-        Some(row) => reply(StatusCode::CREATED, annotation_json(&row, true)),
+        Some(row) => reply(StatusCode::CREATED, annotation_json(&row, true, true)),
         None => status(StatusCode::CREATED),
     })
+}
+
+#[derive(Deserialize)]
+pub struct UpdateForm {
+    #[serde(default)]
+    op: String,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    anchor_path: String,
+    #[serde(default)]
+    anchor_x: String,
+    #[serde(default)]
+    anchor_y: String,
+}
+
+/// Edits a mark's words or moves a placed mark: its author only (fetch with the form token).
+pub async fn update_annotation(
+    State(state): State<FamilyState>,
+    headers: HeaderMap,
+    Path((key, id)): Path<(String, i64)>,
+    Form(form): Form<UpdateForm>,
+) -> Result<Response, super::handlers::Fail> {
+    let (session, doc) = match session_and_doc(&state, &headers, &key).await? {
+        Ok(found) => found,
+        Err(response) => return Ok(response),
+    };
+    if checked(&state, &headers, &session, "") != Some(true) {
+        return Ok(status(StatusCode::FORBIDDEN));
+    }
+    let found: Option<(Option<i16>, String)> =
+        sqlx::query_as("SELECT author, kind FROM annotations WHERE id = $1 AND document_id = $2")
+            .bind(id)
+            .bind(doc.id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let Some((author, kind)) = found else {
+        return Ok(status(StatusCode::NOT_FOUND));
+    };
+    if author != Some(session.profile_id) {
+        return Ok(status(StatusCode::FORBIDDEN));
+    }
+    match form.op.as_str() {
+        "move" => {
+            if !PLACED.contains(&kind.as_str()) {
+                return Ok(status(StatusCode::BAD_REQUEST));
+            }
+            let Ok(Some((path, x, y))) =
+                anchor_of(&form.anchor_path, &form.anchor_x, &form.anchor_y)
+            else {
+                return Ok(status(StatusCode::BAD_REQUEST));
+            };
+            sqlx::query(
+                "UPDATE annotations SET anchor_path = $2, anchor_x = $3, anchor_y = $4, updated_at = now() WHERE id = $1",
+            )
+            .bind(id)
+            .bind(path)
+            .bind(x)
+            .bind(y)
+            .execute(&state.pool)
+            .await?;
+        }
+        "edit" => {
+            let body = form.body.trim();
+            let text = form.text.trim();
+            let ok = match kind.as_str() {
+                "comment" | "note" | "textbox" => {
+                    (1..=MAX_BODY).contains(&chars(body)) && text.is_empty()
+                }
+                "insert" | "replace" => {
+                    (1..=MAX_TEXT).contains(&chars(text)) && chars(body) <= MAX_BODY
+                }
+                _ => chars(body) <= MAX_BODY && text.is_empty(),
+            };
+            if !ok {
+                return Ok(status(StatusCode::BAD_REQUEST));
+            }
+            if kind == "insert" || kind == "replace" {
+                sqlx::query(
+                    "UPDATE annotations SET body = $2, text = $3, updated_at = now() WHERE id = $1",
+                )
+                .bind(id)
+                .bind(body)
+                .bind(text)
+                .execute(&state.pool)
+                .await?;
+            } else {
+                sqlx::query("UPDATE annotations SET body = $2, updated_at = now() WHERE id = $1")
+                    .bind(id)
+                    .bind(body)
+                    .execute(&state.pool)
+                    .await?;
+            }
+            let stored: (String, String) =
+                sqlx::query_as("SELECT body, text FROM annotations WHERE id = $1")
+                    .bind(id)
+                    .fetch_one(&state.pool)
+                    .await?;
+            save_mentions(&state.pool, id, session.profile_id, &[&stored.0, &stored.1]).await?;
+        }
+        _ => return Ok(status(StatusCode::BAD_REQUEST)),
+    }
+    let row = annotations(&state.pool, doc.id)
+        .await?
+        .into_iter()
+        .find(|r| r.id == id);
+    Ok(match row {
+        Some(row) => reply(StatusCode::OK, annotation_json(&row, true, true)),
+        None => status(StatusCode::NOT_FOUND),
+    })
+}
+
+/// The family's handles, for the @mention list. Members only.
+pub async fn handles(
+    State(state): State<FamilyState>,
+    headers: HeaderMap,
+) -> Result<Response, super::handlers::Fail> {
+    if documents::signed_in(&state, &headers).await?.is_none() {
+        return Ok(status(StatusCode::UNAUTHORIZED));
+    }
+    let handles = family_handles(&state.pool).await?;
+    Ok(reply(StatusCode::OK, json::strings(&handles)))
+}
+
+#[derive(Debug, FromRow)]
+pub struct MentionRow {
+    pub annotation_id: i64,
+    pub key: String,
+    pub title: String,
+    pub kind: String,
+    pub quote: String,
+    pub by: Option<String>,
+    pub at: String,
+}
+
+/// Where a person was @mentioned, newest first (Home: "Mentioned you").
+pub async fn mentions_for(pool: &PgPool, profile_id: i16) -> sqlx::Result<Vec<MentionRow>> {
+    sqlx::query_as(
+        "SELECT a.id AS annotation_id, to_char(d.filed_on, 'YYYY-MMDD') || '_' || d.day_no AS key, d.title,
+                a.kind, a.quote, p.handle AS by,
+                to_char(a.created_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') AS at
+         FROM annotation_mentions m
+         JOIN annotations a ON a.id = m.annotation_id
+         JOIN documents d ON d.id = a.document_id AND d.deleted_at IS NULL
+         LEFT JOIN profiles p ON p.id = a.author
+         WHERE m.profile_id = $1
+         ORDER BY a.created_at DESC, a.id DESC LIMIT 20",
+    )
+    .bind(profile_id)
+    .fetch_all(pool)
+    .await
 }
 
 #[derive(Deserialize)]
@@ -651,6 +1093,134 @@ pub async fn set_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn form(kind: &str) -> AnnotationForm {
+        AnnotationForm {
+            kind: kind.into(),
+            ..AnnotationForm::default()
+        }
+    }
+
+    #[test]
+    fn element_paths_and_fractions() {
+        for good in ["body:1", "section:2/p:3", "h2:1", "my-tag:12/div:1"] {
+            assert!(valid_path(good), "{good}");
+        }
+        for bad in [
+            "",
+            "p",
+            "p:0",
+            "P:1",
+            "1p:1",
+            "p:1/",
+            "p:1//div:2",
+            "p:x",
+            "p:123456",
+            "p:1 /div:2",
+            "p:1;drop",
+        ] {
+            assert!(!valid_path(bad), "{bad}");
+        }
+        assert!(!valid_path("p:1/".repeat(26).trim_end_matches('/')));
+        assert_eq!(fraction("0.25"), Some(0.25));
+        assert_eq!(fraction("1"), Some(1.0));
+        for bad in ["-0.1", "1.01", "NaN", "inf", "", "x"] {
+            assert_eq!(fraction(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn mentions_are_family_handles_only() {
+        let handles: Vec<String> = ["alpha", "beta"].map(String::from).to_vec();
+        assert_eq!(
+            mentions(
+                "Ask @Beta and @alpha, then @beta again; not mail@alpha or @gamma",
+                &handles
+            ),
+            vec!["beta", "alpha"]
+        );
+        assert!(
+            mentions("@alphabet", &handles).is_empty(),
+            "whole names only"
+        );
+        assert_eq!(mentions("(@alpha)", &handles), vec!["alpha"]);
+    }
+
+    #[test]
+    fn each_kind_needs_what_it_uses() {
+        let mut f = form("highlight");
+        assert!(check_mark(&f).is_err(), "a highlight needs a passage");
+        f.quote = "Two bedrooms".into();
+        f.color = "green".into();
+        let mark = check_mark(&f).unwrap();
+        assert_eq!(
+            (mark.kind.as_str(), mark.color.as_str()),
+            ("highlight", "green")
+        );
+        f.color = "red".into();
+        assert!(check_mark(&f).is_err(), "fixed colours only");
+        f.color = String::new();
+        f.text = "extra".into();
+        assert!(check_mark(&f).is_err(), "a highlight has no text");
+
+        let mut insert = form("insert");
+        insert.text = "very".into();
+        assert!(check_mark(&insert).is_err(), "an insert needs a place");
+        insert.prefix = "a ".into();
+        assert!(check_mark(&insert).is_ok(), "a point is enough");
+
+        let mut replace = form("replace");
+        replace.quote = "two".into();
+        assert!(check_mark(&replace).is_err());
+        replace.text = "three".into();
+        assert!(check_mark(&replace).is_ok());
+
+        let mut note = form("note");
+        note.body = "Remember".into();
+        assert!(check_mark(&note).is_err(), "a note needs a place");
+        note.anchor_path = "section:1/p:2".into();
+        note.anchor_x = "0.5".into();
+        assert!(check_mark(&note).is_err(), "all three anchor values");
+        note.anchor_y = "0.1".into();
+        assert_eq!(
+            check_mark(&note).unwrap().anchor,
+            Some(("section:1/p:2".into(), 0.5, 0.1))
+        );
+        note.anchor_y = "2".into();
+        assert!(check_mark(&note).is_err());
+
+        let mut stamp = form("stamp");
+        stamp.anchor_path = "p:1".into();
+        stamp.anchor_x = "0".into();
+        stamp.anchor_y = "0".into();
+        stamp.text = "approved".into();
+        assert!(check_mark(&stamp).is_ok());
+        stamp.text = "Approved by the bank".into();
+        assert!(check_mark(&stamp).is_err(), "fixed stamps only");
+
+        let mut comment = form("");
+        assert!(check_mark(&comment).is_err(), "a comment needs words");
+        comment.body = "Fine".into();
+        comment.anchor_path = "p:1".into();
+        comment.anchor_x = "0".into();
+        comment.anchor_y = "0".into();
+        assert!(check_mark(&comment).is_err(), "comments are not placed");
+        assert!(check_mark(&form("drawing")).is_err());
+        let mut long = form("textbox");
+        long.body = "x".repeat(MAX_BODY + 1);
+        assert!(check_mark(&long).is_err());
+    }
+
+    #[test]
+    fn stamps_say_what_they_are() {
+        assert_eq!(stamp_label("check", "beta", "5 Nov 2026"), "✓");
+        assert_eq!(stamp_label("approved", "beta", "5 Nov 2026"), "Approved");
+        assert_eq!(
+            stamp_label("signedoff", "beta", "5 Nov 2026"),
+            "Signed off · beta · 5 Nov 2026"
+        );
+        assert_eq!(stamp_label("other", "beta", "x"), "");
+    }
 
     #[test]
     fn the_helper_goes_after_head_or_the_doctype() {

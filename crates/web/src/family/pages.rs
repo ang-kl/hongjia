@@ -2,7 +2,7 @@
 
 use super::doccheck::filing_label;
 use super::documents::{DELETE_WORD, DocumentRow, IFRAME_SANDBOX, VersionRow};
-use super::review::{AnnotationRow, Review};
+use super::review::{AnnotationRow, MentionRow, Review};
 use super::store::{AuditRow, FailureCount, FailureDetail, JournalRow, Profile, ProfileStatus};
 use super::web::escape;
 
@@ -203,7 +203,52 @@ pub fn consent(nav: &Nav, device_label: &str, location_allowed: Option<bool>) ->
     )
 }
 
-pub fn home(nav: &Nav, device: &str, location_pending: bool) -> String {
+/// What kind of mark, in words.
+fn kind_word(kind: &str) -> &'static str {
+    match kind {
+        "highlight" => "Highlight",
+        "underline" => "Underline",
+        "strike" => "Strikethrough",
+        "insert" => "Insert",
+        "replace" => "Replace",
+        "note" => "Sticky note",
+        "textbox" => "Text box",
+        "stamp" => "Stamp",
+        _ => "Comment",
+    }
+}
+
+fn mentioned_list(mentioned: &[MentionRow]) -> String {
+    if mentioned.is_empty() {
+        return String::new();
+    }
+    let items: String = mentioned
+        .iter()
+        .map(|m| {
+            let quote = if m.quote.is_empty() {
+                String::new()
+            } else {
+                format!(" on “{}”", escape(&m.quote.chars().take(80).collect::<String>()))
+            };
+            format!(
+                r#"<li><a href="/documents/{key}#annotation-{id}"><span class="filing">{label}</span> {title}</a><span class="small"> · {kind}{quote} · {by}, {at} (SGT)</span></li>"#,
+                key = escape(&m.key),
+                id = m.annotation_id,
+                label = escape(&filing_label(&m.key)),
+                title = escape(&m.title),
+                kind = kind_word(&m.kind),
+                by = escape(m.by.as_deref().unwrap_or("someone")),
+                at = escape(&m.at),
+            )
+        })
+        .collect();
+    format!(
+        r#"<section class="mentioned"><div class="section-head"><h2>Mentioned you</h2><span class="count">{n}</span></div><ul class="mentioned-list">{items}</ul></section>"#,
+        n = mentioned.len()
+    )
+}
+
+pub fn home(nav: &Nav, device: &str, location_pending: bool, mentioned: &[MentionRow]) -> String {
     let attrs = format!(
         r#" data-csrf="{}" data-location="{}""#,
         escape(nav.csrf),
@@ -216,10 +261,12 @@ pub fn home(nav: &Nav, device: &str, location_pending: bool) -> String {
         &format!(
             r#"<h1>Hello, {handle}</h1>
 <p>You are signed in on {device}.</p>
-<p>Open the <a href="/documents">documents</a> or <a href="/documents/new">add one</a>. Comments and review come next. You can also see the <a href="/journal">login journal</a>, change <a href="/consent">this device's settings</a>, or read <a href="/privacy">what we collect</a>.</p>
+{mentions}
+<p>Open the <a href="/documents">documents</a> or <a href="/documents/new">add one</a>. To mark up a document, right-click it (press and hold on a touch screen, or tap twice with the Pencil). You can also see the <a href="/journal">login journal</a>, change <a href="/consent">this device's settings</a>, or read <a href="/privacy">what we collect</a>.</p>
 <form method="post" action="/signout-everywhere"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="secondary">Sign out on all devices</button></form>"#,
             handle = escape(nav.handle),
             device = escape(device),
+            mentions = mentioned_list(mentioned),
             csrf = escape(nav.csrf)
         ),
     )
@@ -610,26 +657,100 @@ fn shown_value(value: &str) -> String {
     }
 }
 
-fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, can_delete: bool) -> String {
-    let target = if let Some(field) = row.field_key.as_deref() {
-        let label = if row.field_label.is_empty() {
-            field
-        } else {
-            row.field_label.as_str()
-        };
-        format!(
-            r#"<p class="annotation-quote" data-annotation-jump>On the field: {}</p>"#,
-            escape(label)
-        )
-    } else if !row.quote.is_empty() {
-        format!(
-            r#"<blockquote class="annotation-quote" data-annotation-jump>“{}”</blockquote>"#,
-            escape(&row.quote)
-        )
-    } else {
-        r#"<p class="annotation-quote">On the whole document</p>"#.to_string()
+/// Text with its @mentions of family members marked (the handles are lowercase letters only).
+fn with_mentions(text: &str, mentions: &[String]) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '@' && (i == 0 || !chars[i - 1].is_alphanumeric()) {
+            let name: String = chars[i + 1..]
+                .iter()
+                .take_while(|c| c.is_ascii_alphabetic())
+                .collect();
+            if mentions.contains(&name.to_ascii_lowercase()) {
+                out.push_str(&format!(
+                    r#"<span class="mention">@{}</span>"#,
+                    escape(&name)
+                ));
+                i += 1 + name.chars().count();
+                continue;
+            }
+        }
+        out.push_str(&escape(&chars[i].to_string()));
+        i += 1;
+    }
+    out
+}
+
+fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, review: &Review) -> String {
+    let quote = || escape(&row.quote);
+    let tag = format!(
+        r#"<span class="kind-tag" data-color="{color}">{word}</span>"#,
+        color = escape(&row.color),
+        word = kind_word(&row.kind)
+    );
+    let target = match row.kind.as_str() {
+        "comment" => {
+            if let Some(field) = row.field_key.as_deref() {
+                let label = if row.field_label.is_empty() {
+                    field
+                } else {
+                    row.field_label.as_str()
+                };
+                format!(
+                    r#"<p class="annotation-quote" data-annotation-jump>On the field: {}</p>"#,
+                    escape(label)
+                )
+            } else if !row.quote.is_empty() {
+                format!(
+                    r#"<blockquote class="annotation-quote" data-annotation-jump>“{}”</blockquote>"#,
+                    quote()
+                )
+            } else {
+                r#"<p class="annotation-quote">On the whole document</p>"#.to_string()
+            }
+        }
+        "highlight" | "underline" | "strike" => format!(
+            r#"<blockquote class="annotation-quote" data-annotation-jump>{tag} “{}”</blockquote>"#,
+            quote()
+        ),
+        "insert" => {
+            let place = if row.quote.is_empty() {
+                "here".to_string()
+            } else {
+                format!("after “{}”", quote())
+            };
+            format!(
+                r#"<p class="annotation-quote" data-annotation-jump>{tag} “{}” {place}</p>"#,
+                escape(&row.text)
+            )
+        }
+        "replace" => format!(
+            r#"<p class="annotation-quote" data-annotation-jump>{tag} “{}” with “{}”</p>"#,
+            quote(),
+            escape(&row.text)
+        ),
+        "stamp" => format!(
+            r#"<p class="annotation-quote" data-annotation-jump>{tag} {}</p>"#,
+            escape(&row.label())
+        ),
+        _ => format!(r#"<p class="annotation-quote" data-annotation-jump>{tag}</p>"#),
     };
-    let delete = if can_delete {
+    let body = if row.body.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<p class="annotation-body">{}</p>"#,
+            with_mentions(&row.body, &row.mentions)
+        )
+    };
+    let edit = if review.can_edit(row) {
+        r#"<button type="button" class="link" data-annotation-edit>Edit</button>"#
+    } else {
+        ""
+    };
+    let delete = if review.can_delete(row) {
         format!(
             r#"<form method="post" action="/documents/{key}/annotations/{id}/delete" data-annotation-delete><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="link">Delete</button></form>"#,
             id = row.id
@@ -637,14 +758,25 @@ fn annotation_item(key: &str, csrf: &str, row: &AnnotationRow, can_delete: bool)
     } else {
         String::new()
     };
+    let mentions_me = row.mentions.contains(&review.viewer_handle);
+    let number = |v: Option<f64>| v.map(|v| v.to_string()).unwrap_or_default();
     format!(
-        r#"<li class="annotation" id="annotation-{id}" tabindex="-1" data-annotation-id="{id}" data-quote="{quote}" data-prefix="{prefix}" data-suffix="{suffix}" data-field="{field}">{target}<p class="annotation-body">{body}</p><p class="small">{author}, {created} (SGT) · version {version}</p>{delete}</li>"#,
+        r#"<li class="annotation{me}" id="annotation-{id}" tabindex="-1" data-annotation-id="{id}" data-kind="{kind}" data-color="{color}" data-quote="{quote}" data-prefix="{prefix}" data-suffix="{suffix}" data-field="{field}" data-text="{text}" data-label="{label}" data-path="{path}" data-x="{x}" data-y="{y}" data-body="{body_attr}" data-can-edit="{can_edit}">{target}{body}<p class="small">{author}, {created} (SGT) · version {version}</p><div class="annotation-actions">{edit}{delete}</div></li>"#,
+        me = if mentions_me { " mentions-me" } else { "" },
         id = row.id,
+        kind = escape(&row.kind),
+        color = escape(&row.color),
         quote = escape(&row.quote),
         prefix = escape(&row.prefix),
         suffix = escape(&row.suffix),
         field = escape(row.field_key.as_deref().unwrap_or("")),
-        body = escape(&row.body),
+        text = escape(&row.text),
+        label = escape(&row.label()),
+        path = escape(row.anchor_path.as_deref().unwrap_or("")),
+        x = number(row.anchor_x),
+        y = number(row.anchor_y),
+        body_attr = escape(&row.body),
+        can_edit = review.can_edit(row),
         author = escape(row.author.as_deref().unwrap_or("someone")),
         created = escape(&row.created),
         version = row.version_no,
@@ -657,7 +789,7 @@ fn annotations_section(key: &str, csrf: &str, review: &Review) -> String {
     let items: String = review
         .annotations
         .iter()
-        .map(|a| annotation_item(key, csrf, a, review.can_delete(a)))
+        .map(|a| annotation_item(key, csrf, a, review))
         .collect();
     let empty = if review.annotations.is_empty() {
         ""
@@ -666,7 +798,7 @@ fn annotations_section(key: &str, csrf: &str, review: &Review) -> String {
     };
     format!(
         r#"<section class="panel-section" id="annotations"><div class="section-head"><h2>Annotations</h2><span class="count" data-annotation-count>{n}</span></div>
-<p class="small">Select text in the document, or click into a field, then press Comment. Everyone in the family can comment; you can delete your own.</p>
+<p class="small">Right-click the document (press and hold on a touch screen, or tap twice with the Pencil) to highlight, underline, strike through, insert or replace text, or add a note, a text box or a stamp. Or select text and press Comment. Type @ and a name to mention someone. Everyone can mark up; you can edit, move and delete your own.</p>
 <ol class="annotations" data-annotations>{items}</ol><p class="small" data-annotations-empty{empty}>No annotations yet.</p>
 <form method="post" action="/documents/{key}/annotations" class="stack composer" data-composer><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="quote" value=""><input type="hidden" name="prefix" value=""><input type="hidden" name="suffix" value=""><input type="hidden" name="field_key" value=""><input type="hidden" name="field_label" value="">
 <p class="composer-target" data-composer-target hidden></p>
@@ -829,7 +961,7 @@ pub fn document_view(
         r##"<div class="viewer-doc">
 <div class="doc-bar"><span class="filing">{label}</span><h1 class="doc-title">{title}</h1><button type="button" class="pill comment-open" data-comment hidden>Comment</button></div>
 {notice}
-<iframe class="doc-frame" src="/documents/{key}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe>
+<div class="doc-stage" data-doc-stage><iframe class="doc-frame" src="/documents/{key}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe><div class="doc-overlay" data-doc-overlay aria-hidden="true"></div></div>
 </div>
 <aside class="panel" id="panel" aria-label="Manage this document">
 <div class="panel-head"><span class="panel-title">This document</span><a class="panel-close" href="#doc" data-sidebar-close title="Close the sidebar"><span aria-hidden="true">×</span><span class="visually-hidden">Close the sidebar</span></a></div>
@@ -851,7 +983,10 @@ pub fn document_view(
         &doc.title,
         Some(nav),
         "app viewer-page",
-        &format!(r#" data-csrf="{csrf}" data-doc-key="{key}""#),
+        &format!(
+            r#" data-csrf="{csrf}" data-doc-key="{key}" data-viewer="{viewer}""#,
+            viewer = escape(nav.handle)
+        ),
         r#"class="viewer" id="doc""#,
         &main,
         Some(&document_contents(&doc.key, latest)),
@@ -901,7 +1036,7 @@ mod tests {
             is_owner: true,
             csrf: "\"q\"",
         };
-        let page = home(&nav, "Safari on iPhone", false);
+        let page = home(&nav, "Safari on iPhone", false, &[]);
         assert!(page.contains("&lt;x&gt;") && !page.contains("<x>"));
         assert!(page.contains("&quot;q&quot;"));
         for text in [page, privacy("alpha", 180, 90), signin(&[], "t", Some("m"))] {
@@ -921,7 +1056,7 @@ mod tests {
             is_owner: false,
             csrf: "t",
         };
-        let page = home(&owner, "Safari on iPhone", false);
+        let page = home(&owner, "Safari on iPhone", false, &[]);
         assert!(page.contains(r#"<header class="bar"><a class="brand" href="/home">"#));
         assert!(!page.contains("<header class=\"bar\"><a class=\"brand\" href=\"/home\"><span lang=\"zh\">洪家</span> · hongjia</a><nav>"));
         for item in [
@@ -937,7 +1072,7 @@ mod tests {
             !page.contains("data-sidebar-toggle"),
             "the sidebar switch is for documents only"
         );
-        let other = home(&member, "Safari on iPhone", false);
+        let other = home(&member, "Safari on iPhone", false, &[]);
         assert!(!other.contains(r#"href="/owner""#) && other.contains("Sign out beta"));
     }
 }
