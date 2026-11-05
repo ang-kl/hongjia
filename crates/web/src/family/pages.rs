@@ -1,5 +1,6 @@
 //! Server-rendered pages. Every value from the database or the request is escaped.
 
+use super::documents::{DocumentRow, IFRAME_SANDBOX};
 use super::store::{AuditRow, FailureCount, FailureDetail, JournalRow, Profile, ProfileStatus};
 use super::web::escape;
 
@@ -12,7 +13,7 @@ pub struct Nav<'a> {
 fn layout(title: &str, nav: Option<&Nav>, body_attrs: &str, main: &str) -> String {
     let header = match nav {
         Some(nav) => format!(
-            r#"<header class="bar"><a class="brand" href="/home"><span lang="zh">洪家</span> · hongjia</a><nav><a href="/journal">Journal</a>{owner}<form method="post" action="/signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="link">Sign out {handle}</button></form></nav></header>"#,
+            r#"<header class="bar"><a class="brand" href="/home"><span lang="zh">洪家</span> · hongjia</a><nav><a href="/documents">Documents</a><a href="/journal">Journal</a>{owner}<form method="post" action="/signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="link">Sign out {handle}</button></form></nav></header>"#,
             owner = if nav.is_owner { r#"<a href="/owner">Owner</a>"# } else { "" },
             csrf = escape(nav.csrf),
             handle = escape(nav.handle),
@@ -162,7 +163,7 @@ pub fn home(nav: &Nav, device: &str, location_pending: bool) -> String {
         &format!(
             r#"<h1>Hello, {handle}</h1>
 <p>You are signed in on {device}.</p>
-<p>Documents and review come next. For now you can see the <a href="/journal">login journal</a>, change <a href="/consent">this device's settings</a>, or read <a href="/privacy">what we collect</a>.</p>
+<p>Open the <a href="/documents">documents</a> or <a href="/documents/new">add one</a>. Comments and review come next. You can also see the <a href="/journal">login journal</a>, change <a href="/consent">this device's settings</a>, or read <a href="/privacy">what we collect</a>.</p>
 <form method="post" action="/signout-everywhere"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="secondary">Sign out on all devices</button></form>"#,
             handle = escape(nav.handle),
             device = escape(device),
@@ -370,6 +371,75 @@ pub fn privacy(owner: &str, journal_days: i32, location_days: i32) -> String {
 <p>Questions or corrections: ask {owner}.</p>
 <p class="small"><a href="/">Back</a></p>"#,
             owner = escape(owner)
+        ),
+    )
+}
+
+pub fn documents(nav: &Nav, rows: &[DocumentRow]) -> String {
+    let items: String = if rows.is_empty() {
+        r#"<p>No documents yet.</p>"#.to_string()
+    } else {
+        let list: String = rows
+            .iter()
+            .map(|d| {
+                format!(
+                    r#"<li><a href="/documents/{id}">{title}</a><span class="small"> · version {v} · {kind} · added by {by}, {when} (SGT)</span></li>"#,
+                    id = d.id,
+                    title = escape(&d.title),
+                    v = d.version_no,
+                    kind = if d.kind == "html" { "web page" } else { "text" },
+                    by = escape(d.uploaded_by.as_deref().unwrap_or("someone")),
+                    when = escape(&d.uploaded_at)
+                )
+            })
+            .collect();
+        format!(r#"<ul class="documents">{list}</ul>"#)
+    };
+    layout(
+        "Documents",
+        Some(nav),
+        &format!(r#" data-csrf="{}""#, escape(nav.csrf)),
+        &format!(r#"<h1>Documents</h1>{items}<p><a href="/documents/new">Add a document</a></p>"#),
+    )
+}
+
+pub fn document_upload(nav: &Nav, message: Option<&str>) -> String {
+    layout(
+        "Add a document",
+        Some(nav),
+        &format!(r#" data-csrf="{}""#, escape(nav.csrf)),
+        &format!(
+            r#"<h1>Add a document</h1>
+{notice}
+<form method="post" action="/documents" enctype="multipart/form-data" class="stack">
+<input type="hidden" name="csrf" value="{csrf}">
+<label>Title (optional) <input type="text" name="title" maxlength="120" placeholder="Uses the file name if left empty"></label>
+<label>File <input type="file" name="file" accept=".html,.htm,.txt,.md,text/html,text/plain,text/markdown" required></label>
+<p class="small">HTML pages and text files, up to 10 MB. Pages run in a locked-down frame: their own scripts, online pictures, links and printing work, but they cannot reach your account, the family's data or other pages.</p>
+<button type="submit">Upload</button>
+</form>"#,
+            notice = notice(message),
+            csrf = escape(nav.csrf)
+        ),
+    )
+}
+
+pub fn document_view(nav: &Nav, doc: &DocumentRow) -> String {
+    layout(
+        &doc.title,
+        Some(nav),
+        &format!(r#" data-csrf="{}""#, escape(nav.csrf)),
+        &format!(
+            r#"<div class="doc-head"><h1>{title}</h1><p class="small">Version {v} · {file} · {kb} KB · added by {by}, {when} (SGT) · <a href="/documents/{id}/raw" target="_blank" rel="noopener noreferrer">open on its own</a> · <a href="/documents">all documents</a></p></div>
+<iframe class="doc-frame" src="/documents/{id}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe>"#,
+            id = doc.id,
+            title = escape(&doc.title),
+            v = doc.version_no,
+            file = escape(&doc.filename),
+            kb = (doc.size_bytes + 1023) / 1024,
+            by = escape(doc.uploaded_by.as_deref().unwrap_or("someone")),
+            when = escape(&doc.uploaded_at),
+            sandbox = IFRAME_SANDBOX
         ),
     )
 }

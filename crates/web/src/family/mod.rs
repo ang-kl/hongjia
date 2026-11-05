@@ -2,6 +2,7 @@
 //! Active only when a database is configured; otherwise the server stays the P0 placeholder.
 
 pub mod auth;
+pub mod documents;
 mod handlers;
 mod pages;
 pub mod store;
@@ -145,7 +146,7 @@ impl FamilyState {
     }
 }
 
-pub const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+pub const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 pub const PERMISSIONS_POLICY: &str = "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(self), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()";
 
 /// The security headers in family mode (P0R's set, with forms, same-origin fetch, same-origin
@@ -197,6 +198,15 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route("/privacy", get(handlers::privacy))
         .route("/api/heartbeat", post(handlers::heartbeat))
         .route("/api/location", post(handlers::location))
+        .route(
+            "/documents",
+            get(documents::index).post(documents::upload).layer(
+                axum::extract::DefaultBodyLimit::max(documents::MAX_BYTES + 64 * 1024),
+            ),
+        )
+        .route("/documents/new", get(documents::new_form))
+        .route("/documents/{id}", get(documents::view))
+        .route("/documents/{id}/raw", get(documents::raw))
         .route("/healthz", get(handlers::healthz))
         .route("/robots.txt", get(|| async { crate::robots() }))
         .route(
@@ -239,10 +249,16 @@ async fn guard(State(state): State<FamilyState>, request: Request, next: Next) -
         refused
     };
     let headers = response.headers_mut();
+    // A handler may set a stricter policy of its own (uploaded documents do); keep it.
     for (name, value) in security_headers() {
-        headers.insert(name, HeaderValue::from_static(value));
+        headers
+            .entry(name)
+            .or_insert(HeaderValue::from_static(value));
     }
-    if !path.starts_with("/assets/") && path != "/robots.txt" {
+    if !path.starts_with("/assets/")
+        && path != "/robots.txt"
+        && !headers.contains_key(header::CACHE_CONTROL)
+    {
         headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
     response

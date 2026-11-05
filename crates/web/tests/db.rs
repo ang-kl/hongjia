@@ -127,10 +127,13 @@ impl Client {
             if let Some(origin) = &self.origin {
                 request.push_str(&format!("Origin: {origin}\r\n"));
             }
-            request.push_str(&format!(
-                "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n",
-                body.len()
-            ));
+            let custom_type = extra
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
+            if !custom_type {
+                request.push_str("Content-Type: application/x-www-form-urlencoded\r\n");
+            }
+            request.push_str(&format!("Content-Length: {}\r\n", body.len()));
         }
         for (name, value) in extra {
             request.push_str(&format!("{name}: {value}\r\n"));
@@ -676,5 +679,139 @@ async fn profiles_follow_the_environment(pool: PgPool) {
     assert!(
         page.contains(r#"value="alpha""#) && !page.contains(r#"value="beta""#),
         "removed profiles are hidden, not deleted"
+    );
+}
+
+const BOUNDARY: &str = "----hongjia-test-boundary";
+
+fn multipart(fields: &[(&str, &str)], file: Option<(&str, &str)>) -> String {
+    let mut body = String::new();
+    for (name, value) in fields {
+        body.push_str(&format!(
+            "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+        ));
+    }
+    if let Some((filename, content)) = file {
+        body.push_str(&format!(
+            "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: text/html\r\n\r\n{content}\r\n"
+        ));
+    }
+    body.push_str(&format!("--{BOUNDARY}--\r\n"));
+    body
+}
+
+async fn upload(c: &mut Client, csrf: &str, title: &str, file: Option<(&str, &str)>) -> Reply {
+    let body = multipart(&[("csrf", csrf), ("title", title)], file);
+    let content_type = format!("multipart/form-data; boundary={BOUNDARY}");
+    c.send(
+        "POST",
+        "/documents",
+        &body,
+        &[("Content-Type", &content_type)],
+    )
+    .await
+}
+
+const SAMPLE: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Sample</title></head><body><h1>Sample trip</h1><img data-src=\"https://example.org/p.jpg\" alt=\"photo\"><button id=\"retry\">Retry photos</button><script>document.getElementById('retry').onclick=()=>{};</script></body></html>";
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn documents_upload_list_view_and_sandboxed_raw(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let r = upload(&mut o, &csrf, "", Some(("sample-trip.html", SAMPLE))).await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    let location = r.header("location").unwrap().to_string();
+    assert!(location.starts_with("/documents/"));
+
+    let list = o.get("/documents").await;
+    assert_eq!(list.status, 200);
+    assert!(list.body.contains("sample-trip") && list.body.contains("added by delta"));
+
+    let view = o.get(&location).await;
+    assert_eq!(view.status, 200);
+    assert!(view.body.contains(
+        r#"sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals""#
+    ));
+    assert!(!view.body.contains("allow-same-origin"));
+    assert!(
+        view.header("content-security-policy")
+            .unwrap()
+            .contains("frame-src 'self'")
+    );
+
+    let raw = o.get(&format!("{location}/raw")).await;
+    assert_eq!(raw.status, 200);
+    assert_eq!(raw.body, SAMPLE, "served byte for byte");
+    assert_eq!(raw.header("content-type"), Some("text/html; charset=utf-8"));
+    assert_eq!(
+        raw.header("content-security-policy"),
+        Some(hongjia_web::family::documents::DOCUMENT_CSP)
+    );
+    assert_eq!(raw.header("referrer-policy"), Some("no-referrer"));
+    assert_eq!(raw.header("cache-control"), Some("private, no-store"));
+    assert_eq!(raw.header("x-content-type-options"), Some("nosniff"));
+
+    let stored: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM document_versions WHERE version_no = 1 AND octet_length(sha256) = 32",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, 1);
+
+    // Members can upload and read too; strangers cannot read anything.
+    let mut b = member(port, &mut o, "beta", MEMBER_PASS).await;
+    assert_eq!(b.get(&format!("{location}/raw")).await.status, 200);
+    let mut stranger = Client::new(port);
+    assert_eq!(stranger.get(&format!("{location}/raw")).await.status, 303);
+    assert_eq!(stranger.get("/documents").await.status, 303);
+    assert_eq!(o.get("/documents/999999").await.status, 404);
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn document_uploads_are_checked(pool: PgPool) {
+    let port = start(pool, config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    assert_eq!(
+        upload(&mut o, "wrong", "x", Some(("a.html", SAMPLE)))
+            .await
+            .status,
+        403,
+        "CSRF token required"
+    );
+    assert_eq!(
+        upload(&mut o, &csrf, "x", Some(("tool.exe", "MZ")))
+            .await
+            .status,
+        400,
+        "only HTML and text for now"
+    );
+    assert_eq!(
+        upload(&mut o, &csrf, "x", Some(("empty.html", "")))
+            .await
+            .status,
+        400
+    );
+    assert_eq!(
+        upload(&mut o, &csrf, "x", None).await.status,
+        400,
+        "a file is required"
+    );
+    let big = "a".repeat(hongjia_web::family::documents::MAX_BYTES + 1);
+    assert_eq!(
+        upload(&mut o, &csrf, "x", Some(("big.txt", &big)))
+            .await
+            .status,
+        413
+    );
+    o.origin = Some("https://evil.example".into());
+    assert_eq!(
+        upload(&mut o, &csrf, "x", Some(("a.html", SAMPLE)))
+            .await
+            .status,
+        403,
+        "Origin must match"
     );
 }

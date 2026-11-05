@@ -123,6 +123,13 @@ fn session_form_ok(
         && auth::ct_eq(session.csrf.as_bytes(), submitted.as_bytes())
 }
 
+pub(super) async fn current_session(
+    state: &FamilyState,
+    headers: &HeaderMap,
+) -> Result<Option<Session>> {
+    current(state, headers).await
+}
+
 async fn current(state: &FamilyState, headers: &HeaderMap) -> Result<Option<Session>> {
     match web::cookie(headers, &state.config.cookie_name("hj_sid")).filter(|t| auth::valid_token(t))
     {

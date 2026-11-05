@@ -157,3 +157,19 @@ td form { margin: 0; }
 
 [data-form-factor="phone"] .page { border-radius: 14px; }
 [data-size-tier="phone-compact"] .page { padding: 16px; }
+
+/* Documents (P2a). */
+.documents { padding-left: 1.1em; }
+.documents li { margin: 0 0 10px; }
+.doc-head h1 { margin-bottom: 0.2em; }
+.doc-frame {
+  display: block;
+  width: 100%;
+  height: calc(100dvh - 210px);
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+[data-form-factor="phone"] .doc-frame { height: calc(100dvh - 190px); border-radius: 10px; }
+input[type="file"] { font: inherit; min-height: 44px; }
