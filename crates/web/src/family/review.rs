@@ -25,10 +25,15 @@
 //! point; its points are pixels from that element's top-left corner at `ref_width`, scaled by the
 //! element's current width when drawn. Drawings follow the same rules as other marks, and they are
 //! drawn by the page over the frame, never inside it.
+//!
+//! D3 (owner's request, 5 November 2026): kind `signature` places the signer's own saved signature
+//! (see `signature.rs`) at a point of the document. The server copies it when placed (drawn strokes
+//! in `points`, or the typed name in `text`), so nobody can place someone else's and replacing a
+//! saved signature never changes what was signed. It moves like a note; it cannot be edited.
 
 use super::documents::{self, DocumentRow};
 use super::store::{self, Session};
-use super::{FamilyState, auth, doccheck, json, web};
+use super::{FamilyState, auth, doccheck, json, signature, web};
 use axum::{
     Form,
     extract::{Path, State},
@@ -51,7 +56,7 @@ pub const MAX_ANNOTATIONS: i64 = 1000;
 pub const MAX_TEXT: usize = 500;
 pub const MAX_PATH: usize = 400;
 
-pub const KINDS: [&str; 11] = [
+pub const KINDS: [&str; 12] = [
     "comment",
     "highlight",
     "underline",
@@ -63,10 +68,11 @@ pub const KINDS: [&str; 11] = [
     "stamp",
     "ink",
     "shape",
+    "signature",
 ];
 pub const COLORS: [&str; 5] = ["yellow", "green", "blue", "pink", "orange"];
 pub const STAMPS: [&str; 5] = ["check", "cross", "approved", "reviewed", "signedoff"];
-const PLACED: [&str; 3] = ["note", "textbox", "stamp"];
+const PLACED: [&str; 4] = ["note", "textbox", "stamp", "signature"];
 /// Drawings (D2): anchored like placed marks, with points instead of words.
 pub const DRAWN: [&str; 2] = ["ink", "shape"];
 pub const INK_TOOLS: [&str; 2] = ["draw", "sketch"];
@@ -258,6 +264,11 @@ pub fn stamp_label(name: &str, author: &str, date: &str) -> String {
     }
 }
 
+/// A placed signature's caption, from its author and the time it was placed (Singapore time).
+pub fn signature_caption(author: &str, when: &str) -> String {
+    format!("Signed by {author}, {when} (SGT)")
+}
+
 /// A mark as submitted, checked for its kind.
 #[derive(Debug, PartialEq)]
 pub struct Mark {
@@ -346,6 +357,8 @@ pub fn check_mark(form: &AnnotationForm) -> Result<Mark, &'static str> {
         "note" | "textbox" => !body.is_empty() && text.is_empty(),
         "stamp" => STAMPS.contains(&text),
         "ink" | "shape" => body.is_empty() && text.is_empty() && !has_quote,
+        // The server fills in the signer's own saved signature.
+        "signature" => body.is_empty() && text.is_empty() && !has_quote,
         _ => false,
     };
     if !ok {
@@ -513,6 +526,8 @@ pub struct AnnotationRow {
     pub body: String,
     pub created: String,
     pub created_date: String,
+    /// The time with a two-digit day, for a signature's caption: 05 Nov 2026, 16:19.
+    pub created_full: String,
     pub kind: String,
     pub color: String,
     pub text: String,
@@ -530,14 +545,17 @@ pub struct AnnotationRow {
 impl AnnotationRow {
     /// What a stamp says (empty for other kinds).
     pub fn label(&self) -> String {
-        if self.kind == "stamp" {
-            stamp_label(
+        match self.kind.as_str() {
+            "stamp" => stamp_label(
                 &self.text,
                 self.author.as_deref().unwrap_or("someone"),
                 &self.created_date,
-            )
-        } else {
-            String::new()
+            ),
+            "signature" => signature_caption(
+                self.author.as_deref().unwrap_or("someone"),
+                &self.created_full,
+            ),
+            _ => String::new(),
         }
     }
 }
@@ -581,6 +599,7 @@ async fn annotations(pool: &PgPool, document_id: i64) -> sqlx::Result<Vec<Annota
                 a.field_key, a.field_label, a.body,
                 to_char(a.created_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') AS created,
                 to_char(a.created_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY') AS created_date,
+                to_char(a.created_at AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY, HH24:MI') AS created_full,
                 a.kind, a.color, a.text, a.anchor_path, a.anchor_x, a.anchor_y,
                 COALESCE((SELECT array_agg(mp.handle ORDER BY mp.handle) FROM annotation_mentions m
                           JOIN profiles mp ON mp.id = m.profile_id WHERE m.annotation_id = a.id), '{}') AS mentions,
@@ -956,7 +975,7 @@ pub async fn create_annotation(
     let Some(fetch) = checked(&state, &headers, &session, &form.csrf) else {
         return Ok(status(StatusCode::FORBIDDEN));
     };
-    let mark = match check_mark(&form) {
+    let mut mark = match check_mark(&form) {
         Ok(mark) => mark,
         Err(_) if fetch => return Ok(status(StatusCode::BAD_REQUEST)),
         Err(_) => {
@@ -981,6 +1000,15 @@ pub async fn create_annotation(
         Some((path, x, y)) => (Some(path.as_str()), Some(*x), Some(*y)),
         None => (None, None, None),
     };
+    // A signature is always the signer's own, as saved now.
+    let mut signed_strokes: Option<String> = None;
+    if mark.kind == "signature" {
+        match signature::saved(&state.pool, session.profile_id).await? {
+            Some((style, value)) if style == "drawn" => signed_strokes = Some(value),
+            Some((_, name)) => mark.text = name,
+            None => return Ok(status(StatusCode::CONFLICT)),
+        }
+    }
     let drawing = mark.drawing.as_ref();
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO annotations (document_id, version_no, author, quote, prefix, suffix, field_key, field_label, body,
@@ -1003,19 +1031,22 @@ pub async fn create_annotation(
     .bind(x)
     .bind(y)
     .bind(drawing.map(|d| d.tool.as_str()))
-    .bind(drawing.map(|d| d.points.as_str()))
+    .bind(
+        drawing
+            .map(|d| d.points.as_str())
+            .or(signed_strokes.as_deref()),
+    )
     .bind(drawing.map(|d| d.stroke_width))
     .bind(drawing.map(|d| d.ref_width))
     .bind(drawing.and_then(|d| d.ref_height))
     .fetch_one(&state.pool)
     .await?;
-    save_mentions(
-        &state.pool,
-        id,
-        session.profile_id,
-        &[&mark.body, &mark.text],
-    )
-    .await?;
+    let words: [&str; 2] = if mark.kind == "signature" {
+        ["", ""]
+    } else {
+        [&mark.body, &mark.text]
+    };
+    save_mentions(&state.pool, id, session.profile_id, &words).await?;
     if !fetch {
         return Ok(documents::back_to_panel(&doc));
     }
@@ -1101,6 +1132,8 @@ pub async fn update_annotation(
                 "insert" | "replace" => {
                     (1..=MAX_TEXT).contains(&chars(text)) && chars(body) <= MAX_BODY
                 }
+                // What was signed is not edited; delete it and sign again instead.
+                "signature" => false,
                 _ => chars(body) <= MAX_BODY && text.is_empty(),
             };
             if !ok {

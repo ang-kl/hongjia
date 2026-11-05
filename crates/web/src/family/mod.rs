@@ -8,7 +8,9 @@ mod explore;
 mod handlers;
 pub mod json;
 mod pages;
+pub mod picture;
 mod review;
+pub mod signature;
 pub mod store;
 pub mod web;
 
@@ -229,6 +231,10 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             post(review::update_annotation),
         )
         .route("/api/handles", get(review::handles))
+        .route(
+            "/api/signature",
+            get(signature::get_signature).post(signature::save_signature),
+        )
         .route("/healthz", get(handlers::healthz))
         .route("/robots.txt", get(|| async { crate::robots() }))
         .route(
@@ -264,6 +270,10 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             get(|| async { crate::asset("menu.mjs") }),
         )
         .route("/assets/ink.mjs", get(|| async { crate::asset("ink.mjs") }))
+        .route(
+            "/assets/signature.mjs",
+            get(|| async { crate::asset("signature.mjs") }),
+        )
         .fallback(|| async { crate::plain(StatusCode::NOT_FOUND, "Not found\n") })
         .with_state(state.clone())
         .layer(middleware::from_fn_with_state(state, guard)))

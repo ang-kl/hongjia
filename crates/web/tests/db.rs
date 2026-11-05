@@ -168,6 +168,66 @@ impl Client {
         }
     }
 
+    /// A request with a binary body (pictures, D3), returning the status, headers and body bytes.
+    async fn send_bytes(
+        &mut self,
+        method: &str,
+        path: &str,
+        body: &[u8],
+        extra: &[(&str, &str)],
+    ) -> (u16, Vec<(String, String)>, Vec<u8>) {
+        let mut stream = TcpStream::connect(("127.0.0.1", self.port))
+            .await
+            .expect("connect");
+        let cookie = self
+            .cookies
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        let mut request = format!(
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n",
+            self.port
+        );
+        if !cookie.is_empty() {
+            request.push_str(&format!("Cookie: {cookie}\r\n"));
+        }
+        if method == "POST" {
+            if let Some(origin) = &self.origin {
+                request.push_str(&format!("Origin: {origin}\r\n"));
+            }
+            request.push_str(&format!("Content-Length: {}\r\n", body.len()));
+        }
+        for (name, value) in extra {
+            request.push_str(&format!("{name}: {value}\r\n"));
+        }
+        request.push_str("\r\n");
+        let mut bytes = request.into_bytes();
+        bytes.extend_from_slice(body);
+        stream.write_all(&bytes).await.expect("write");
+        let mut answer = Vec::new();
+        stream.read_to_end(&mut answer).await.expect("read");
+        let split = answer
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .expect("head");
+        let head = String::from_utf8(answer[..split].to_vec()).expect("utf-8 head");
+        let mut lines = head.split("\r\n");
+        let status = lines
+            .next()
+            .unwrap()
+            .split(' ')
+            .nth(1)
+            .unwrap()
+            .parse()
+            .unwrap();
+        let headers = lines
+            .filter_map(|l| l.split_once(':'))
+            .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_string()))
+            .collect();
+        (status, headers, answer[split + 4..].to_vec())
+    }
+
     async fn get(&mut self, path: &str) -> Reply {
         self.send("GET", path, "", &[]).await
     }
@@ -2491,4 +2551,372 @@ async fn undo_and_eraser_follow_the_rules(pool: PgPool) {
         400,
         "drawings are not moved"
     );
+}
+
+// D3: signatures and pictures.
+
+/// A PNG header for a picture of the given size: all the server reads to recognise and size it.
+fn png_header(width: u32, height: u32) -> Vec<u8> {
+    let mut b = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13];
+    b.extend_from_slice(b"IHDR");
+    b.extend_from_slice(&width.to_be_bytes());
+    b.extend_from_slice(&height.to_be_bytes());
+    b.extend_from_slice(&[8, 2, 0, 0, 0]);
+    b
+}
+
+/// Uploads a binary file (a new document, or a version with `path`), as the browser does.
+async fn upload_bytes(c: &mut Client, path: &str, filename: &str, bytes: &[u8]) -> (u16, String) {
+    let csrf = c.csrf().await;
+    let mut body = format!(
+        "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"csrf\"\r\n\r\n{csrf}\r\n--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+    )
+    .into_bytes();
+    body.extend_from_slice(bytes);
+    body.extend_from_slice(format!("\r\n--{BOUNDARY}--\r\n").as_bytes());
+    let content_type = format!("multipart/form-data; boundary={BOUNDARY}");
+    let (status, headers, answer) = c
+        .send_bytes("POST", path, &body, &[("Content-Type", &content_type)])
+        .await;
+    let location = headers
+        .iter()
+        .find(|(k, _)| k == "location")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(|| String::from_utf8_lossy(&answer).into_owned());
+    (status, location)
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn signatures_are_saved_per_person_and_placed_only_as_your_own(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let doc = upload(&mut o, &csrf, "Sign here", Some(("sign.html", SAMPLE)))
+        .await
+        .header("location")
+        .unwrap()
+        .to_string();
+    let place = [
+        ("kind", "signature"),
+        ("anchor_path", "body:1/h1:1"),
+        ("anchor_x", "0.5"),
+        ("anchor_y", "0.5"),
+    ];
+    let mut b = member(port, "beta").await;
+    assert_eq!(
+        b.get("/api/signature").await.body,
+        r#"{"style":"","value":""}"#
+    );
+    // Saving needs a fetch with the form token; strokes and names are checked.
+    let csrf_b = b.csrf().await;
+    assert_eq!(
+        b.post(
+            "/api/signature",
+            &[
+                ("csrf", &csrf_b),
+                ("style", "drawn"),
+                ("value", "10,10,0.5")
+            ]
+        )
+        .await
+        .status,
+        403,
+        "not from a plain form"
+    );
+    for (style, value) in [
+        ("drawn", "700,10,0.5"),
+        ("drawn", "10,10"),
+        ("typed", ""),
+        ("image", "x"),
+    ] {
+        assert_eq!(
+            fetch_post(
+                &mut b,
+                "/api/signature",
+                &[("style", style), ("value", value)]
+            )
+            .await
+            .status,
+            400,
+            "{style} {value}"
+        );
+    }
+    // Placing before saving one asks for a signature first.
+    assert_eq!(
+        fetch_post(&mut b, &format!("{doc}/annotations"), &place)
+            .await
+            .status,
+        409
+    );
+    let saved = fetch_post(
+        &mut b,
+        "/api/signature",
+        &[("style", "drawn"), ("value", "10,10,0.5 50,40,0.6")],
+    )
+    .await;
+    assert_eq!(saved.status, 200, "{}", saved.body);
+    assert!(
+        b.get("/api/signature")
+            .await
+            .body
+            .contains(r#""value":"10,10,0.5 50,40,0.6""#)
+    );
+
+    // Placed: the server copies the signer's own signature and writes the caption.
+    let placed = fetch_post(&mut b, &format!("{doc}/annotations"), &place).await;
+    assert_eq!(placed.status, 201, "{}", placed.body);
+    let day: String =
+        sqlx::query_scalar("SELECT to_char(now() AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY')")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        placed.body.contains(r#""kind":"signature""#)
+            && placed.body.contains(r#""points":"10,10,0.5 50,40,0.6""#)
+    );
+    assert!(
+        placed
+            .body
+            .contains(&format!(r#""label":"Signed by beta, {day}, "#))
+            && placed.body.contains(" (SGT)\""),
+        "{}",
+        placed.body
+    );
+    let id = id_in(&placed.body);
+    // Nobody can hand in strokes or a name of their own choosing.
+    let mut forged = place.to_vec();
+    forged.push(("points", "1,1,0.5 2,2,0.5"));
+    assert_eq!(
+        fetch_post(&mut b, &format!("{doc}/annotations"), &forged)
+            .await
+            .status,
+        400
+    );
+    let mut named = place.to_vec();
+    named.push(("text", "delta"));
+    assert_eq!(
+        fetch_post(&mut b, &format!("{doc}/annotations"), &named)
+            .await
+            .status,
+        400
+    );
+
+    // Another member signs with their own typed signature.
+    let mut g = member(port, "gamma").await;
+    assert_eq!(
+        fetch_post(
+            &mut g,
+            "/api/signature",
+            &[("style", "typed"), ("value", " Lake Example ")]
+        )
+        .await
+        .status,
+        200
+    );
+    let typed = fetch_post(&mut g, &format!("{doc}/annotations"), &place).await;
+    assert_eq!(typed.status, 201);
+    assert!(
+        typed.body.contains(r#""text":"Lake Example""#) && typed.body.contains("Signed by gamma, ")
+    );
+    assert!(
+        typed.body.contains(r#""points":"""#),
+        "a typed signature has no strokes"
+    );
+
+    // Replacing a saved signature never changes what was signed.
+    assert_eq!(
+        fetch_post(
+            &mut b,
+            "/api/signature",
+            &[("style", "typed"), ("value", "Another")]
+        )
+        .await
+        .status,
+        200
+    );
+    let list = b.get(&format!("{doc}/annotations")).await.body;
+    assert!(list.contains(r#""points":"10,10,0.5 50,40,0.6""#), "{list}");
+    // Only the signer moves it; nobody edits it; the signer or the owner deletes it.
+    let moved = [
+        ("op", "move"),
+        ("anchor_path", "body:1"),
+        ("anchor_x", "0.2"),
+        ("anchor_y", "0.2"),
+    ];
+    assert_eq!(
+        fetch_post(&mut g, &format!("{doc}/annotations/{id}/update"), &moved)
+            .await
+            .status,
+        403
+    );
+    assert_eq!(
+        fetch_post(&mut b, &format!("{doc}/annotations/{id}/update"), &moved)
+            .await
+            .status,
+        200
+    );
+    assert_eq!(
+        fetch_post(
+            &mut b,
+            &format!("{doc}/annotations/{id}/update"),
+            &[("op", "edit"), ("body", "x")]
+        )
+        .await
+        .status,
+        400
+    );
+    let csrf_g = g.csrf().await;
+    assert_eq!(
+        fetch_post(
+            &mut g,
+            &format!("{doc}/annotations/{id}/delete"),
+            &[("csrf", &csrf_g)]
+        )
+        .await
+        .status,
+        403
+    );
+    let csrf_o = o.csrf().await;
+    assert_eq!(
+        fetch_post(
+            &mut o,
+            &format!("{doc}/annotations/{id}/delete"),
+            &[("csrf", &csrf_o)]
+        )
+        .await
+        .status,
+        204
+    );
+
+    // A person deletes their own saved signature.
+    assert_eq!(
+        fetch_post(&mut b, "/api/signature", &[("op", "delete")])
+            .await
+            .status,
+        204
+    );
+    assert_eq!(
+        b.get("/api/signature").await.body,
+        r#"{"style":"","value":""}"#
+    );
+    assert!(
+        g.get("/api/signature").await.body.contains("Lake Example"),
+        "the others keep theirs"
+    );
+    assert_eq!(Client::new(port).get("/api/signature").await.status, 401);
+    let audit: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action LIKE 'signature %'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audit, 4, "three saves and a delete");
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn pictures_are_recognised_shown_and_downloaded(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let day = today(&pool).await;
+    let mut o = owner(port).await;
+    let png = png_header(3, 2);
+    let (status, location) = upload_bytes(&mut o, "/documents", "Lake Garden.png", &png).await;
+    assert_eq!(status, 303, "{location}");
+    assert_eq!(location, format!("/documents/{day}_1"));
+
+    // The panel reports the picture; the list calls it a picture; hashtags come from the name.
+    let view = o.get(&location).await.body;
+    assert!(
+        view.contains("<dt>Picture</dt><dd>3 x 2 (PNG)</dd>"),
+        "picture size shown"
+    );
+    assert!(o.get("/documents").await.body.contains("picture · v1"));
+    let tags: Vec<String> = sqlx::query_scalar("SELECT tag FROM document_tags ORDER BY pos")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(tags, vec!["lake", "garden"]);
+
+    // The frame gets a page with the picture in it (and the helper); the stored file is unchanged.
+    let (status, headers, body) = o
+        .send_bytes("GET", &format!("{location}/raw"), b"", &[])
+        .await;
+    assert_eq!(status, 200);
+    let header = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(
+        header("content-type").as_deref(),
+        Some("text/html; charset=utf-8")
+    );
+    assert_eq!(
+        header("content-security-policy").as_deref(),
+        Some(hongjia_web::family::documents::DOCUMENT_CSP)
+    );
+    let page = String::from_utf8(body).unwrap();
+    let data = hongjia_web::family::picture::base64(&png);
+    assert!(page.contains(&format!(r#"src="data:image/png;base64,{data}""#)));
+    assert!(
+        page.contains("<title>Lake Garden</title>") && page.contains("<script data-hj-helper>")
+    );
+    // "org" downloads the picture itself, byte for byte.
+    let (status, headers, body) = o
+        .send_bytes("GET", &format!("{location}/original"), b"", &[])
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(body, png);
+    let header = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(header("content-type").as_deref(), Some("image/png"));
+    assert!(
+        header("content-disposition")
+            .unwrap()
+            .contains("filename=\"Lake Garden.png\"")
+    );
+
+    // The first bytes decide, not the name.
+    let (status, page) = upload_bytes(
+        &mut o,
+        "/documents",
+        "fake.png",
+        b"<!doctype html><p>not a picture</p>",
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert!(page.contains("not a JPEG, PNG or WebP picture"));
+    let (status, _) = upload_bytes(&mut o, "/documents", "named.jpg", &png).await;
+    assert_eq!(status, 303, "a PNG named .jpg is still a picture");
+    let kinds: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT kind, image_type FROM document_versions ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        kinds,
+        vec![
+            ("picture".to_string(), Some("png".to_string())),
+            ("picture".to_string(), Some("png".to_string()))
+        ]
+    );
+    let (status, _) =
+        upload_bytes(&mut o, "/documents", "anim.gif", b"GIF89a\x01\x00\x01\x00").await;
+    assert_eq!(status, 400);
+
+    // A new version of a picture, and search by its file name.
+    let (status, _) = upload_bytes(
+        &mut o,
+        &format!("{location}/version"),
+        "Lake Garden 2.png",
+        &png_header(5, 4),
+    )
+    .await;
+    assert_eq!(status, 303);
+    assert!(o.get(&location).await.body.contains("<dd>5 x 4 (PNG)</dd>"));
+    let found = o.get("/api/search?q=garden").await.body;
+    assert!(found.contains(&format!(r#""key":"{day}_1""#)), "{found}");
 }

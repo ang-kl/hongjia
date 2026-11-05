@@ -7,11 +7,14 @@
 // replacement text, stamps) and drawings (D2) are drawn here, over the frame, and never sent into it.
 
 import { createInk, drawingNodes, parsePoints, placement } from './ink.mjs';
+import { createSignaturePad, signatureNodes } from './signature.mjs';
 
 export const LIMITS = { key: 200, value: 4000, storage: 8000, label: 200, quote: 1000, around: 64, id: 20, text: 500, body: 4000, path: 400 };
 export const COLORS = ['yellow', 'green', 'blue', 'pink', 'orange'];
 export const STAMPS = [['check', '✓'], ['cross', '✗'], ['approved', 'Approved'], ['reviewed', 'Reviewed'], ['signedoff', 'Signed off']];
-const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located']);
+const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe']);
+/// Loupe magnifications (D3): 0 is closed.
+export const LOUPE_ZOOMS = [0, 2, 3];
 const INPUTS = new Set(['mouse', 'touch', 'pen', 'keyboard']);
 const PATH = /^[a-z][a-z0-9-]{0,30}:[0-9]{1,5}(\/[a-z][a-z0-9-]{0,30}:[0-9]{1,5}){0,24}$/;
 
@@ -71,6 +74,10 @@ export function validMessage(data) {
       for (const k of box) if (data[k] !== undefined) out[k] = data[k];
       return out;
     }
+    case 'hj:loupe':
+      // The helper says the loupe closed (Escape, a click in the document) or could not open.
+      if (!LOUPE_ZOOMS.includes(data.zoom) || !['', 'long'].includes(data.reason ?? '')) return null;
+      return { type: data.type, zoom: data.zoom, reason: data.reason ?? '' };
   }
   return null;
 }
@@ -125,11 +132,11 @@ export function mentionQuery(text, caret) {
   return match ? match[2].toLowerCase() : null;
 }
 
-const KIND_WORDS = { comment: 'Comment', highlight: 'Highlight', underline: 'Underline', strike: 'Strikethrough', insert: 'Insert', replace: 'Replace', note: 'Sticky note', textbox: 'Text box', stamp: 'Stamp', ink: 'Drawing', shape: 'Shape' };
+const KIND_WORDS = { comment: 'Comment', highlight: 'Highlight', underline: 'Underline', strike: 'Strikethrough', insert: 'Insert', replace: 'Replace', note: 'Sticky note', textbox: 'Text box', stamp: 'Stamp', ink: 'Drawing', shape: 'Shape', signature: 'Signature' };
 const SHAPE_WORDS = { rectangle: 'Rectangle', oval: 'Oval', line: 'Line', arrow: 'Arrow' };
 const DRAWN = new Set(['ink', 'shape']);
-const PLACED = new Set(['note', 'textbox', 'stamp']);
-const OVERLAID = new Set(['note', 'textbox', 'stamp', 'insert', 'replace']);
+const PLACED = new Set(['note', 'textbox', 'stamp', 'signature']);
+const OVERLAID = new Set(['note', 'textbox', 'stamp', 'insert', 'replace', 'signature']);
 
 function element(tag, props = {}, ...children) {
   const el = document.createElement(tag);
@@ -248,6 +255,7 @@ function start() {
       x: a.x == null ? '' : String(a.x), y: a.y == null ? '' : String(a.y), body: a.body || '', canEdit: String(Boolean(a.can_edit))
     });
     if (DRAWN.has(a.kind)) Object.assign(li.dataset, { tool: a.tool || '', points: a.points || '', width: String(a.width ?? ''), ref: String(a.ref ?? ''), refh: String(a.refh ?? '') });
+    if (a.kind === 'signature') li.dataset.points = a.points || '';
     const tag = () => element('span', { className: 'kind-tag', textContent: KIND_WORDS[a.kind] || 'Comment', dataset: { color: a.color || 'yellow' } });
     let head;
     switch (a.kind) {
@@ -257,7 +265,7 @@ function start() {
         head = element('p', { className: 'annotation-quote' }, tag(), ` “${a.text}” ${a.quote ? `after “${a.quote}”` : 'here'}`); break;
       case 'replace':
         head = element('p', { className: 'annotation-quote' }, tag(), ` “${a.quote}” with “${a.text}”`); break;
-      case 'stamp':
+      case 'stamp': case 'signature':
         head = element('p', { className: 'annotation-quote' }, tag(), ` ${a.label}`); break;
       case 'note': case 'textbox':
         head = element('p', { className: 'annotation-quote' }, tag()); break;
@@ -280,7 +288,8 @@ function start() {
     }
     li.append(element('p', { className: 'small', textContent: `${a.author}, ${a.created} (SGT) · version ${a.version}` }));
     const actions = element('div', { className: 'annotation-actions' });
-    if (a.can_edit) actions.append(element('button', { type: 'button', className: 'link', textContent: 'Edit', dataset: { annotationEdit: '' } }));
+    // A signature is moved, never edited (D3).
+    if (a.can_edit && a.kind !== 'signature') actions.append(element('button', { type: 'button', className: 'link', textContent: 'Edit', dataset: { annotationEdit: '' } }));
     if (a.can_delete) {
       const form = element('form', { method: 'post', action: `${base}/annotations/${a.id}/delete`, dataset: { annotationDelete: '' } },
         element('input', { type: 'hidden', name: 'csrf', value: csrf }),
@@ -464,8 +473,17 @@ function start() {
       }
       shape.dataset.color = li.dataset.color || 'yellow';
       shape.dataset.own = li.dataset.canEdit === 'true' ? 'true' : 'false';
-      const words = kind === 'stamp' ? li.dataset.label : (kind === 'insert' || kind === 'replace') ? li.dataset.text : li.dataset.body;
-      fillWithMentions(shape, kind === 'insert' ? `‸ ${words}` : words, []);
+      if (kind === 'signature') {
+        // The signature (drawn strokes or the typed name) and its caption from the server.
+        const sig = `${li.dataset.points}|${li.dataset.text}|${li.dataset.label}`;
+        if (shape.dataset.sig !== sig) {
+          shape.dataset.sig = sig;
+          shape.replaceChildren(signatureNodes(document, li.dataset.points, li.dataset.text), element('span', { className: 'sig-caption', textContent: li.dataset.label }));
+        }
+      } else {
+        const words = kind === 'stamp' ? li.dataset.label : (kind === 'insert' || kind === 'replace') ? li.dataset.text : li.dataset.body;
+        fillWithMentions(shape, kind === 'insert' ? `‸ ${words}` : words, []);
+      }
       placeShape(id);
     }
     for (const [id, shape] of shapes) if (!seen.has(id)) { shape.remove(); shapes.delete(id); }
@@ -612,8 +630,9 @@ function start() {
   const inkItem = (label, tool) => { const b = item0(label, 'ink'); b.dataset.tool = tool; return b; };
   menu.append(swatches, item0('Underline', 'underline', 'quote'), item0('Strikethrough', 'strike', 'quote'), item0('Insert text…', 'insert', 'point'),
     item0('Replace…', 'replace', 'quote'), item0('Comment…', 'comment'), item0('Sticky note…', 'note', 'place'), item0('Text box…', 'textbox', 'place'),
-    stampButton, stampGroup, inkItem('Draw', 'draw'), inkItem('Sketch', 'sketch'), shapesButton, shapesGroup, inkItem('Eraser', 'eraser'),
-    item0('Copy', 'copy', 'quote'), form);
+    stampButton, stampGroup, item0('Signature…', 'signature', 'place'), item0('My signature…', 'mysignature'),
+    inkItem('Draw', 'draw'), inkItem('Sketch', 'sketch'), shapesButton, shapesGroup, inkItem('Eraser', 'eraser'),
+    item0('Loupe', 'loupe'), item0('Copy', 'copy', 'quote'), form);
   document.body.append(menu);
   const menuItems = () => [...menu.querySelectorAll('[role=menuitem]')].filter(el => !el.disabled && !el.closest('[hidden]'));
   let returnFocus = null;
@@ -719,6 +738,21 @@ function start() {
         closeMenu(false);
         ink.enter(button.dataset.tool);
         break;
+      case 'signature': {
+        // Place your own saved signature; with none saved yet, the pad opens first.
+        const fields = placeFields('signature');
+        closeMenu(false);
+        placeSignature(fields);
+        break;
+      }
+      case 'mysignature':
+        closeMenu(false);
+        changeSignature();
+        break;
+      case 'loupe':
+        closeMenu(false);
+        loupe.set(2);
+        break;
       case 'copy':
         navigator.clipboard?.writeText(context.quote).catch(() => {});
         closeMenu();
@@ -755,6 +789,64 @@ function start() {
   body.append(element('p', { className: 'visually-hidden', role: 'status', dataset: { annoLive: '' } }));
   const announce = text => { document.querySelector('[data-anno-live]').textContent = text; };
 
+  // Signatures (D3): the pad, and placing your own saved signature at a point.
+  const pad = createSignaturePad({ post, announce });
+  const savedSignature = async () => {
+    try {
+      const response = await fetch('/api/signature', { credentials: 'same-origin' });
+      if (!response.ok) return null;
+      const saved = await response.json();
+      return saved.style ? saved : null;
+    } catch { return null; }
+  };
+  async function placeSignature(fields) {
+    try {
+      const li = await create(fields);
+      li?.classList.add('flash');
+      setTimeout(() => li?.classList.remove('flash'), 1200);
+      announce('Signed.');
+    } catch (error) {
+      if (error.message !== '409') { announce('The signature was not placed; please try again.'); return; }
+      const saved = await pad.open({ saved: null });
+      if (saved) placeSignature(fields);
+    }
+  }
+  async function changeSignature() {
+    const saved = await pad.open({ saved: await savedSignature() });
+    if (saved) announce('Your signature was saved.');
+  }
+
+  // The loupe (D3): drawn by the helper inside the frame, over the document's own content only.
+  // This page sends the magnification, and the pointer's place while drawing covers the frame.
+  const loupeChip = element('div', { className: 'loupe-chip glass', role: 'toolbar', ariaLabel: 'Loupe', hidden: true, dataset: { loupeChip: '' } },
+    element('span', { className: 'anno-label', textContent: 'Loupe' }),
+    element('button', { type: 'button', className: 'ink-button ink-text', textContent: '2×', ariaPressed: 'true', dataset: { loupeZoom: '2' } }),
+    element('button', { type: 'button', className: 'ink-button ink-text', textContent: '3×', ariaPressed: 'false', dataset: { loupeZoom: '3' } }),
+    element('button', { type: 'button', className: 'ink-button ink-text ink-done', textContent: 'Close', dataset: { loupeClose: '' } }));
+  document.body.append(loupeChip);
+  const loupe = {
+    zoom: 0,
+    paint() {
+      loupeChip.hidden = this.zoom === 0;
+      for (const b of loupeChip.querySelectorAll('[data-loupe-zoom]')) b.setAttribute('aria-pressed', String(Number(b.dataset.loupeZoom) === this.zoom));
+      body.classList.toggle('louping', this.zoom > 0);
+    },
+    set(zoom) {
+      this.zoom = LOUPE_ZOOMS.includes(zoom) ? zoom : 0;
+      toFrame({ type: 'hj:loupe', zoom: this.zoom });
+      this.paint();
+      if (this.zoom) announce(`Loupe at ${this.zoom} times. Move over the document; Escape or a click closes it.`);
+    },
+    at(x, y) { if (this.zoom) toFrame({ type: 'hj:loupe-at', x, y }); }
+  };
+  loupeChip.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    if (button.dataset.loupeZoom) loupe.set(Number(button.dataset.loupeZoom));
+    else if ('loupeClose' in button.dataset) loupe.set(0);
+  });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && loupe.zoom && !pad.isOpen) loupe.set(0); });
+
   // Drawing (D2): the toolbar and the drawing surface over the frame.
   const ink = createInk({
     frame,
@@ -785,7 +877,11 @@ function start() {
       drawing: drawingOf(li),
       at: positions.get(li.dataset.annotationId)
     })),
-    onExit: () => frame.focus({ preventScroll: true })
+    onExit: () => frame.focus({ preventScroll: true }),
+    // D3: the loupe from the drawing toolbar follows the pen while drawing covers the frame.
+    toggleLoupe: () => loupe.set(loupe.zoom ? 0 : 2),
+    loupeMove: (x, y) => loupe.at(x, y),
+    loupeOn: () => loupe.zoom > 0
   });
 
   addEventListener('message', event => {
@@ -833,6 +929,11 @@ function start() {
         if (resolve) resolve(message);
         break;
       }
+      case 'hj:loupe':
+        loupe.zoom = message.zoom;
+        loupe.paint();
+        if (message.reason === 'long') announce('This page is too long for the loupe; pinch or zoom the browser instead.');
+        break;
     }
   });
 

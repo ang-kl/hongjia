@@ -11,6 +11,7 @@
 
 use super::doccheck::{self, Filing};
 use super::pages::{self, Nav};
+use super::picture;
 use super::store::Session;
 use super::{FamilyState, auth, review, store, web};
 use axum::{
@@ -35,13 +36,19 @@ pub const IFRAME_SANDBOX: &str =
 /// The word a person types to confirm a permanent delete.
 pub const DELETE_WORD: &str = "DELETE";
 
-/// Which kind of document a file name is, or None if it is not accepted yet.
+/// Which kind of document a file name is, or None if it is not accepted yet. A picture's name is
+/// only a first guess: its first bytes must also be a JPEG, PNG or WebP (`picture::info`).
 pub fn kind_for(filename: &str) -> Option<&'static str> {
     let lower = filename.to_ascii_lowercase();
     if lower.ends_with(".html") || lower.ends_with(".htm") {
         Some("html")
     } else if lower.ends_with(".txt") || lower.ends_with(".md") {
         Some("text")
+    } else if [".jpg", ".jpeg", ".png", ".webp"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+    {
+        Some("picture")
     } else {
         None
     }
@@ -110,6 +117,10 @@ pub struct VersionRow {
     pub heading_levels: Vec<i16>,
     pub heading_ids: Vec<String>,
     pub heading_texts: Vec<String>,
+    /// D3: a picture's type and size (None for other kinds).
+    pub image_type: Option<String>,
+    pub image_width: Option<i32>,
+    pub image_height: Option<i32>,
 }
 
 pub(super) async fn list(pool: &PgPool) -> sqlx::Result<Vec<DocumentRow>> {
@@ -176,7 +187,8 @@ async fn versions(pool: &PgPool, document_id: i64) -> sqlx::Result<Vec<VersionRo
         "SELECT v.version_no, v.filename, v.kind, v.size_bytes, p.handle AS uploaded_by,
                 to_char(v.uploaded_at AT TIME ZONE 'Asia/Singapore', 'FMDD Mon YYYY, HH24:MI') AS uploaded_at,
                 v.libraries, v.style_guess, v.warnings, v.field_count,
-                v.heading_levels, v.heading_ids, v.heading_texts
+                v.heading_levels, v.heading_ids, v.heading_texts,
+                v.image_type, v.image_width, v.image_height
          FROM document_versions v LEFT JOIN profiles p ON p.id = v.uploaded_by
          WHERE v.document_id = $1 ORDER BY v.version_no DESC",
     )
@@ -185,13 +197,24 @@ async fn versions(pool: &PgPool, document_id: i64) -> sqlx::Result<Vec<VersionRo
     .await
 }
 
+/// A stored version's bytes, with what is needed to send it.
+#[derive(FromRow)]
+struct Stored {
+    filename: String,
+    kind: String,
+    content: Vec<u8>,
+    image_type: Option<String>,
+    image_width: Option<i32>,
+    image_height: Option<i32>,
+}
+
 async fn content(
     pool: &PgPool,
     document_id: i64,
     version: Option<i32>,
-) -> sqlx::Result<Option<(String, Vec<u8>)>> {
+) -> sqlx::Result<Option<Stored>> {
     sqlx::query_as(
-        "SELECT kind, content FROM document_versions
+        "SELECT filename, kind, content, image_type, image_width, image_height FROM document_versions
          WHERE document_id = $1 AND ($2::int IS NULL OR version_no = $2)
          ORDER BY version_no DESC LIMIT 1",
     )
@@ -199,6 +222,15 @@ async fn content(
     .bind(version)
     .fetch_optional(pool)
     .await
+}
+
+/// The media type a stored version is sent with, when downloaded as it is.
+fn media_type(kind: &str, image_type: Option<&str>) -> &'static str {
+    match kind {
+        "html" => "text/html; charset=utf-8",
+        "picture" => picture::mime(image_type.unwrap_or("jpeg")),
+        _ => "text/plain; charset=utf-8",
+    }
 }
 
 /// What is kept for 🛰️ search and 📁 contents: the plain text and the headings.
@@ -209,7 +241,21 @@ struct Index {
     texts: Vec<String>,
 }
 
-fn index_for(kind: &str, bytes: &[u8]) -> Index {
+fn index_for(kind: &str, bytes: &[u8], filename: &str) -> Index {
+    if kind == "picture" {
+        // A picture has no text of its own: its file name is searched (titles and hashtags are
+        // searched as for every document).
+        let stem = filename
+            .rsplit_once('.')
+            .map(|(s, _)| s)
+            .unwrap_or(filename);
+        return Index {
+            text: stem.replace(['-', '_', '.'], " "),
+            levels: Vec::new(),
+            ids: Vec::new(),
+            texts: Vec::new(),
+        };
+    }
     let content = String::from_utf8_lossy(bytes);
     let headings = doccheck::headings(&content, kind);
     Index {
@@ -234,6 +280,8 @@ struct NewFile<'a> {
     kind: &'a str,
     bytes: &'a [u8],
     profile_id: i16,
+    /// D3: a picture's type and size, read from its first bytes.
+    image: Option<picture::Info>,
 }
 
 async fn insert_version(
@@ -243,12 +291,13 @@ async fn insert_version(
     file: &NewFile<'_>,
 ) -> sqlx::Result<()> {
     let check = check_for(file.kind, file.bytes);
-    let index = index_for(file.kind, file.bytes);
+    let index = index_for(file.kind, file.bytes, file.filename);
     sqlx::query(
         "INSERT INTO document_versions (document_id, version_no, filename, kind, size_bytes, sha256, content, uploaded_by,
                                         libraries, style_guess, warnings, field_count, checked,
-                                        text_content, heading_levels, heading_ids, heading_texts, indexed)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, $13, $14, $15, $16, true)",
+                                        text_content, heading_levels, heading_ids, heading_texts, indexed,
+                                        image_type, image_width, image_height)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, $13, $14, $15, $16, true, $17, $18, $19)",
     )
     .bind(document_id)
     .bind(version_no)
@@ -266,6 +315,9 @@ async fn insert_version(
     .bind(&index.levels)
     .bind(&index.ids)
     .bind(&index.texts)
+    .bind(file.image.map(|i| i.kind))
+    .bind(file.image.map(|i| i.width as i32))
+    .bind(file.image.map(|i| i.height as i32))
     .execute(tx)
     .await?;
     Ok(())
@@ -328,14 +380,14 @@ async fn insert(
 /// Checks and indexes versions uploaded before the upload check, search or contents existed.
 /// Runs when the server starts; returns how many versions were brought up to date.
 pub async fn backfill_versions(pool: &PgPool) -> sqlx::Result<u64> {
-    let pending: Vec<(i64, String, Vec<u8>)> = sqlx::query_as(
-        "SELECT id, kind, content FROM document_versions WHERE NOT checked OR NOT indexed ORDER BY id LIMIT 500",
+    let pending: Vec<(i64, String, Vec<u8>, String)> = sqlx::query_as(
+        "SELECT id, kind, content, filename FROM document_versions WHERE NOT checked OR NOT indexed ORDER BY id LIMIT 500",
     )
     .fetch_all(pool)
     .await?;
-    for (id, kind, bytes) in &pending {
+    for (id, kind, bytes, filename) in &pending {
         let check = check_for(kind, bytes);
-        let index = index_for(kind, bytes);
+        let index = index_for(kind, bytes, filename);
         sqlx::query(
             "UPDATE document_versions SET libraries = $2, style_guess = $3, warnings = $4, field_count = $5, checked = true,
                     text_content = $6, heading_levels = $7, heading_ids = $8, heading_texts = $9, indexed = true
@@ -551,12 +603,15 @@ async fn read_upload(multipart: &mut Multipart) -> Result<Upload, &'static str> 
     Ok(upload)
 }
 
-/// The file's kind, or the message to show when it cannot be accepted.
-fn accept_file(upload: &Upload) -> Result<&'static str, (StatusCode, &'static str)> {
+/// The file's kind (and a picture's type and size), or the message to show when it cannot be
+/// accepted.
+fn accept_file(
+    upload: &Upload,
+) -> Result<(&'static str, Option<picture::Info>), (StatusCode, &'static str)> {
     let Some(kind) = kind_for(&upload.filename) else {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Choose an HTML (.html, .htm) or text (.txt, .md) file. Pictures and other files come later.",
+            "Choose an HTML (.html, .htm), text (.txt, .md) or picture (.jpg, .png, .webp) file.",
         ));
     };
     if upload.bytes.is_empty() {
@@ -568,7 +623,17 @@ fn accept_file(upload: &Upload) -> Result<&'static str, (StatusCode, &'static st
             "That file is too large. Files can be up to 10 MB.",
         ));
     }
-    Ok(kind)
+    if kind == "picture" {
+        // The first bytes decide, not the name.
+        return match picture::info(&upload.bytes) {
+            Some(info) => Ok((kind, Some(info))),
+            None => Err((
+                StatusCode::BAD_REQUEST,
+                "That file is not a JPEG, PNG or WebP picture. On an iPhone, choose the photo from the library; Safari sends it as a JPEG.",
+            )),
+        };
+    }
+    Ok((kind, None))
 }
 
 pub async fn upload(
@@ -592,18 +657,20 @@ pub async fn upload(
     if !form_ok(&state, &headers, &session, &upload.csrf) {
         return Ok(out_of_date("/documents/new"));
     }
-    let kind = match accept_file(&upload) {
-        Ok(kind) => kind,
+    let (kind, image) = match accept_file(&upload) {
+        Ok(found) => found,
         Err((status, message)) => return Ok(retry(status, message)),
     };
     let title = clean_title(&upload.title, &upload.filename);
     let typed = doccheck::normalize_tags(&upload.tags);
     let tags = if typed.is_empty() {
-        doccheck::suggest_tags(
-            &String::from_utf8_lossy(&upload.bytes),
-            kind,
-            &upload.filename,
-        )
+        // A picture's hashtags come from its file name only.
+        let text = if kind == "picture" {
+            String::new()
+        } else {
+            String::from_utf8_lossy(&upload.bytes).into_owned()
+        };
+        doccheck::suggest_tags(&text, kind, &upload.filename)
     } else {
         typed
     };
@@ -612,6 +679,7 @@ pub async fn upload(
         kind,
         bytes: &upload.bytes,
         profile_id: session.profile_id,
+        image,
     };
     let key = insert(&state.pool, &title, &file, &tags).await?;
     store::audit(
@@ -687,23 +755,11 @@ pub async fn original(
         .split('&')
         .find_map(|pair| pair.strip_prefix("v="))
         .and_then(|v| v.parse::<i32>().ok());
-    let Some((filename, kind, bytes)): Option<(String, String, Vec<u8>)> = sqlx::query_as(
-        "SELECT filename, kind, content FROM document_versions
-         WHERE document_id = $1 AND ($2::int IS NULL OR version_no = $2)
-         ORDER BY version_no DESC LIMIT 1",
-    )
-    .bind(doc.id)
-    .bind(version)
-    .fetch_optional(&state.pool)
-    .await?
-    else {
+    let Some(stored) = content(&state.pool, doc.id, version).await? else {
         return Ok(not_found());
     };
-    let content_type = if kind == "html" {
-        "text/html; charset=utf-8"
-    } else {
-        "text/plain; charset=utf-8"
-    };
+    let content_type = media_type(&stored.kind, stored.image_type.as_deref());
+    let (filename, bytes) = (stored.filename, stored.content);
     let disposition = axum::http::HeaderValue::from_str(&attachment(&filename))
         .unwrap_or(axum::http::HeaderValue::from_static("attachment"));
     let mut response = (
@@ -769,19 +825,33 @@ pub async fn raw(
         .split('&')
         .find_map(|pair| pair.strip_prefix("v="))
         .and_then(|v| v.parse::<i32>().ok());
-    let Some((kind, bytes)) = content(&state.pool, doc.id, version).await? else {
+    let Some(stored) = content(&state.pool, doc.id, version).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
-    let (content_type, bytes) = if kind == "html" {
-        // The helper for saved fields, the storage stand-in and annotations is added as the file
-        // is sent; the stored file never changes.
-        let data = review::frame_data(&state.pool, &doc, &session).await?;
-        (
-            "text/html; charset=utf-8",
-            review::inject(&bytes, &review::helper_script(&data)),
-        )
-    } else {
-        ("text/plain; charset=utf-8", bytes)
+    let (content_type, bytes) = match stored.kind.as_str() {
+        "html" | "picture" => {
+            // A picture is shown as a small page with the picture in it, so marks and drawings
+            // work on it. The helper for saved fields, the storage stand-in and annotations is
+            // added as the page is sent; the stored file never changes.
+            let html = if stored.kind == "picture" {
+                picture::page(
+                    &doc.title,
+                    stored.image_type.as_deref().unwrap_or("jpeg"),
+                    stored.image_width.unwrap_or(1) as u32,
+                    stored.image_height.unwrap_or(1) as u32,
+                    &stored.content,
+                )
+                .into_bytes()
+            } else {
+                stored.content
+            };
+            let data = review::frame_data(&state.pool, &doc, &session).await?;
+            (
+                "text/html; charset=utf-8",
+                review::inject(&html, &review::helper_script(&data)),
+            )
+        }
+        _ => ("text/plain; charset=utf-8", stored.content),
     };
     Ok((
         [
@@ -927,8 +997,8 @@ pub async fn new_version(
         Ok(found) => found,
         Err(response) => return Ok(response),
     };
-    let kind = match accept_file(&upload) {
-        Ok(kind) => kind,
+    let (kind, image) = match accept_file(&upload) {
+        Ok(found) => found,
         Err((status, message)) => return show(&state, &session, &doc, status, Some(message)).await,
     };
     let file = NewFile {
@@ -936,6 +1006,7 @@ pub async fn new_version(
         kind,
         bytes: &upload.bytes,
         profile_id: session.profile_id,
+        image,
     };
     let mut tx = state.pool.begin().await?;
     // Lock the document so two uploads at once cannot take the same version number.
@@ -1019,7 +1090,11 @@ mod tests {
         assert_eq!(kind_for("Trip.HTML"), Some("html"));
         assert_eq!(kind_for("notes.htm"), Some("html"));
         assert_eq!(kind_for("list.md"), Some("text"));
-        assert_eq!(kind_for("photo.jpg"), None);
+        assert_eq!(kind_for("IMG_0042.JPEG"), Some("picture"));
+        assert_eq!(kind_for("map.png"), Some("picture"));
+        assert_eq!(kind_for("photo.webp"), Some("picture"));
+        assert_eq!(kind_for("anim.gif"), None);
+        assert_eq!(kind_for("photo.jpg"), Some("picture"));
         assert_eq!(kind_for("tool.exe"), None);
         assert_eq!(kind_for("no-extension"), None);
     }
