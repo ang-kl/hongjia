@@ -169,3 +169,13 @@ Owner request in chat: "the original copy of the HTML in the document menu allow
 - **Download route:** `GET /documents/{key}/original` (or `?v=N` for an earlier version) returns the stored file byte for byte, with no helper added. It is sent as an attachment under its own file name, with an ASCII fallback and the exact name in RFC 5987 form. It carries the document sandbox policy, `nosniff` and `no-store`. Members only.
 - **Reading of "and the latest changes":** this is taken to mean the last-change time in the left column. A download that bakes comments and saved ticks into a copy is not built. It can be added if the owner wants it.
 - **Checks:** a unit test covers the file name header, including quotes, line breaks and Chinese. A database test covers the latest and first versions downloaded unchanged, the header, the policy, strangers and a missing document, and the `changed` field in `/api/library`. The browser check confirms the `hh:mmAM/PM DD-MM` form and the org link, and that org downloads `sample-trip.html` on the document page. All 126 checks pass.
+
+## Owner follow-up: Google Maps inside documents (5 November 2026, evening)
+
+Owner decision in chat: "show embedded Google Map".
+
+- **Frame policy:** the document frame's `frame-src` changes from `'none'` to `https://maps.google.com/maps https://www.google.com/maps/`. `maps.google.com/maps` matches only that path. Google redirects it to `www.google.com/maps/embed`, and only paths under `/maps/` on `www.google.com` are allowed. Every other site stays blocked in frames, YouTube included. The map frame inherits the document's sandbox, so it never gets `allow-same-origin`.
+- **Tested** in Chromium on a sandboxed copy of the frame. A `maps.google.com/maps?...&output=embed` map rendered fully (pin, labels, Open in Maps), and a YouTube frame on the same page was refused by the policy.
+- **Privacy:** when a document shows a map, Google receives the viewer's internet address and the place being looked up. Photos from other websites already work this way.
+- **Upload check:** it now lists "Google Maps (embedded)" and "Leaflet" among the libraries a document uses. It warns only about frames from other sites, and frames whose address a script fills in later are not judged. The storage warning now says the site keeps such values, since pull request C added the storage stand-in.
+- **Checks:** a unit test covers allowed and refused frames and the two new library names, including the look-alike `maps.google.com/mapsevil`, which is refused. The policy unit test pins `frame-src` to `FRAME_SOURCES`.

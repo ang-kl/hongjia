@@ -21,6 +21,12 @@ pub const STYLE_HOSTS: [&str; 4] = [
 ];
 /// Sites a document may fetch from (3D models, textures, fonts for Three.js and similar).
 pub const CONNECT_HOSTS: [&str; 3] = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com"];
+/// Pages a document may embed in a frame: Google Maps only (the owner's choice, 5 November 2026).
+/// `maps.google.com/maps` is matched exactly; Google sends it on to `www.google.com/maps/embed`.
+pub const FRAME_SOURCES: [&str; 2] = [
+    "https://maps.google.com/maps",
+    "https://www.google.com/maps/",
+];
 
 pub const MAX_TAGS: usize = 20;
 pub const MAX_TAG_CHARS: usize = 40;
@@ -837,7 +843,7 @@ pub fn check_html(html: &str) -> Check {
     let lower = html.to_ascii_lowercase();
     let has = |needles: &[&str]| needles.iter().any(|n| lower.contains(n));
     let mut check = Check::default();
-    let libraries: [(&str, &[&str]); 7] = [
+    let libraries: [(&str, &[&str]); 9] = [
         (
             "Three.js",
             &[
@@ -881,6 +887,14 @@ pub fn check_html(html: &str) -> Check {
                 "from \"lenis\"",
                 "\"lenis\":",
             ],
+        ),
+        (
+            "Leaflet",
+            &["leaflet@", "leaflet.js", "l.map(", "l.tilelayer("],
+        ),
+        (
+            "Google Maps (embedded)",
+            &["maps.google.com/maps", "google.com/maps/embed"],
         ),
         (
             "Tailwind CSS",
@@ -1049,15 +1063,30 @@ pub fn check_html(html: &str) -> Check {
     }
     if has(&["localstorage", "sessionstorage", "indexeddb"]) {
         check.warnings.push(
-            "This page saves things in browser storage, which the locked frame blocks, so that part may not work yet."
+            "This page saves things in browser storage; the site keeps them for it, shared or personal as set under Saved fields."
                 .to_string(),
         );
     }
-    if !start_tags(html, &lower, "iframe").is_empty() {
-        check.warnings.push(
-            "Embedded frames (for example maps or videos from other sites) are blocked; links to them still work."
-                .to_string(),
-        );
+    let mut blocked_frames: Vec<String> = Vec::new();
+    for tag in start_tags(html, &lower, "iframe") {
+        let src = attr(tag, "src").unwrap_or_default();
+        let src = src.trim();
+        // Frames whose address a script fills in later cannot be judged here.
+        if src.is_empty() || src.contains("${") || is_google_map(src) {
+            continue;
+        }
+        let name = host_of(src)
+            .map(|(host, _)| host)
+            .unwrap_or_else(|| src.chars().take(60).collect());
+        if !blocked_frames.contains(&name) {
+            blocked_frames.push(name);
+        }
+    }
+    if !blocked_frames.is_empty() {
+        check.warnings.push(format!(
+            "Embedded frames from {} are blocked; only Google Maps can be embedded. Links to them still work.",
+            blocked_frames.join(", ")
+        ));
     }
     if start_tags(html, &lower, "form")
         .iter()
@@ -1093,6 +1122,14 @@ pub fn check_html(html: &str) -> Check {
 
     check.style_guess = style_guess(&lower, &check.libraries);
     check
+}
+
+/// A Google Maps page that documents may embed (see `FRAME_SOURCES`).
+fn is_google_map(src: &str) -> bool {
+    let lower = src.trim().to_ascii_lowercase();
+    lower == FRAME_SOURCES[0]
+        || lower.starts_with(&format!("{}?", FRAME_SOURCES[0]))
+        || lower.starts_with(FRAME_SOURCES[1])
 }
 
 fn is_relative(value: &str) -> bool {
@@ -1414,6 +1451,42 @@ localStorage.setItem('k', 'v');
         assert_eq!(md.len(), 3);
         assert!(md.iter().all(|h| h.id.is_empty()));
         assert!(headings("<p>none</p>", "html").is_empty());
+    }
+
+    #[test]
+    fn google_maps_frames_are_allowed_and_others_reported() {
+        let html = r#"<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<iframe src="https://maps.google.com/maps?q=Lake+Town&output=embed"></iframe>
+<iframe src="https://www.google.com/maps/embed?pb=!1m2"></iframe>
+<iframe src="${url}"></iframe>
+<iframe src="https://www.youtube.com/embed/x"></iframe>
+<iframe src="https://maps.google.com/mapsevil"></iframe>"#;
+        let check = check_html(html);
+        assert!(
+            check.libraries.contains(&"Leaflet".to_string()),
+            "{check:?}"
+        );
+        assert!(
+            check
+                .libraries
+                .contains(&"Google Maps (embedded)".to_string())
+        );
+        let frames: Vec<&String> = check
+            .warnings
+            .iter()
+            .filter(|w| w.contains("Embedded frames"))
+            .collect();
+        assert_eq!(frames.len(), 1, "{:?}", check.warnings);
+        assert!(
+            frames[0].contains("www.youtube.com") && frames[0].contains("maps.google.com"),
+            "{}",
+            frames[0]
+        );
+        assert!(
+            check_html(r#"<iframe src="https://www.google.com/maps/embed?pb=1"></iframe>"#)
+                .warnings
+                .is_empty()
+        );
     }
 
     #[test]
