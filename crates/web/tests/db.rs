@@ -1900,3 +1900,339 @@ async fn originals_download_unchanged_and_the_library_shows_the_last_change(pool
         "{expected}"
     );
 }
+
+fn id_in(body: &str) -> String {
+    body.split(r#""id":""#)
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_string()
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn every_kind_of_mark_round_trips(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let key = form_doc(&mut o).await;
+    let path = format!("{key}/annotations");
+    let mut b = member(port, "beta").await;
+    let cases: Vec<Vec<(&str, &str)>> = vec![
+        vec![
+            ("kind", "highlight"),
+            ("color", "green"),
+            ("quote", "Two bedrooms"),
+            ("prefix", "Book the car "),
+            ("suffix", " near"),
+        ],
+        vec![
+            ("kind", "underline"),
+            ("color", "blue"),
+            ("quote", "Two bedrooms"),
+        ],
+        vec![
+            ("kind", "strike"),
+            ("color", "pink"),
+            ("quote", "Two bedrooms"),
+        ],
+        vec![
+            ("kind", "insert"),
+            ("color", "orange"),
+            ("quote", "Two"),
+            ("text", "quiet"),
+        ],
+        vec![
+            ("kind", "insert"),
+            ("prefix", "Book the "),
+            ("suffix", "car"),
+            ("text", "hire"),
+        ],
+        vec![("kind", "replace"), ("quote", "Two"), ("text", "Three")],
+        vec![
+            ("kind", "note"),
+            ("color", "yellow"),
+            ("body", "Call @alpha first"),
+            ("anchor_path", "body:1/section:1"),
+            ("anchor_x", "0.25"),
+            ("anchor_y", "0.5"),
+        ],
+        vec![
+            ("kind", "textbox"),
+            ("body", "Budget"),
+            ("anchor_path", "body:1"),
+            ("anchor_x", "0"),
+            ("anchor_y", "1"),
+        ],
+        vec![
+            ("kind", "stamp"),
+            ("text", "signedoff"),
+            ("anchor_path", "body:1/h1:1"),
+            ("anchor_x", "0.9"),
+            ("anchor_y", "0.1"),
+        ],
+        vec![("kind", "comment"), ("body", "Plain comment")],
+    ];
+    for form in &cases {
+        let r = fetch_post(&mut b, &path, form).await;
+        assert_eq!(r.status, 201, "{form:?}: {}", r.body);
+    }
+    let listed = b.get(&path).await.body;
+    for needle in [
+        r#""kind":"highlight""#,
+        r#""color":"green""#,
+        r#""kind":"underline""#,
+        r#""kind":"strike""#,
+        r#""text":"quiet""#,
+        r#""text":"hire""#,
+        r#""kind":"replace""#,
+        r#""text":"Three""#,
+        r#""kind":"note""#,
+        r#""path":"body:1/section:1""#,
+        r#""x":0.25"#,
+        r#""y":0.5"#,
+        r#""kind":"textbox""#,
+        r#""kind":"stamp""#,
+        r#""label":"Signed off · beta · "#,
+        r#""mentions":["alpha"]"#,
+        r#""can_edit":true"#,
+    ] {
+        assert!(listed.contains(needle), "{needle} in {listed}");
+    }
+    let bad: Vec<Vec<(&str, &str)>> = vec![
+        vec![("kind", "highlight")],
+        vec![("kind", "highlight"), ("quote", "x"), ("color", "red")],
+        vec![("kind", "note"), ("body", "x")],
+        vec![
+            ("kind", "note"),
+            ("body", "x"),
+            ("anchor_path", "body:1/<b>"),
+            ("anchor_x", "0"),
+            ("anchor_y", "0"),
+        ],
+        vec![
+            ("kind", "note"),
+            ("body", "x"),
+            ("anchor_path", "body:1"),
+            ("anchor_x", "1.5"),
+            ("anchor_y", "0"),
+        ],
+        vec![
+            ("kind", "stamp"),
+            ("text", "Paid in full"),
+            ("anchor_path", "body:1"),
+            ("anchor_x", "0"),
+            ("anchor_y", "0"),
+        ],
+        vec![("kind", "drawing"), ("body", "x")],
+        vec![
+            ("kind", "comment"),
+            ("body", "x"),
+            ("anchor_path", "body:1"),
+            ("anchor_x", "0"),
+            ("anchor_y", "0"),
+        ],
+    ];
+    for form in &bad {
+        assert_eq!(
+            fetch_post(&mut b, &path, form).await.status,
+            400,
+            "{form:?}"
+        );
+    }
+    let view = b.get(&key).await.body;
+    assert!(view.contains(r#"data-kind="stamp""#) && view.contains("Signed off · beta · "));
+    assert!(view.contains(r#"<span class="mention">@alpha</span>"#));
+    assert!(view.contains(r#"data-path="body:1/section:1" data-x="0.25" data-y="0.5""#));
+    let total: i64 = sqlx::query_scalar("SELECT count(*) FROM annotations")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(total, cases.len() as i64);
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn only_the_author_edits_or_moves_a_mark(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let key = form_doc(&mut o).await;
+    let path = format!("{key}/annotations");
+    let mut b = member(port, "beta").await;
+    let mut g = member(port, "gamma").await;
+    let r = fetch_post(
+        &mut b,
+        &path,
+        &[
+            ("kind", "note"),
+            ("body", "Original"),
+            ("anchor_path", "body:1"),
+            ("anchor_x", "0.1"),
+            ("anchor_y", "0.1"),
+        ],
+    )
+    .await;
+    let note = id_in(&r.body);
+    let r = fetch_post(
+        &mut b,
+        &path,
+        &[("kind", "highlight"), ("quote", "Two bedrooms")],
+    )
+    .await;
+    let mark = id_in(&r.body);
+    let update = format!("{path}/{note}/update");
+    let move_to = [
+        ("op", "move"),
+        ("anchor_path", "body:1/section:1"),
+        ("anchor_x", "0.75"),
+        ("anchor_y", "0.2"),
+    ];
+
+    assert_eq!(
+        fetch_post(&mut g, &update, &move_to).await.status,
+        403,
+        "not the author"
+    );
+    assert_eq!(
+        fetch_post(
+            &mut o,
+            &update,
+            &[("op", "edit"), ("body", "Owner's words")]
+        )
+        .await
+        .status,
+        403,
+        "the owner deletes but does not edit"
+    );
+    let csrf = b.csrf().await;
+    assert_eq!(
+        b.post(
+            &update,
+            &[("csrf", &csrf), ("op", "edit"), ("body", "Form")]
+        )
+        .await
+        .status,
+        403,
+        "edits come from the page only"
+    );
+    b.origin = Some("https://evil.example".into());
+    assert_eq!(
+        fetch_post(&mut b, &update, &move_to).await.status,
+        403,
+        "Origin must match"
+    );
+    b.origin = Some(format!("http://127.0.0.1:{port}"));
+
+    let moved = fetch_post(&mut b, &update, &move_to).await;
+    assert_eq!(moved.status, 200, "{}", moved.body);
+    assert!(
+        moved.body.contains(r#""path":"body:1/section:1""#) && moved.body.contains(r#""x":0.75"#)
+    );
+    for bad in [
+        vec![
+            ("op", "move"),
+            ("anchor_path", "body:1"),
+            ("anchor_x", "2"),
+            ("anchor_y", "0"),
+        ],
+        vec![
+            ("op", "move"),
+            ("anchor_path", ""),
+            ("anchor_x", ""),
+            ("anchor_y", ""),
+        ],
+        vec![("op", "edit"), ("body", "")],
+        vec![("op", "fly")],
+    ] {
+        assert_eq!(
+            fetch_post(&mut b, &update, &bad).await.status,
+            400,
+            "{bad:?}"
+        );
+    }
+    assert_eq!(
+        fetch_post(&mut b, &format!("{path}/{mark}/update"), &move_to)
+            .await
+            .status,
+        400,
+        "a highlight is not placed"
+    );
+    let edited = fetch_post(&mut b, &update, &[("op", "edit"), ("body", "Ask @gamma")]).await;
+    assert_eq!(edited.status, 200);
+    assert!(
+        edited.body.contains(r#""body":"Ask @gamma""#)
+            && edited.body.contains(r#""mentions":["gamma"]"#)
+    );
+    assert_eq!(
+        fetch_post(&mut b, &format!("{path}/999999/update"), &move_to)
+            .await
+            .status,
+        404
+    );
+
+    // The author or the owner deletes; others cannot.
+    let delete = format!("{path}/{note}/delete");
+    assert_eq!(fetch_post(&mut g, &delete, &[]).await.status, 403);
+    assert_eq!(fetch_post(&mut o, &delete, &[]).await.status, 204);
+    let audit: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action = 'annotation deleted'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audit, 1);
+    let mentions: i64 = sqlx::query_scalar("SELECT count(*) FROM annotation_mentions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(mentions, 0, "a deleted mark takes its mentions with it");
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn mentions_are_listed_for_the_people_named(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let key = form_doc(&mut o).await;
+    let mut b = member(port, "beta").await;
+    let r = fetch_post(
+        &mut b,
+        &format!("{key}/annotations"),
+        &[
+            ("quote", "Two bedrooms"),
+            ("body", "Ask @gamma and @Delta, cc @beta and mail@alpha"),
+        ],
+    )
+    .await;
+    assert_eq!(r.status, 201);
+    assert!(
+        r.body.contains(r#""mentions":["delta","gamma"]"#),
+        "{}",
+        r.body
+    );
+    let mut g = member(port, "gamma").await;
+    let home = g.get("/home").await.body;
+    assert!(
+        home.contains("Mentioned you")
+            && home.contains("Checklist")
+            && home.contains("on “Two bedrooms”")
+    );
+    assert!(home.contains("#annotation-"));
+    let mut a = member(port, "alpha").await;
+    assert!(
+        !a.get("/home").await.body.contains("Mentioned you"),
+        "an email-like @ is not a mention"
+    );
+    assert!(
+        !b.get("/home").await.body.contains("Mentioned you"),
+        "the author is not listed"
+    );
+    let view = g.get(&key).await.body;
+    assert!(view.contains(r#"class="annotation mentions-me""#));
+
+    let handles = b.get("/api/handles").await;
+    assert_eq!(handles.status, 200);
+    assert_eq!(handles.body, r#"["alpha","beta","gamma","delta"]"#);
+    assert_eq!(
+        Client::new(port).get("/api/handles").await.status,
+        401,
+        "members only"
+    );
+}
