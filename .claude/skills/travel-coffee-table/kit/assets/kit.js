@@ -226,12 +226,10 @@ if('IntersectionObserver' in window){
   var sio=new IntersectionObserver(function(es){ es.forEach(function(en){ if(en.isIntersecting&&window.innerWidth>=700&&root.getAttribute('data-mode')!=='print'){ en.target.open=true; sio.unobserve(en.target); } }); },{rootMargin:'600px 0px'});
   $$('details.social[data-auto-open]').forEach(function(d){ sio.observe(d); });
 }
-/* ---- nav state ---- */
-var navLinks=$$('.topnav a:not(.tn-day)');
-if('IntersectionObserver' in window){
-  var io=new IntersectionObserver(function(es){ es.forEach(function(en){ if(en.isIntersecting){ var id=en.target.id; navLinks.forEach(function(a){ a.classList.toggle('on',a.getAttribute('href')==='#'+id); }); } }); },{rootMargin:'-40% 0px -55% 0px'});
-  $$('.layout > [id]').forEach(function(s){ io.observe(s); });
-}
+/* ---- nav state: worked out from the scroll position, because observer margins are ignored inside the site's frame ---- */
+var navLinks=$$('.topnav a:not(.tn-day)'), navSecs=$$('.layout > [id]'), navCur=null;
+function markNav(line){ var cur=''; navSecs.forEach(function(s){ if(s.getBoundingClientRect().top+window.scrollY<=line){ cur=s.id; } });
+  if(cur===navCur){return;} navCur=cur; navLinks.forEach(function(a){ a.classList.toggle('on',!!cur&&a.getAttribute('href')==='#'+cur); }); }
 var dayLinks=$$('.topnav a.tn-day');
 function markDay(i){ dayLinks.forEach(function(a,j){ var on=j===i; if(a.classList.contains('on')===on){return;} a.classList.toggle('on',on);
   if(on){ var bar=a.closest('.topnav'); if(bar){ var r=a.getBoundingClientRect(), br=bar.getBoundingClientRect(); if(r.left<br.left||r.right>br.right){ bar.scrollLeft+=r.left-br.left-br.width/2+r.width/2; } } } }); }
@@ -248,7 +246,9 @@ if(rail){
     marks.forEach(function(m,j){ var tg=targets[j]; if(tg&&docY(tg)<=line){ cur=m; if(m.classList.contains('day')){ day=+m.getAttribute('data-day'); } } });
     marks.forEach(function(m){ m.classList.toggle('on',m===cur); });
     tip.textContent=cur?cur.getAttribute('data-tip'):t('rail_start','Start of the guide');
-    markDay(day);
+    markDay(day); markNav(window.scrollY+window.innerHeight*0.45);
+    /* on wide screens the sticky map follows the day you are reading */
+    if(day>=0&&day!==dayIdx&&window.innerWidth>=1100&&!flying&&root.getAttribute('data-mode')!=='print'){ selectDay(day); }
   };
   window.railLayout=function(){ var h=span(); marks.forEach(function(m,j){ var tg=targets[j]; if(!tg){m.hidden=true;return;} m.style.top=(Math.min(1,Math.max(0,docY(tg)/h))*100)+'%'; }); railPaint(); };
   var dragging=false;
@@ -263,11 +263,6 @@ if(rail){
   window.addEventListener('load',window.railLayout);
   $$('img').forEach(function(i){ i.addEventListener('load',function(){ clearTimeout(rail._t); rail._t=setTimeout(window.railLayout,200); }); });
   window.railLayout();
-}
-/* on wide screens the sticky map follows the day you are reading */
-if('IntersectionObserver' in window){
-  var dio=new IntersectionObserver(function(es){ es.forEach(function(en){ if(en.isIntersecting&&window.innerWidth>=1100&&!flying&&root.getAttribute('data-mode')!=='print'){ var i=+en.target.getAttribute('data-day'); if(i!==dayIdx){ selectDay(i); } } }); },{rootMargin:'-35% 0px -60% 0px'});
-  $$('.day').forEach(function(d){dio.observe(d);});
 }
 
 /* ---- Plans A, B and C: the reader chooses by hand; the forecast only highlights ---- */
