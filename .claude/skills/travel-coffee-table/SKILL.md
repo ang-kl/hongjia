@@ -108,5 +108,8 @@ This folder is in a public repository.
 - Data files and rendered pages for real trips live outside the repository and reach the family
   only as uploads to the private site.
 - The example in `kit/example/` is fictional; keep any new example fictional too.
+- The route map's tiles come from CARTO with the family's key (`map.tiles` in the trip file, never
+  in this folder). OpenStreetMap's own tile servers refuse pages in the site's locked frame, which
+  sends no Referer.
 - Health notes stay general ("ask their clinician about heat and medicines"); the page is a
   planning document, not medical advice.

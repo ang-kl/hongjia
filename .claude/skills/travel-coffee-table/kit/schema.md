@@ -272,6 +272,13 @@ are no groups.
 
 - `map`: `kicker`, `safety_label`, `coordinates_source` (a source key shown on every pin note),
   `notes`: `{route, pin, dir}` (*rich*, under each map tab).
+- `map.tiles`: where the route map's tiles come from. `{"provider": "carto", "style": "voyager", "key": "…"}`
+  (style `voyager` or `light_all`) for every page that goes on the family site; without it the map
+  uses OpenStreetMap's tile servers, which refuse pages in the site's locked frame (it sends no
+  Referer), and `--check` reports "map blocked in the family site". The key is the family's free,
+  revocable CARTO key: it belongs in the private trip file only, it is visible to anyone who opens
+  the page, and it cannot be locked to the site. The credits ("© OpenStreetMap contributors
+  © CARTO") are added by the kit.
 - `days_section`, `credits`, `sources_page`: `kicker`, `title`, `intro`; `intro_style: "fine"`.
   `credits.library_note` is added to library-credited photos; `sources_page.carried_summary` names
   the carried-over list, and `sources_page.blocks` follow the lists.

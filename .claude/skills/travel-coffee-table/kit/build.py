@@ -40,6 +40,15 @@ FORECAST_LEAD_DAYS = 15  # Open-Meteo forecasts 16 days, today included
 METRICS = ('code', 'tmax', 'tmin', 'rain_pct', 'rain_mm', 'wind_kmh', 'gust_kmh', 'uv')
 OPS = ('>=', '>', '<=', '<', 'in')
 PLANS = ('a', 'b', 'c')
+# Map tiles. OpenStreetMap's own tile servers refuse requests without a Referer, and a page in the
+# family site's locked frame (an opaque origin) never sends one, so pages for the site use CARTO's
+# raster basemaps with the family's key, kept in the private trip file. The key is visible in the
+# page and cannot be locked to the site (no Referer), so it must be a free, revocable one.
+TILE_PROVIDERS = ('carto', 'osm')
+CARTO_STYLES = ('voyager', 'light_all')
+TILE_KEY = re.compile(r'^[A-Za-z0-9._-]{4,200}$')
+
+
 SECTION_ORDER = ['overview', 'audience', 'plans', 'map', 'days', 'concierge', 'holidays', 'stays', 'transport',
                  'backups', 'checklist', 'upgrades', 'credits', 'sources']
 PROSE = ('overview', 'holidays', 'stays', 'transport', 'backups', 'checklist')
@@ -197,11 +206,29 @@ class Page:
         self.plans = data.get('plans') or None
         self.weather = data.get('weather') or None
         self.audience = data.get('audience') or None
+        self.tiles = (data.get('map') or {}).get('tiles') or {'provider': 'osm'}
         self.validate()
 
     # ------------------------------------------------------------------ validation
+    def validate_tiles(self):
+        t = self.tiles
+        if not isinstance(t, dict) or t.get('provider') not in TILE_PROVIDERS:
+            raise KitError(f'map.tiles.provider must be one of {", ".join(TILE_PROVIDERS)}')
+        if t['provider'] == 'carto':
+            if not TILE_KEY.match(str(t.get('key') or '')):
+                raise KitError('map.tiles.key: CARTO needs its key (letters, digits, dot, dash or underscore)')
+            if (t.get('style') or 'voyager') not in CARTO_STYLES:
+                raise KitError(f'map.tiles.style must be one of {", ".join(CARTO_STYLES)}')
+
+    def tile_url(self):
+        t = self.tiles
+        if t['provider'] == 'carto':
+            return f'https://basemaps.cartocdn.com/rastertiles/{t.get("style") or "voyager"}/{{z}}/{{x}}/{{y}}{{r}}.png?key={t["key"]}'
+        return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+
     def validate(self):
         d = self.d
+        self.validate_tiles()
         meta = d.get('meta') or {}
         for k in ('title', 'lang'):
             if not meta.get(k):
@@ -1082,7 +1109,8 @@ class Page:
         ui['marks'] = MARK_NAMES
         out = dict(id=meta.get('id') or re.sub(r'[^a-z0-9]+', '-', meta['title'].lower()).strip('-')[:40], trip=meta.get('trip') or meta['title'],
                    status=meta.get('status') or '', tz=meta.get('tz') or '', days=days, ui=ui,
-                   safety=[dict(kind=s['kind'], name=s['name'], lat=s['lat'], lng=s['lng']) for s in self.d.get('safety') or []])
+                   safety=[dict(kind=s['kind'], name=s['name'], lat=s['lat'], lng=s['lng']) for s in self.d.get('safety') or []],
+                   tiles=dict(provider=self.tiles['provider'], url=self.tile_url()))
         if self.weather:
             out['weather'] = dict(places=[dict(key=p['key'], lat=p['lat'], lon=p['lon'], start=p['start'], end=p['end']) for p in self.weather.get('places') or []])
         if self.plans:
@@ -1262,7 +1290,16 @@ def check_html(html, name='page'):
                   for c in n.iter())
         if not has:
             problems.append(('fact without a source', f'line {n.line}: {txt[:90]!r}'))
-    # 4. http links (namespaces such as xmlns are not links)
+    # 4. map tiles the family site's locked frame cannot load
+    for n in nodes:
+        if n.tag == 'script' and n.attrs.get('id') == 'trip-data':
+            try:
+                tiles = (json.loads(n.text()) or {}).get('tiles') or {}
+            except ValueError:
+                tiles = {}
+            if any(m.attrs.get('id') == 'leaflet' for m in nodes) and tiles.get('provider') != 'carto':
+                problems.append(('map blocked in the family site', "map tiles come from OpenStreetMap's servers, which refuse pages in the site's locked frame; set map.tiles to carto with the family's key"))
+    # 5. http links (namespaces such as xmlns are not links)
     for n in nodes:
         for k, v in n.attrs.items():
             if k in URL_ATTRS and v and not v.strip().lower().startswith('data:') and re.search(r'(?i)(^|[\s,])http://', v.strip()):
