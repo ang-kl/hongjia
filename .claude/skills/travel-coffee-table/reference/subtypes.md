@@ -6,7 +6,7 @@ states a fact needs a source on the page.
 
 ## Road trip and countryside (complete)
 
-The first trip rebuilt on the kit was a road trip; this list is everything it needed.
+This is the complete list, proven on a full trip page; the lists below are shorter starting points.
 
 - **Shape**
   - [ ] Bases chosen so no day starts with a long drive after a flight; one or two bases rather than a new bed every night.

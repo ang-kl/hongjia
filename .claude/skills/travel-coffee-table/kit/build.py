@@ -113,7 +113,6 @@ LABELS = {
     'upg_tag': 'Optional upgrade', 'upg_price': 'Indicative price', 'upg_book': 'Book ahead', 'upg_source': 'Source',
     'upg_note': 'Optional. Each upgrade sits beside the plan and never replaces it. Prices are indicative, not quotes.',
     'carried_summary': 'Links carried over from the earlier version',
-    'wx_rule_ops': {'>=': 'or more', '>': 'above', '<=': 'or less', '<': 'below'},
 }
 
 
@@ -220,7 +219,7 @@ class Page:
             for k in ('name', 'lat', 'lng', 'q'):
                 if p.get(k) in (None, ''):
                     raise KitError(f'places.{key}.{k} is required')
-            if not (-90 <= p['lat'] <= 90 and -180 <= p['lng'] <= 180):
+            if not all(isinstance(p[k], (int, float)) and not isinstance(p[k], bool) for k in ('lat', 'lng')) or not (-90 <= p['lat'] <= 90 and -180 <= p['lng'] <= 180):
                 raise KitError(f'places.{key}: coordinates out of range')
         for key, p in self.photos.items():
             self.check_photo(p, f'photos.{key}')
@@ -613,10 +612,10 @@ class Page:
             wx = (f'<div class="wx" data-wx-place="{E(day["weather"])}" data-wx-date="{E(day["iso"])}" aria-live="polite">'
                   f'<p class="wx-line"><span class="wx-ico" aria-hidden="true">🗓️</span> <span class="wx-msg">{E(self.fmt("wx_from", date=human_date(frm)))}</span></p>'
                   f'{self.rules_line()}</div>')
-        if not self.plans and not wx:
+        if not self.plans and not wx and not alts:
             return ''
         out = f'<div class="plans-bar" role="group" aria-label="{E(self.fmt("plans_for_day", n=n))}">'
-        if self.plans:
+        if self.plans or alts:
             if alts:
                 btns = []
                 for p in ['a'] + alts:
@@ -646,7 +645,7 @@ class Page:
         info = ''.join(f'<section><h5>{E(x["title"])}</h5><p>{self.rich(x.get("text"), w + ".info")}</p></section>' for x in day.get('info') or [])
         links = ' · '.join(f'<a href="{E(self.url_or_source(x, w + ".links"))}" target="_blank" rel="noopener">{E(x["text"])} ↗</a>' for x in day.get('links') or [])
         cards = ''.join(self.stop_card(day, n, it, 'a') for it in day['stops'])
-        alts = [p for p in ('b', 'c') if day.get('plan_' + p)] if self.plans else []
+        alts = [p for p in ('b', 'c') if day.get('plan_' + p)]
         meta = ''.join(f'<span class="pill{" pill-line" if k == "badge" else ""}">{E(day[k])}</span>' for k in ('base', 'badge') if day.get(k))
         kicker = E(day['when']) + (f' · {E(day["route_label"])}' if day.get('route_label') else '')
         chosen = ' data-chosen="a"' if alts else ''
@@ -859,7 +858,7 @@ class Page:
         for s in order:
             if s not in SECTION_ORDER:
                 raise KitError(f'page.order: unknown section {s}')
-            if s in ('map', 'days', 'credits', 'sources') or self.d.get(s):
+            if s in ('map', 'days', 'credits', 'sources') or self.d.get(s) or (s == 'concierge' and self.areas):
                 if s == 'upgrades' and not (self.d.get('upgrades') or {}).get('groups'):
                     continue
                 out.append(s)
@@ -920,7 +919,7 @@ class Page:
         return f'<section id="days" class="sec">{self.head(s, "days_section")}' + ''.join(self.day_html(d, i) for i, d in enumerate(self.days)) + '</section>'
 
     def concierge(self):
-        c = self.d['concierge']
+        c = self.d.get('concierge') or {}
         order = self.area_order()
         notes = ''.join(f'<li>{self.rich(x, "concierge.notes")}</li>' for x in c.get('notes') or [])
         chips = ''.join(f'<a class="chip" href="#pc-{E(a)}">{E(self.areas[a]["name"])}</a>' for a in order)
