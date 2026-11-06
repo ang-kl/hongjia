@@ -14,6 +14,7 @@ script builds its DOM with textContent and never uses innerHTML.
 import argparse
 import datetime
 import json
+import math
 import os
 import re
 import sys
@@ -124,6 +125,114 @@ LABELS = {
     'carried_summary': 'Links carried over from the earlier version',
 }
 
+# Legend categories, in the owner's order: (key, icon, label). A stop or nearby place may carry several.
+CATS = [('stays', '🏨', 'Stays'), ('transport', '🚗', 'Transport'), ('weather', '🌦️', 'Weather'), ('food', '🍽️', 'Food'),
+        ('drinks', '☕', 'Drinks'), ('snacks', '🍫', 'Snacks'), ('shopping', '🛍️', 'Shopping'), ('fun', '🎡', 'Fun'),
+        ('sights', '🏛️', 'Sights'), ('worship', '⛪', 'Worship')]
+CAT_KEYS = [c[0] for c in CATS]
+CAT_ALIASES = {'dining': 'food'}  # the first legend had one Dining category
+# Official social links must point at the platform itself.
+SOCIAL_HOSTS = {'ig': 'instagram.com', 'fb': 'facebook.com', 'tt': 'tiktok.com', 'yt': 'youtube.com'}
+TZ_NAME = re.compile(r'^[A-Za-z]+(?:/[A-Za-z0-9_+-]+){1,2}$|^UTC$')
+EMOJI.update({'ig': '📷', 'addr': '📍', 'hours': '⏰'})
+LINK_LABELS.update({'addr': 'Address', 'hours': 'Hours'})
+LABELS.update({
+    'op_play': 'Play the trip', 'op_read': 'Start reading', 'op_tldr': 'The trip at a glance', 'op_stays': "Where you'll stay",
+    'op_highlights': "Can't-miss", 'op_alerts': 'Good to know', 'op_globe': 'Globe: the way there, and the bases',
+    'op_globe_hint': 'Drag to turn the globe.', 'op_time': 'Local time', 'website': 'Website',
+    'cd_to_go': '{n} days to go', 'cd_one': '1 day to go', 'cd_today': 'Today is the day', 'cd_during': 'Day {d} of {n}',
+    'local_time': '{time} in {place}',
+    'legend': 'Legend: tap to light up places on the page and the map', 'lg_lit': '{n} lit: {label}', 'lg_none': 'Nothing marked {label} yet',
+    'lg_next': 'Next ↓', 'lg_clear': 'Clear', 'map_legend': 'Light up on the map',
+    'alts': "If it's closed or crowded", 'alts_aria': "If it's closed or crowded: near {name}", 'alt_map': 'Show on map',
+    'nearby_pins': 'Nearby options', 'worship_title': 'Places of worship near your stays', 'worship_kicker': 'Worship',
+    'ig_drawer': 'Instagram: @{h}', 'ig_profile': 'Instagram profile of @{h}', 'stop_details': 'Details below',
+    'tour': 'Play the trip', 'tour_pause': 'Pause', 'tour_play': 'Play', 'tour_next': 'Next', 'tour_prev': 'Back',
+    'tour_close': 'Close the tour', 'tour_from': 'From {home} to {dest}', 'tour_way': 'The way there',
+    'globe_credit': 'Globe: land outlines from Natural Earth (public domain), 1:110m, via world-atlas 2.0.2 (ISC licence).',
+})
+
+
+def norm_cats(v, where):
+    """A stop's categories: one key or a list; "dining" is read as "food"."""
+    if v in (None, '', []):
+        return []
+    out = []
+    for c in (v if isinstance(v, list) else [v]):
+        c = CAT_ALIASES.get(c, c)
+        if c not in CAT_KEYS:
+            raise KitError(f'{where}: cat must be one of {", ".join(CAT_KEYS)} (got {c!r})')
+        if c not in out:
+            out.append(c)
+    return out
+
+
+_GLOBE = None
+
+
+def globe_data():
+    """Natural Earth 1:110m land (world-atlas TopoJSON, shipped in assets): simplified coastlines and a
+    dotted land fill, worked out once at build time so the page needs no fetch. Tenths of a degree."""
+    global _GLOBE
+    if _GLOBE is not None:
+        return _GLOBE
+    with open(os.path.join(ASSETS, 'land-110m.json'), encoding='utf-8') as f:
+        topo = json.load(f)
+    (sx, sy), (tx, ty) = topo['transform']['scale'], topo['transform']['translate']
+    arcs = []
+    for a in topo['arcs']:
+        x = y = 0
+        pts = []
+        for dx, dy in a:
+            x += dx
+            y += dy
+            pts.append((x * sx + tx, y * sy + ty))
+        arcs.append(pts)
+    rings = []
+    for g in topo['objects']['land']['geometries']:
+        for poly in (g['arcs'] if g['type'] == 'MultiPolygon' else [g['arcs']]):
+            for ring in poly:
+                pts = []
+                for i in ring:
+                    a = arcs[i] if i >= 0 else arcs[~i][::-1]
+                    pts.extend(a if not pts else a[1:])
+                rings.append(pts)
+    boxes = [(min(p[0] for p in r), max(p[0] for p in r), min(p[1] for p in r), max(p[1] for p in r)) for r in rings]
+
+    def land(lon, lat):
+        inside = False
+        for r, (x0, x1, y0, y1) in zip(rings, boxes):
+            if y0 <= lat <= y1 and x0 <= lon <= x1:
+                for (xa, ya), (xb, yb) in zip(r, r[1:]):
+                    if (ya > lat) != (yb > lat) and lon < xa + (lat - ya) * (xb - xa) / (yb - ya):
+                        inside = not inside
+        return inside
+
+    dots, step, lat = [], 2.4, -84.0
+    while lat <= 84:
+        dlon = step / max(0.2, math.cos(math.radians(lat)))
+        lon = -180 + dlon / 2
+        while lon < 180:
+            if land(lon, lat):
+                dots += [round(lon * 10), round(lat * 10)]
+            lon += dlon
+        lat += step
+    coast = []
+    for a in arcs:
+        keep = [a[0]] + [p for p in a[1:-1]] + [a[-1]]
+        kept = [keep[0]]
+        for p in keep[1:-1]:
+            if abs(p[0] - kept[-1][0]) + abs(p[1] - kept[-1][1]) >= 0.45:
+                kept.append(p)
+        kept.append(keep[-1])
+        q = [(round(x * 10), round(y * 10)) for x, y in kept]
+        flat = [q[0][0], q[0][1]]
+        for (x0, y0), (x1, y1) in zip(q, q[1:]):
+            flat += [x1 - x0, y1 - y0]
+        coast.append(flat)
+    _GLOBE = {'c': coast, 'd': dots}
+    return _GLOBE
+
 
 class KitError(Exception):
     pass
@@ -207,6 +316,11 @@ class Page:
         self.weather = data.get('weather') or None
         self.audience = data.get('audience') or None
         self.tiles = (data.get('map') or {}).get('tiles') or {'provider': 'osm'}
+        self.opener_d = data.get('opener') or None
+        self.stop_cats = {}
+        self.cat_labels = {k: lab for k, _, lab in CATS}
+        self.cat_labels.update({k: v for k, v in ((data.get('labels') or {}).get('cats') or {}).items() if k in self.cat_labels})
+        self.cat_icons = {k: icon for k, icon, _ in CATS}
         self.validate()
 
     # ------------------------------------------------------------------ validation
@@ -273,6 +387,12 @@ class Page:
                     raise KitError(f'stops.{key}.clips[{i}]: at least one video source is required')
                 for s in c['sources']:
                     check_url(s.get('src'), f'stops.{key}.clips[{i}]')
+            self.stop_cats[key] = norm_cats(st.get('cat'), f'stops.{key}.cat')
+            for i, x in enumerate(st.get('nearby') or []):
+                self.check_alt(x, f'stops.{key}.nearby[{i}]')
+        for gi, g in enumerate(d.get('worship') or []):
+            for i, x in enumerate(g.get('items') or []):
+                self.check_alt(x, f'worship[{gi}].items[{i}]', default='worship')
         if not self.days:
             raise KitError('days: at least one day is required')
         for i, day in enumerate(self.days):
@@ -298,9 +418,18 @@ class Page:
                         raise KitError(f'{w}.{plan}: unknown stop {it.get("stop")!r}')
             if day.get('iso'):
                 parse_date(day['iso'], f'{w}.iso')
+            for j, x in enumerate(day.get('timeline') or []):
+                if x.get('stop') and x['stop'] not in self.stops:
+                    raise KitError(f'{w}.timeline[{j}]: unknown stop {x["stop"]!r}')
+                for pid in x.get('photos') or []:
+                    if pid not in self.photos:
+                        raise KitError(f'{w}.timeline[{j}]: unknown photo {pid!r}')
+            for j, x in enumerate(day.get('nearby') or []):
+                norm_cats(x.get('cat'), f'{w}.nearby[{j}].cat')
         self.validate_weather()
         self.validate_plans()
         self.validate_audience()
+        self.validate_opener()
         for gi, g in enumerate((d.get('upgrades') or {}).get('groups') or []):
             for ii, u in enumerate(g.get('items') or []):
                 for k in ('name', 'line', 'price', 'book_ahead', 'source'):
@@ -309,6 +438,56 @@ class Page:
                 for s in as_list(u['source']):
                     if s not in self.sources:
                         raise KitError(f'upgrades.groups[{gi}].items[{ii}]: unknown source {s}')
+                norm_cats(u.get('cat'), f'upgrades.groups[{gi}].items[{ii}].cat')
+
+    def check_alt(self, x, where, default=None):
+        """A nearby alternative (or a place of worship): name, category and pin are required; hours are a
+        fact, so they need a source."""
+        for k in ('name', 'lat', 'lng'):
+            if x.get(k) in (None, ''):
+                raise KitError(f'{where}.{k} is required')
+        if not all(isinstance(x[k], (int, float)) and not isinstance(x[k], bool) for k in ('lat', 'lng')) or not (-90 <= x['lat'] <= 90 and -180 <= x['lng'] <= 180):
+            raise KitError(f'{where}: coordinates out of range')
+        if not norm_cats(x.get('cat') or default, f'{where}.cat'):
+            raise KitError(f'{where}.cat is required')
+        if x.get('website'):
+            check_url(x['website'], f'{where}.website')
+        if x.get('hours') and not x.get('source'):
+            raise KitError(f'{where}: hours are a fact; give their source')
+        if x.get('source') and x['source'] not in self.sources:
+            check_url(x['source'], f'{where}.source')
+
+    def validate_opener(self):
+        o = self.opener_d
+        if not o:
+            return
+        if not o.get('hero'):
+            raise KitError('opener.hero: list 1 to 8 photo ids for the opening slideshow')
+        if len(o['hero']) > 8 or any(p not in self.photos for p in o['hero']):
+            raise KitError('opener.hero: at most 8 known photo ids')
+        for k in ('stays', 'highlights'):
+            for sid in o.get(k) or []:
+                if sid not in self.stops:
+                    raise KitError(f'opener.{k}: unknown stop {sid!r}')
+                if not self.stop_anchor(sid):
+                    raise KitError(f'opener.{k}: stop {sid!r} is not on any day')
+        for k in ('home', 'destination'):
+            p = o.get(k)
+            if p is None:
+                continue
+            if not p.get('name') or not all(isinstance(p.get(c), (int, float)) and not isinstance(p.get(c), bool) for c in ('lat', 'lng')) \
+                    or not (-90 <= p['lat'] <= 90 and -180 <= p['lng'] <= 180):
+                raise KitError(f'opener.{k}: name, lat and lng are required')
+        for i, a in enumerate(o.get('alerts') or []):
+            if not a.get('text') or not str(a.get('href') or '').startswith('#') or not ID.match(str(a['href'])[1:]):
+                raise KitError(f'opener.alerts[{i}]: text and an in-page #anchor are required')
+        if len(as_list(o.get('tldr'))) > 5:
+            raise KitError('opener.tldr: three lines is the house style (five at most)')
+        if o.get('tz') and not TZ_NAME.match(o['tz']):
+            raise KitError('opener.tz: an IANA time zone such as Europe/London')
+        for k in ('start', 'end'):
+            if o.get(k):
+                parse_date(o[k], f'opener.{k}')
 
     def check_photo(self, p, where):
         for k in ('src', 'alt', 'cap', 'credit'):
@@ -440,6 +619,37 @@ class Page:
     def fmt(self, key, **kw):
         return self.L[key].format(**kw)
 
+    # ------------------------------------------------------------------ legend categories
+    def cats_attr(self, cats):
+        return f' data-cats="{" ".join(cats)}"' if cats else ''
+
+    def cat_chips(self, cats):
+        if not cats:
+            return ''
+        return '<span class="cats">' + ''.join(
+            f'<span class="cat-chip" data-cat="{c}"><span aria-hidden="true">{self.cat_icons[c]}</span> {E(self.cat_labels[c])}</span>' for c in cats) + '</span>'
+
+    def stop_anchor(self, sid):
+        """Where a stop's card is on the page: its first Plan A day, else its first Plan B or C."""
+        for n, day in enumerate(self.days, 1):
+            if any(it.get('stop') == sid for it in day.get('stops') or []):
+                return f'd{n}-{sid}'
+        for n, day in enumerate(self.days, 1):
+            for p in ('b', 'c'):
+                if any(it.get('stop') == sid for it in day.get('plan_' + p) or []):
+                    return f'd{n}{p}-{sid}'
+        return ''
+
+    def legend(self, compact=False):
+        btns = ''.join(f'<button type="button" class="lg" data-legend="{k}" aria-pressed="false"'
+                       + (f' aria-label="{E(self.cat_labels[k])}" title="{E(self.cat_labels[k])}"' if compact else '')
+                       + f'><span aria-hidden="true">{icon}</span>' + ('' if compact else f' {E(self.cat_labels[k])}<span class="lg-n"></span>') + '</button>'
+                       for k, icon, _ in CATS)
+        label = self.L['map_legend'] if compact else self.L['legend']
+        return (f'<div class="legend{" legend-compact" if compact else ""}" role="group" aria-label="{E(label)}">{btns}</div>'
+                + ('' if compact else f'<p class="lg-status" aria-live="polite"><span class="lg-msg"></span> <button type="button" class="lg-next" hidden>{E(self.L["lg_next"])}</button>'
+                   f' <button type="button" class="lg-clear" hidden>{E(self.L["lg_clear"])}</button></p>'))
+
     # ------------------------------------------------------------------ photos
     def photo(self, ref, where):
         if isinstance(ref, dict):
@@ -482,23 +692,52 @@ class Page:
         return (f'<figure class="{cls}">{self.zoom_img(p)}<figcaption><span class="credit">{self.credit(p, original=False)}</span></figcaption></figure>')
 
     # ------------------------------------------------------------------ links, clips, posts
-    def link_row(self, items, place, tag=None, tq=None, where='links'):
+    def official_link(self, it, where):
+        """One official link: (kind, url, label, note, extra attributes). Social links must be on the
+        platform itself, an address links to Google Maps, and hours (a fact) link to their source."""
+        kind = it.get('kind', 'web')
+        if kind not in LINK_LABELS:
+            raise KitError(f'{where}: kind must be one of {", ".join(LINK_LABELS)}')
+        label = it.get('label') or LINK_LABELS[kind]
+        if kind == 'addr':
+            if not it.get('label'):
+                raise KitError(f'{where}: an address link needs the address as its label')
+            url = it.get('url') or 'https://www.google.com/maps/search/?api=1&query=' + urllib.parse.quote(it['label'])
+            u = urllib.parse.urlsplit(url)
+            if u.scheme != 'https' or (u.hostname or '') not in ('www.google.com', 'google.com') or not u.path.startswith('/maps'):
+                raise KitError(f'{where}: an address must link to Google Maps (https://www.google.com/maps/...)')
+        elif kind == 'hours':
+            if not it.get('label') or not (it.get('source') or it.get('url')):
+                raise KitError(f'{where}: hours need their text as the label and a source (source key or url)')
+            url = self.url_or_source(it, where)
+        else:
+            url = check_url(it.get('url'), where, ('https', 'tel', 'mailto'))
+        if kind in SOCIAL_HOSTS:
+            host = (urllib.parse.urlsplit(url).hostname or '').lower()
+            if not url.startswith('https://') or not (host == SOCIAL_HOSTS[kind] or host.endswith('.' + SOCIAL_HOSTS[kind])):
+                raise KitError(f'{where}: a {LINK_LABELS[kind]} link must be https on {SOCIAL_HOSTS[kind]} ({url[:80]})')
+        return kind, url, label
+
+    def link_row(self, items, place, tag=None, tq=None, where='links', extras=True):
         out = []
+        has_addr = False
         for i, it in enumerate(items or []):
-            kind = it.get('kind', 'web')
-            if kind not in LINK_LABELS:
-                raise KitError(f'{where}[{i}]: kind must be one of {", ".join(LINK_LABELS)}')
-            url = check_url(it.get('url'), f'{where}[{i}]', ('https', 'tel', 'mailto'))
-            cls = ' web' if kind == 'web' else ''
+            kind, url, label = self.official_link(it, f'{where}[{i}]')
+            has_addr = has_addr or kind == 'addr'
+            cls = {'web': ' web', 'addr': ' addr', 'hours': ' hours'}.get(kind, '')
             small = f' <small>{E(it["note"])}</small>' if it.get('note') else ''
-            label = it.get('label') or LINK_LABELS[kind]
             ext = '' if kind in ('tel', 'mail') else ' target="_blank" rel="noopener"'
-            out.append(f'<li><a class="lk{cls}" href="{E(url)}"{ext}><span class="e" aria-hidden="true">{EMOJI[kind]}</span><span class="l">{E(label)}</span>{small}</a></li>')
+            fact = ' data-fact' if kind == 'hours' else ''
+            src = ' data-source' if kind == 'hours' else ''
+            out.append(f'<li{fact}><a class="lk{cls}" data-kind="{kind}" href="{E(url)}"{ext}{src}><span class="e" aria-hidden="true">{EMOJI[kind]}</span>'
+                       f'<span class="l">{E(label)}</span>{small}</a></li>')
         if place:
             gm = 'https://www.google.com/maps/search/?api=1&query=' + urllib.parse.quote(place['q'])
             earth = f'https://earth.google.com/web/@{place["lat"]:.5f},{place["lng"]:.5f},40a,1100d,35y,0h,55t,0r'
-            out.append(f'<li><a class="lk" href="{E(gm)}" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["map"]}</span><span class="l">{E(self.L["google_maps"])}</span></a></li>')
-            out.append(f'<li><a class="lk" href="{E(earth)}" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["earth"]}</span><span class="l">{E(self.L["google_earth"])}</span> <small>{E(self.L["earth_3d"])}</small></a></li>')
+            if not has_addr:
+                out.append(f'<li><a class="lk" data-kind="map" href="{E(gm)}" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["map"]}</span><span class="l">{E(self.L["google_maps"])}</span></a></li>')
+            if extras:
+                out.append(f'<li><a class="lk" href="{E(earth)}" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["earth"]}</span><span class="l">{E(self.L["google_earth"])}</span> <small>{E(self.L["earth_3d"])}</small></a></li>')
         if tag:
             if not re.match(r'^\w{1,60}$', tag):
                 raise KitError(f'{where}: Instagram tag must be letters and digits only ({tag!r})')
@@ -604,23 +843,82 @@ class Page:
         pin = E(pin).replace(' ()', '')
         if coord_src:
             pin += ' ' + self.src_tag(coord_src, where=w)
-        out = (f'<article class="stop" id="{E(did)}">'
+        cats = self.stop_cats.get(sid) or []
+        out = (f'<article class="stop" id="{E(did)}"{self.cats_attr(cats)}>'
                f'<header class="stop-h"><span class="pin-letter" aria-hidden="true">{letter}</span>'
-               f'<div><h4>{E(st["name"])}</h4><p class="role">{E(role)}</p></div>'
+               f'<div><h4>{E(st["name"])}</h4><p class="role">{E(role)}</p>{self.cat_chips(cats)}</div>'
                f'<button type="button" class="btn-ghost show-map" data-day="{n - 1}" data-idx="{idx if plan == "a" else -1}" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" data-name="{E(st["name"])}" data-note="{E(note)}">{E(self.L["show_on_map"])}</button></header>'
                f'{self.suits(st, sid)}'
                f'{self.bento(st.get("photos"), w + ".photos")}'
                f'{self.clips(st.get("clips"))}'
                f'{self.posts(st.get("embeds"))}'
                f'{self.link_row(st.get("links"), pl, st.get("instagram_tag"), st.get("tiktok_search"), w + ".links")}'
-               f'<p class="links-note">{E(self.L["links_note"])}{(" " + E(self.L["details"]) + ": " + details) if details else ""}</p>')
+               f'<p class="links-note">{E(self.L["links_note"])}{(" " + E(self.L["details"]) + ": " + details) if details else ""}</p>'
+               f'{self.alts(st.get("nearby"), st["name"], n, w + ".nearby")}')
         if prompts:
             out += f'<div class="prompts"><h5>{E(ptitle)}</h5><ol>' + ''.join(f'<li>{E(x)}</li>' for x in prompts) + '</ol></div>'
         out += (f'<details class="drawer" data-pin="{E(pl["q"])}" data-name="{E(st["name"])}"><summary>{E(self.L["map_drawer"])}</summary>'
                 f'<div class="drawer-map"></div><p class="fine">{pin}.</p></details>')
+        handle = self.ig_handle(st)
+        if handle:
+            out += (f'<details class="drawer ig-drawer"><summary>📷 {E(self.fmt("ig_drawer", h=handle))}</summary>'
+                    f'<div class="social-grid"><iframe data-src="https://www.instagram.com/{E(handle)}/embed/" title="{E(self.fmt("ig_profile", h=handle))}" height="560" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>'
+                    f'<p class="fine">{E(self.L["embed_note"])}</p></details>')
         if area:
             out += f'<details class="drawer" data-cc="{E(st["area"])}"><summary>{E(self.fmt("concierge_drawer", name=area["name"]))}</summary><div class="cc-slot"></div></details>'
         return out + '</article>'
+
+    def ig_handle(self, st):
+        """The venue's own Instagram handle, from its Instagram link, unless its posts are already embedded."""
+        embedded = {e['handle'].lower() for e in st.get('embeds') or [] if e.get('kind') == 'instagram'}
+        for it in st.get('links') or []:
+            if it.get('kind') == 'ig':
+                m = re.match(r'^https://(?:www\.)?instagram\.com/([A-Za-z0-9._]{1,30})/?$', it.get('url') or '')
+                if m and m.group(1).lower() not in ('explore', 'p', 'reel', 'reels', 'stories') and m.group(1).lower() not in embedded:
+                    return m.group(1)
+        return ''
+
+    def alt_card(self, x, n, where, default=None):
+        cats = norm_cats(x.get('cat') or default, where + '.cat')
+        icon = self.cat_icons[cats[0]]
+        hours = ''
+        if x.get('hours'):
+            src = self.src_tag(x['source'], where=where) if x['source'] in self.sources else \
+                f'<a class="src" href="{E(x["source"])}" target="_blank" rel="noopener" title="Source">{E(host_of(x["source"]).removeprefix("www."))}</a>'
+            hours = f'<p class="alt-hours" data-fact><span aria-hidden="true">⏰</span> {self.rich(x["hours"], where + ".hours")} {src}</p>'
+        elif x.get('source'):
+            hours = '<p class="alt-src">' + (self.src_tag(x['source'], where=where) if x['source'] in self.sources else
+                                            f'<a class="src" href="{E(x["source"])}" target="_blank" rel="noopener">{E(host_of(x["source"]).removeprefix("www."))}</a>') + '</p>'
+        gm = 'https://www.google.com/maps/search/?api=1&query=' + urllib.parse.quote(f'{x["name"]} {x["lat"]:.5f},{x["lng"]:.5f}')
+        links = []
+        if x.get('website'):
+            links.append(f'<a href="{E(x["website"])}" target="_blank" rel="noopener" data-kind="web">🌐 {E(self.L["website"])}</a>')
+        links.append(f'<a href="{E(gm)}" target="_blank" rel="noopener" data-kind="map">📍 {E(self.L["google_maps"])}</a>')
+        links.append(f'<button type="button" class="linkish show-map" data-day="{max(0, n - 1)}" data-idx="-1" data-lat="{x["lat"]}" data-lng="{x["lng"]}" '
+                     f'data-name="{E(x["name"])}" data-note="{E(self.cat_labels[cats[0]])}">{E(self.L["alt_map"])}</button>')
+        dist = f' <small>{E(x["distance"])}</small>' if x.get('distance') else ''
+        faith = f'<p class="alt-faith">{E(x["faith"])}</p>' if x.get('faith') else ''
+        return (f'<article class="alt"{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{icon}</span> <b>{E(x["name"])}</b>{dist}</p>'
+                f'{faith}' + (f'<p>{self.rich(x["why"], where + ".why")}</p>' if x.get('why') else '') + hours
+                + f'<p class="alt-links">{" · ".join(links)}</p></article>')
+
+    def alts(self, items, name, n, where):
+        if not items:
+            return ''
+        cards = ''.join(self.alt_card(x, n, f'{where}[{i}]') for i, x in enumerate(items))
+        return (f'<section class="alts" aria-label="{E(self.fmt("alts_aria", name=name))}"><p class="mono kicker">{E(self.L["alts"])}</p>'
+                f'<div class="alts-grid">{cards}</div></section>')
+
+    def worship_block(self):
+        groups = self.d.get('worship') or []
+        if not groups:
+            return ''
+        out = f'<div class="worship" data-cats="worship"><h3 class="h-rule">⛪ {E(self.L["worship_title"])}</h3>'
+        for gi, g in enumerate(groups):
+            base = g.get('title') or (self.areas.get(g.get('base')) or {}).get('name') or g.get('base') or ''
+            out += (f'<h4>{E(base)}</h4>' if base else '') + '<div class="alts-grid">' + ''.join(
+                self.alt_card(x, 1, f'worship[{gi}].items[{i}]', default='worship') for i, x in enumerate(g.get('items') or [])) + '</div>'
+        return out + '</div>'
 
     def plan_label(self, p):
         return ((self.plans or {}).get('labels') or {}).get(p) or self.L['plan_' + p]
@@ -641,7 +939,7 @@ class Page:
                   f'{self.rules_line()}</div>')
         if not self.plans and not wx and not alts:
             return ''
-        out = f'<div class="plans-bar" role="group" aria-label="{E(self.fmt("plans_for_day", n=n))}">'
+        out = f'<div class="plans-bar" role="group" aria-label="{E(self.fmt("plans_for_day", n=n))}"{" data-cats=" + chr(34) + "weather" + chr(34) if wx else ""}>'
         if self.plans or alts:
             if alts:
                 btns = []
@@ -656,6 +954,29 @@ class Page:
                 out += self.rules_line()
         return out + wx + '</div>'
 
+    def strip(self, ids, where):
+        """A row of up to three photos for a schedule item: swipeable on phones, tap to enlarge, credited."""
+        real = [self.photo(x, where) for x in (ids or []) if x][:3]
+        if not real:
+            return ''
+        return f'<div class="strip" data-count="{len(real)}">' + ''.join(self.tile(p, i) for i, p in enumerate(real)) + '</div>'
+
+    def timeline_item(self, x, n, w):
+        st = self.stops.get(x.get('stop')) if x.get('stop') else None
+        title = E(x.get('title'))
+        if st:
+            anchor = self.stop_anchor(x['stop'])
+            title = f'<a class="tl-go" href="#{E(anchor)}">{title}</a>' if anchor else title
+        photos = x.get('photos') or (st.get('photos') if st else None)
+        links = x.get('links') if x.get('links') is not None else (st.get('links') if st else None)
+        place = self.places[st['place']] if st else None
+        extra = self.strip(photos, w + '.photos')
+        if links or place:
+            extra += self.link_row(links, place, where=w + '.links', extras=False)
+        cats = self.stop_cats.get(x.get('stop')) if st else []
+        return (f'<li{self.cats_attr(cats or [])}><span class="t">{E(x.get("time"))}</span><div><b>{title}</b><p>{self.rich(x.get("text"), w)}</p>'
+                f'{extra}</div></li>')
+
     def plan_head(self, p):
         return (f'<p class="plan-h"><span class="plan-tag">{E(self.fmt("plan", p=p.upper()))}</span> {E(self.plan_label(p))}'
                 f' <span class="chosen-tag">{E(self.L["chosen"])}</span><span class="sugg-tag" hidden>{E(self.L["suggested"])}</span></p>')
@@ -667,8 +988,7 @@ class Page:
         stops_strip = ' <span class="arr" aria-hidden="true">→</span> '.join(
             f'<button type="button" class="chip-stop show-map" data-day="{n - 1}" data-idx="{j}" data-lat="{pl[p]["lat"]}" data-lng="{pl[p]["lng"]}" data-name="{E(pl[p]["name"])}"><b>{LETTERS[j]}</b> {E(pl[p]["name"])}</button>'
             for j, p in enumerate(day['route']))
-        tl = ''.join(f'<li><span class="t">{E(x.get("time"))}</span><div><b>{E(x.get("title"))}</b><p>{self.rich(x.get("text"), w + ".timeline")}</p></div></li>'
-                     for x in day.get('timeline') or [])
+        tl = ''.join(self.timeline_item(x, n, f'{w}.timeline[{j}]') for j, x in enumerate(day.get('timeline') or []))
         info = ''.join(f'<section><h5>{E(x["title"])}</h5><p>{self.rich(x.get("text"), w + ".info")}</p></section>' for x in day.get('info') or [])
         links = ' · '.join(f'<a href="{E(self.url_or_source(x, w + ".links"))}" target="_blank" rel="noopener">{E(x["text"])} ↗</a>' for x in day.get('links') or [])
         cards = ''.join(self.stop_card(day, n, it, 'a') for it in day['stops'])
@@ -718,7 +1038,8 @@ class Page:
                         tags.append(f'<a class="src" href="{E(u)}" target="_blank" rel="noopener" title="Source for these hours">{E(host_of(u).removeprefix("www."))}</a>')
                 hours = f'<p class="fine" data-fact>{self.rich(x["hours"], w + ".hours")}{(" " + " ".join(tags)) if tags else ""}</p>'
             place = {'q': x['q'], 'lat': x['lat'], 'lng': x['lng']}
-            cards.append(f'<article class="near" id="x{n}-{E(x["id"])}">{ph}<div class="near-b"><p class="mono kicker">{E(x.get("kind"))}</p><h4>{E(x["name"])}</h4>'
+            ncats = norm_cats(x.get('cat'), w + '.cat')
+            cards.append(f'<article class="near" id="x{n}-{E(x["id"])}"{self.cats_attr(ncats)}>{ph}<div class="near-b"><p class="mono kicker">{E(x.get("kind"))}</p><h4>{E(x["name"])}</h4>'
                          f'<p>{self.rich(x["why"], w + ".why")}</p>{hours}{self.link_row(x.get("links"), place, where=w + ".links")}</div></article>')
         return (f'<section class="nearby" aria-label="{E(self.fmt("nearby_aria", n=n))}"><p class="mono kicker">{E(self.L["nearby_kicker"])}</p>'
                 f'<div class="nearby-grid">{"".join(cards)}</div></section>')
@@ -859,10 +1180,154 @@ class Page:
 
     def prose(self, sid):
         s = self.d.get(sid)
-        if not s:
+        if not s and not (sid == 'stays' and self.d.get('worship')):
             return ''
+        s = s or {}
         alert = self.block(dict(s['alert'], type='alert'), sid + '.alert') if s.get('alert') else ''
-        return f'<section id="{sid}" class="sec">{alert}{self.head(s, sid)}{self.blocks(s.get("blocks"), sid + ".blocks")}</section>'
+        cats = norm_cats(s.get('cat') or {'stays': 'stays', 'transport': 'transport', 'holidays': 'weather'}.get(sid), sid + '.cat')
+        extra = self.worship_block() if sid == 'stays' else ''
+        return f'<section id="{sid}" class="sec"{self.cats_attr(cats)}>{alert}{self.head(s, sid)}{self.blocks(s.get("blocks"), sid + ".blocks")}{extra}</section>'
+
+    # ------------------------------------------------------------------ the opener
+    def first_role(self, sid):
+        for day in self.days:
+            for p in ('stops', 'plan_b', 'plan_c'):
+                for it in day.get(p) or []:
+                    if it.get('stop') == sid and it.get('role'):
+                        return it['role']
+        return ''
+
+    def ocard(self, sid, where):
+        st = self.stops[sid]
+        anchor = self.stop_anchor(sid)
+        cats = self.stop_cats.get(sid) or []
+        ph = ''
+        if st.get('photos'):
+            p = self.photo(st['photos'][0], where)
+            ph = (f'<figure class="ocard-ph"><a href="#{E(anchor)}" tabindex="-1" aria-hidden="true">'
+                  f'<img src="{E(p["src"])}" alt="{E(p["alt"])}" loading="lazy" decoding="async" referrerpolicy="no-referrer"></a>'
+                  f'<figcaption><span class="credit">{self.credit(p, original=False)}</span></figcaption></figure>')
+        web = next((it for it in st.get('links') or [] if it.get('kind', 'web') == 'web'), None)
+        web_html = f'<a class="ocard-web" href="{E(check_url(web["url"], where))}" target="_blank" rel="noopener">🌐 {E(self.L["website"])}</a>' if web else ''
+        line = st.get('line') or self.first_role(sid)
+        return (f'<article class="ocard"{self.cats_attr(cats)}>{ph}<div class="ocard-b">{self.cat_chips(cats)}'
+                f'<a class="ocard-t" href="#{E(anchor)}"><h4>{E(st["name"])}</h4>' + (f'<p>{E(line)}</p>' if line else '') + f'</a>{web_html}</div></article>')
+
+    def globe_svg(self, gid, label):
+        return (f'<svg class="globe" data-globe viewBox="0 0 400 400" role="img" aria-label="{E(label)}" tabindex="0">'
+                f'<defs><radialGradient id="{gid}" cx="38%" cy="32%" r="78%"><stop offset="0" stop-color="#ffffff"/>'
+                f'<stop offset=".72" stop-color="#f7f2e8"/><stop offset="1" stop-color="#e6d9bf"/></radialGradient></defs>'
+                f'<circle class="g-sphere" cx="200" cy="200" r="180" fill="url(#{gid})"/><path class="g-grat"/><path class="g-dots"/>'
+                f'<path class="g-coast"/><path class="g-arc"/><g class="g-pins"></g><circle class="g-rim" cx="200" cy="200" r="180"/></svg>')
+
+    def opener_points(self):
+        o = self.opener_d
+        stays = [self.places[self.stops[s]['place']] for s in o.get('stays') or []]
+        dest = o.get('destination') or (dict(name=stays[0]['name'], lat=stays[0]['lat'], lng=stays[0]['lng']) if stays else None)
+        if not dest:
+            p = self.places[self.days[0]['route'][0]]
+            dest = dict(name=p['name'], lat=p['lat'], lng=p['lng'])
+        bases = []
+        for p in stays:
+            if all(abs(p['lat'] - b['lat']) + abs(p['lng'] - b['lng']) > 0.05 for b in bases):
+                bases.append(dict(lat=p['lat'], lng=p['lng']))
+        return dest, bases
+
+    def trip_dates(self):
+        o = self.opener_d
+        isos = [d['iso'] for d in self.days if d.get('iso')]
+        return o.get('start') or (min(isos) if isos else ''), o.get('end') or (max(isos) if isos else '')
+
+    def opener_html(self):
+        o = self.opener_d
+        if not o:
+            return ''
+        m = self.d['masthead']
+        title = o.get('title') or m['title']
+        slides = []
+        for i, pid in enumerate(o['hero']):
+            p = self.photo(pid, 'opener.hero')
+            slides.append(f'<figure class="hero-slide{" on" if i == 0 else ""}"><img src="{E(p["src"])}" alt="{E(p["alt"])}" decoding="async"'
+                          f' loading="{"eager" if i < 2 else "lazy"}" referrerpolicy="no-referrer">'
+                          f'<figcaption><span class="credit">{self.credit(p, original=False)}</span></figcaption></figure>')
+        start, end = self.trip_dates()
+        dest, _ = self.opener_points()
+        live = ''
+        if start:
+            live += f'<span class="cd" id="op-count" data-start="{E(start)}" data-end="{E(end)}" hidden></span>'
+        if o.get('tz'):
+            live += f'<span class="lt" id="op-time" data-tz="{E(o["tz"])}" data-place="{E(o.get("tz_place") or dest["name"])}" hidden></span>'
+        tldr = ''.join(f'<li>{self.rich(x, "opener.tldr")}</li>' for x in as_list(o.get('tldr')))
+        alerts = ''.join(f'<li><a class="chip-alert" href="{E(a["href"])}"><span aria-hidden="true">{E(a.get("icon") or "⚠️")}</span> {E(a["text"])}</a></li>'
+                         for a in o.get('alerts') or [])
+        home = o.get('home')
+        glabel = self.fmt('tour_from', home=home['name'], dest=dest['name']) if home else dest['name']
+        globe = (f'<figure class="op-globe">{self.globe_svg("g-sea-1", glabel)}<figcaption class="fine">{E(self.L["op_globe_hint"])} '
+                 f'Land: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>.</figcaption></figure>')
+        stays = ''.join(self.ocard(s, 'opener.stays') for s in o.get('stays') or [])
+        highs = ''.join(self.ocard(s, 'opener.highlights') for s in o.get('highlights') or [])
+        return (f'<section id="opener" class="opener" aria-label="{E(title)}">'
+                f'<div class="hero"><div class="hero-slides">{"".join(slides)}</div><div class="hero-in">'
+                + (f'<p class="mono kicker hero-k">{E(o.get("kicker") or m.get("kicker"))}</p>' if (o.get('kicker') or m.get('kicker')) else '')
+                + f'<h1 class="hero-t">{E(title)}</h1>'
+                + (f'<p class="hero-dates">{E(o["dates"])}</p>' if o.get('dates') else '')
+                + (f'<p class="hero-live">{live}</p>' if live else '')
+                + f'<p class="hero-ctas"><button type="button" class="btn-gold btn-hero" id="play-trip"><span aria-hidden="true">▶</span> {E(self.L["op_play"])}</button>'
+                f'<a class="btn-hero2" href="#top">{E(self.L["op_read"])} <span aria-hidden="true">↓</span></a></p></div></div>'
+                f'<div class="op-body"><div class="op-grid"><div class="op-tldr"><p class="mono kicker">TL;DR</p><h2>{E(self.L["op_tldr"])}</h2>'
+                + (f'<ol class="tldr">{tldr}</ol>' if tldr else '')
+                + (f'<ul class="op-alerts" aria-label="{E(self.L["op_alerts"])}">{alerts}</ul>' if alerts else '')
+                + f'</div>{globe}</div>'
+                + (f'<h3 class="h-rule op-h"><span aria-hidden="true">🏨</span> {E(self.L["op_stays"])}</h3><div class="ocards">{stays}</div>' if stays else '')
+                + (f'<h3 class="h-rule op-h"><span aria-hidden="true">✨</span> {E(self.L["op_highlights"])}</h3><div class="ocards">{highs}</div>' if highs else '')
+                + self.legend() + '</div></section>')
+
+    def tour_html(self):
+        if not self.opener_d:
+            return ''
+        return (f'<div class="tour" id="tour" role="dialog" aria-modal="true" aria-labelledby="tour-title" hidden>'
+                f'<div class="tour-stage"><div class="tour-globe">{self.globe_svg("g-sea-2", self.L["tour_way"])}</div><div class="tour-map"></div>'
+                f'<figure class="tour-big"><img alt=""></figure></div>'
+                f'<div class="tour-card"><figure class="tour-ph"><img alt=""><figcaption><span class="credit tour-credit"></span></figcaption></figure>'
+                f'<div class="tour-txt"><p class="mono kicker tour-k"></p><h2 class="tour-t" id="tour-title"></h2><p class="tour-l"></p></div>'
+                f'<div class="tour-ctl"><button type="button" class="tour-prev">‹ {E(self.L["tour_prev"])}</button>'
+                f'<button type="button" class="tour-pause">{E(self.L["tour_pause"])}</button>'
+                f'<button type="button" class="tour-next">{E(self.L["tour_next"])} ›</button>'
+                f'<button type="button" class="tour-close" aria-label="{E(self.L["tour_close"])}">×</button></div>'
+                f'<div class="tour-bar" aria-hidden="true"><i></i></div></div></div>')
+
+    _pins = None
+
+    def nearby_pins(self):
+        """Every nearby alternative and place of worship, for the map's own pin layer."""
+        if self._pins is not None:
+            return self._pins
+        pins = []
+        for sid, st in self.stops.items():
+            anchor = self.stop_anchor(sid)
+            n = int(re.match(r'd(\d+)', anchor).group(1)) if anchor else 1
+            for x in st.get('nearby') or []:
+                pins.append(dict(name=x['name'], cats=norm_cats(x.get('cat'), 'nearby.cat'), lat=x['lat'], lng=x['lng'], day=n - 1, near=st['name']))
+        for g in self.d.get('worship') or []:
+            for x in g.get('items') or []:
+                pins.append(dict(name=x['name'], cats=norm_cats(x.get('cat') or 'worship', 'worship.cat'), lat=x['lat'], lng=x['lng'], day=-1, near=''))
+        for i, day in enumerate(self.days):
+            for x in day.get('nearby') or []:
+                if x.get('lat') is not None and x.get('cat'):
+                    pins.append(dict(name=x['name'], cats=norm_cats(x.get('cat'), 'nearby.cat'), lat=x['lat'], lng=x['lng'], day=i, near=''))
+        self._pins = pins
+        return pins
+
+    def tour_steps(self):
+        steps = []
+        for i, day in enumerate(self.days):
+            for it in day['stops']:
+                st = self.stops[it['stop']]
+                idx = day['route'].index(st['place']) if st['place'] in day['route'] else -1
+                pl = self.places[st['place']]
+                steps.append(dict(d=i, idx=idx, id=f'd{i + 1}-{it["stop"]}', name=st['name'], line=st.get('line') or it.get('role') or '',
+                                  when=f'{self.L["day"]} {i + 1} · {day["when"]}', lat=pl['lat'], lng=pl['lng']))
+        return steps
 
     # ------------------------------------------------------------------ fixed sections
     def masthead(self):
@@ -871,7 +1336,8 @@ class Page:
                         for f in m.get('facts') or [])
         return (f'<header class="mast" id="top"><div class="mast-in">'
                 + (f'<p class="mono kicker">{E(m["kicker"])}</p>' if m.get('kicker') else '')
-                + f'<h1>{E(m["title"])}</h1>' + (f'<p class="lede">{E(m["lede"])}</p>' if m.get('lede') else '')
+                + (f'<h2 class="mast-h">{E(m["title"])}</h2>' if self.opener_d else f'<h1>{E(m["title"])}</h1>')
+                + (f'<p class="lede">{E(m["lede"])}</p>' if m.get('lede') else '')
                 + (f'<ul class="facts" aria-label="{E(self.L["trip_facts"])}">{facts}</ul>' if facts else '')
                 + f'<div class="mast-bar"><p class="mono edition">{E(m.get("edition"))}</p>'
                 f'<div class="mode" role="group" aria-label="{E(self.L["display_mode"])}">'
@@ -885,7 +1351,7 @@ class Page:
         for s in order:
             if s not in SECTION_ORDER:
                 raise KitError(f'page.order: unknown section {s}')
-            if s in ('map', 'days', 'credits', 'sources') or self.d.get(s) or (s == 'concierge' and self.areas):
+            if s in ('map', 'days', 'credits', 'sources') or self.d.get(s) or (s == 'concierge' and self.areas) or (s == 'stays' and self.d.get('worship')):
                 if s == 'upgrades' and not (self.d.get('upgrades') or {}).get('groups'):
                     continue
                 out.append(s)
@@ -933,7 +1399,8 @@ class Page:
                 f'<div class="panel" id="panel-route" role="tabpanel" aria-labelledby="tab-route"><div class="mc-tools">'
                 f'<button type="button" id="fly" class="btn-gold">{E(self.L["fly"])}</button>'
                 + (f'<label class="check"><input type="checkbox" id="mc-safety"> {E(m.get("safety_label") or self.L["safety"])}</label>' if self.d.get('safety') else '')
-                + f'</div><div id="leaflet" class="mapbox" role="region" aria-label="{E(self.L["route_map"])}"></div><ol id="mc-stops" class="mc-stops"></ol>'
+                + (f'<label class="check"><input type="checkbox" id="mc-nearby"> {E(self.L["nearby_pins"])}</label>' if self.nearby_pins() else '')
+                + f'</div>' + (self.legend(compact=True) if self.opener_d else '') + f'<div id="leaflet" class="mapbox" role="region" aria-label="{E(self.L["route_map"])}"></div><ol id="mc-stops" class="mc-stops"></ol>'
                 f'<p class="fine">{note("route")}</p></div>'
                 f'<div class="panel" id="panel-pin" role="tabpanel" aria-labelledby="tab-pin" hidden><label class="sr" for="mc-stop">{E(self.L["stop_label"])}</label>'
                 f'<select id="mc-stop" aria-label="{E(self.L["choose_stop"])}"></select><div class="mapbox gbox" id="pin-box"></div><p class="fine">{note("pin")}</p></div>'
@@ -1038,7 +1505,12 @@ class Page:
             if note:
                 parts.append(E(note))
             rows.append('<li>' + ' '.join(parts) + '</li>')
-        return f'<section id="credits" class="sec">{self.head(c, "credits")}<ul class="credits">{"".join(rows)}</ul></section>'
+        globe = ''
+        if self.opener_d:
+            globe = (f'<p class="fine globe-credit">{E(self.L["globe_credit"])} '
+                     f'<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> · '
+                     f'<a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a></p>')
+        return f'<section id="credits" class="sec">{self.head(c, "credits")}<ul class="credits">{"".join(rows)}</ul>{globe}</section>'
 
     def sources_section(self):
         s = self.d.get('sources_page') or {}
@@ -1099,11 +1571,19 @@ class Page:
                 else:
                     g = self.legs[k]
                     legs.append(dict(a=a, b=b, walk=False, km=g.get('km'), min=g.get('min'), path=g.get('path') or [[pa['lat'], pa['lng']], [pb['lat'], pb['lng']]]))
+            place_cats = {}
+            for it in d['stops']:
+                place_cats.setdefault(self.stops[it['stop']]['place'], [])
+                place_cats[self.stops[it['stop']]['place']] += [c for c in self.stop_cats.get(it['stop']) or [] if c not in place_cats[self.stops[it['stop']]['place']]]
+            for s in stops:
+                s['cats'] = place_cats.get(s['id'], [])
             days.append(dict(n=i + 1, label=f'{self.L["day"]} {i + 1} · {d["when"]}', title=d['title'], iso=d.get('iso') or '',
                              weather=d.get('weather') or '', stops=stops, legs=legs))
         ui = {k: self.L[k] for k in ('fly', 'fly_stop', 'short_walk', 'optional', 'map_fallback', 'wx_from', 'wx_error', 'wx_past', 'wx_none',
                                      'wx_frame', 'wx_credit', 'wx_licence', 'wx_rain', 'wx_gust', 'wx_wind', 'wx_uv', 'wx_suggests', 'wx_fits',
-                                     'wx_no_plan', 'wx_max_min', 'plans_rules', 'lens_fits', 'lens_check', 'lens_unknown', 'lens_for', 'rail_start', 'to')}
+                                     'wx_no_plan', 'wx_max_min', 'plans_rules', 'lens_fits', 'lens_check', 'lens_unknown', 'lens_for', 'rail_start', 'to',
+                                     'cd_to_go', 'cd_one', 'cd_today', 'cd_during', 'local_time', 'lg_lit', 'lg_none', 'tour_pause', 'tour_play',
+                                     'tour_from', 'tour_way', 'nearby_pins')}
         ui['months'] = self.L.get('months') or MONTHS
         ui['wmo'] = {str(k): list(v) for k, v in WMO.items()}
         ui['marks'] = MARK_NAMES
@@ -1120,6 +1600,15 @@ class Page:
         if self.audience:
             out['audience'] = dict(mode=self.audience['mode'], needs=self.audience.get('needs') or [],
                                    lenses=[dict(key=l['key'], label=l['label'], needs=l.get('needs') or []) for l in self.audience.get('lenses') or []])
+        out['cats'] = {k: [icon, self.cat_labels[k]] for k, icon, _ in CATS}
+        out['nearby'] = self.nearby_pins()
+        if self.opener_d:
+            o = self.opener_d
+            dest, bases = self.opener_points()
+            start, end = self.trip_dates()
+            out['opener'] = dict(start=start, end=end, tz=o.get('tz') or '', home=o.get('home'), dest=dict(name=dest['name'], lat=dest['lat'], lng=dest['lng']),
+                                 bases=bases)
+            out['tour'] = self.tour_steps()
         return out
 
     # ------------------------------------------------------------------ the page
@@ -1134,17 +1623,18 @@ class Page:
         templates = ''.join(f'<template id="cc-{E(a)}">{self.area_compact(a)}</template>' for a in self.areas)
         fonts = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap'
         return ('<!doctype html>\n'
-                f'<html lang="{E(meta["lang"])}" data-mode="light">\n<head>\n<meta charset="utf-8">\n'
+                f'<html lang="{E(meta["lang"])}" data-mode="light"{" class=" + chr(34) + "has-opener" + chr(34) if self.opener_d else ""}>\n<head>\n<meta charset="utf-8">\n'
                 '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<meta name="color-scheme" content="light">\n'
                 f'<title>{E(meta["title"])}</title>\n'
                 + (f'<meta name="description" content="{E(meta["description"])}">\n' if meta.get('description') else '')
                 + f'<meta name="generator" content="travel-coffee-table kit">\n<link rel="stylesheet" href="{E(fonts)}">\n'
                 '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">\n'
                 f'<style>{css}</style>\n</head>\n<body>\n<a class="skip" href="#days">{E(self.L["skip"])}</a>\n'
-                f'{self.masthead()}\n{self.topnav(present)}\n<main class="layout">\n{body}\n{self.footer()}\n</main>\n'
-                f'{self.rail()}\n{self.lightbox()}\n{templates}\n'
+                f'{self.opener_html()}\n{self.masthead()}\n{self.topnav(present)}\n<main class="layout">\n{body}\n{self.footer()}\n</main>\n'
+                f'{self.rail()}\n{self.lightbox()}\n{self.tour_html()}\n{templates}\n'
                 f'<script type="application/json" id="trip-data">{safe_json(self.trip_json())}</script>\n'
-                '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>\n'
+                + (f'<script type="application/json" id="globe-data">{safe_json(globe_data())}</script>\n' if self.opener_d else '')
+                + '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>\n'
                 f'<script>{js}</script>\n</body>\n</html>\n')
 
 
@@ -1247,7 +1737,8 @@ def check_html(html, name='page'):
     root = parse_html(html)
     problems = []
     nodes = list(root.iter())
-    in_lightbox = lambda n: n.up(lambda p: p.attrs.get('id') == 'lightbox' or p.tag == 'template') is not None
+    # the photo viewer and the trip tour fill their frames from the page itself when they open
+    in_lightbox = lambda n: n.up(lambda p: p.attrs.get('id') in ('lightbox', 'tour') or p.tag == 'template') is not None
     # 1. blank picture holders
     for n in nodes:
         if n.tag == 'img' and not in_lightbox(n):
@@ -1299,7 +1790,19 @@ def check_html(html, name='page'):
                 tiles = {}
             if any(m.attrs.get('id') == 'leaflet' for m in nodes) and tiles.get('provider') != 'carto':
                 problems.append(('map blocked in the family site', "map tiles come from OpenStreetMap's servers, which refuse pages in the site's locked frame; set map.tiles to carto with the family's key"))
-    # 5. http links (namespaces such as xmlns are not links)
+    # 5. official links: social accounts on the platform itself, addresses on Google Maps
+    for n in nodes:
+        kind = n.attrs.get('data-kind')
+        if n.tag != 'a' or not kind:
+            continue
+        href = (n.attrs.get('href') or '').strip()
+        u = urllib.parse.urlsplit(href)
+        host = (u.hostname or '').lower()
+        if kind in SOCIAL_HOSTS and (u.scheme != 'https' or not (host == SOCIAL_HOSTS[kind] or host.endswith('.' + SOCIAL_HOSTS[kind]))):
+            problems.append(('social link off its platform', f'line {n.line}: {LINK_LABELS[kind]} link must be https on {SOCIAL_HOSTS[kind]}: {href[:80]}'))
+        if kind == 'addr' and (u.scheme != 'https' or host not in ('www.google.com', 'google.com') or not u.path.startswith('/maps')):
+            problems.append(('address not on Google Maps', f'line {n.line}: {href[:80]}'))
+    # 6. http links (namespaces such as xmlns are not links)
     for n in nodes:
         for k, v in n.attrs.items():
             if k in URL_ATTRS and v and not v.strip().lower().startswith('data:') and re.search(r'(?i)(^|[\s,])http://', v.strip()):

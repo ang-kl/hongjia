@@ -41,13 +41,20 @@ generic and stay in this folder:
    accounts are only those the venue links from its own website. Photos need an author and a
    licence (open-licence libraries such as Wikimedia Commons, or the venue's own pictures shown
    from its website and credited to it); never a picture without a credit, never an empty frame.
-4. **Build the data file** (`kit/schema.md`). Each day: route, Plan A stops, timeline, the four
-   info boxes, Plan B and Plan C, nearby extras, its forecast place. Concierge panels per area.
-   Prose sections: overview, holidays and weather, stays, transport, backups, checklist. Upgrades
-   per area. The data file for a real trip is private: keep it outside the repository (see Privacy).
+4. **Build the data file** (`kit/schema.md`). The opener first: the hero photos, the TL;DR in
+   three lines, alert chips (a holiday warning goes here), the stay and can't-miss cards, home and
+   destination for the globe. Each day: route, Plan A stops, timeline items pointing at their stops
+   (so each shows photos and official links), the four info boxes, Plan B and Plan C, nearby
+   extras, its forecast place. Each stop: its legend categories (`cat`), 2 to 4 credited photos,
+   the official links (website, Instagram, Facebook, TikTok, YouTube, address, phone, hours) and
+   "if it's closed or crowded" alternatives nearby, with places of worship near each base.
+   Concierge panels per area. Prose sections: overview, holidays and weather, stays, transport,
+   backups, checklist. Upgrades per area. The data file for a real trip is private: keep it outside
+   the repository (see Privacy).
 5. **Render**: `python3 kit/build.py trip.json -o trip.html`.
 6. **Check**: `python3 kit/build.py --check trip.html`. Fix every problem it reports: blank
-   picture holders, photos without credit, facts without a source, http links.
+   picture holders, photos without credit, facts without a source, a map on blocked tiles, social
+   links off their platform or addresses off Google Maps, http links.
 7. **Review.** Open the page at phone and desktop widths. Then the owner reviews it; only after
    the owner's approval is it uploaded and filed as a new version of the trip's document.
 
@@ -55,16 +62,26 @@ generic and stay in this folder:
 
 The owner wants both the look and the content to be super-luxury and to "wow".
 
-- **Look**: the approved design, generous photography (up to four per stop, the best first),
-  clips where they exist, live posts from official accounts, a map for every day, nothing
-  cramped, nothing broken at 390 px wide. Accessibility stays: 44 px targets, keyboard use,
-  screen-reader labels, reduced motion, print mode.
+- **Look**: the approved design (white page, gold, Playfair Display headings, mono kickers), a
+  full-screen opening that makes the reader want to go now, generous photography (up to four per
+  stop, the best first, and photos on every schedule item), clips where they exist, live posts
+  from official accounts, the globe, a map for every day, a legend that lights places up, nothing
+  cramped, nothing wider than a 390 px phone. Movement is gentle and stops under reduced motion.
+  Accessibility stays: 44 px targets, keyboard use, screen-reader labels, print mode.
 - **Content**: a concierge's knowledge, not a brochure's. Each stop says why it is there, the best
   time, the photo moments, the easier version, and what is nearby. Real distances and road times
   with buffers. Honest limits: "proposed, not booked", "estimate, not a quote". No filler, no
   unverified superlatives.
 - **One principal outing a day**, rest built in, seated meals; "swap, don't stack": a backup
   replaces a stop, it is never added on top.
+
+## The page's libraries and limits
+
+The document runs in the site's locked frame (no same-origin access). Scripts are inline or from
+cdnjs.cloudflare.com, cdn.jsdelivr.net, unpkg.com or cdn.tailwindcss.com, with exact versions
+pinned; the page may fetch only from those CDNs; pictures must be https or `data:`; frames only
+Google Maps and Instagram and TikTok embeds. No `innerHTML` with data. Keep a typical trip page
+under 1.5 MB (the globe's land data is the 1:110m version).
 
 ## Plan A, B and C
 

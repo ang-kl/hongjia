@@ -50,7 +50,8 @@ def outside(n, pred):
 
 
 def not_lightbox(n):
-    return outside(n, lambda p: p.attrs.get('id') == 'lightbox')
+    # the photo viewer and the trip tour fill their frames from the page when they open
+    return outside(n, lambda p: p.attrs.get('id') in ('lightbox', 'tour'))
 
 
 class KitTest(unittest.TestCase):
@@ -316,10 +317,187 @@ class KitTest(unittest.TestCase):
         d = copy.deepcopy(self.data)
         for day in d['days']:
             day['plan_b'], day['plan_c'] = [], []
+        d['opener']['highlights'] = [s for s in d['opener']['highlights'] if s != 'tearoom']  # a Plan B stop
         r = build.parse_html(build.build(d))
         self.assertFalse(find(r, 'button', 'plan-btn'))
         self.assertEqual(len(find(r, 'p', 'plan-missing')), len(d['days']))
         self.assertTrue(find(r, 'p', 'wx-rules'), 'the rules still show')
+
+    # ------------------------------------------------------------ the opener (owner's review, 6 November 2026)
+    def test_opener_comes_first(self):
+        body = find(self.root, 'body')[0]
+        first = [c for c in body.children if isinstance(c, build.Node) and c.tag != 'a']
+        self.assertEqual(first[0].attrs.get('id'), 'opener', 'the opener is the first thing on the page')
+        op = first[0]
+        self.assertEqual(len(find(self.root, 'h1')), 1, 'one h1: the opener title')
+        self.assertTrue(find(op, 'h1', 'hero-t'))
+        slides = find(op, 'figure', 'hero-slide')
+        self.assertEqual(len(slides), len(self.data['opener']['hero']))
+        for f in slides:
+            self.assertTrue(find(f, 'img')[0].attrs['src'])
+            self.assertTrue(find(f, 'span', 'credit')[0].text().strip())
+        cd = find(op, 'span', id='op-count')[0]
+        self.assertEqual((cd.attrs['data-start'], cd.attrs['data-end']), ('2027-06-12', '2027-06-13'))
+        self.assertEqual(find(op, 'span', id='op-time')[0].attrs['data-tz'], 'UTC')
+        self.assertEqual(len(find(op, 'ol', 'tldr')[0].children), 3)
+        ids = {n.attrs['id'] for n in self.root.iter() if n.attrs.get('id')}
+        for a in find(op, 'a', 'chip-alert'):
+            self.assertIn(a.attrs['href'][1:], ids, 'alert chips link to a place on the page')
+        cards = find(op, 'article', 'ocard')
+        self.assertEqual(len(cards), len(self.data['opener']['stays']) + len(self.data['opener']['highlights']))
+        for c in cards:
+            target = find(c, 'a', 'ocard-t')[0].attrs['href']
+            self.assertIn(target[1:], ids, 'each card links to its stop')
+            self.assertTrue(find(c, 'img') and find(c, 'span', 'credit'), 'each card has a credited photo')
+        self.assertTrue(find(op, 'a', 'ocard-web'), "a stop's website is a small second link")
+        self.assertTrue(find(op, 'button', id='play-trip'))
+
+    def test_legend_categories(self):
+        labels = [n.text().strip() for n in find(self.root, 'button', 'lg') if 'legend-compact' not in n.parent.classes()]
+        self.assertEqual([l.split()[1] if len(l.split()) > 1 else l for l in labels],
+                         ['Stays', 'Transport', 'Weather', 'Food', 'Drinks', 'Snacks', 'Shopping', 'Fun', 'Sights', 'Worship'])
+        self.assertEqual(list(self.trip['cats']), ['stays', 'transport', 'weather', 'food', 'drinks', 'snacks', 'shopping', 'fun', 'sights', 'worship'])
+        for st in find(self.root, 'article', 'stop'):
+            self.assertTrue(st.attrs.get('data-cats'), f'{st.attrs["id"]} carries its categories')
+        self.assertEqual(find(self.root, 'article', 'stop', id='d2-market')[0].attrs['data-cats'], 'shopping snacks food', 'a list lights every category')
+        self.assertTrue(find(self.root, 'button', 'lg', data_legend='worship'))
+        self.assertTrue(any(s['cats'] for d in self.trip['days'] for s in d['stops']), 'route pins know their categories')
+        d = copy.deepcopy(self.data)
+        d['stops']['cellar']['cat'] = ['dining', 'drinks']
+        r = build.parse_html(build.build(d))
+        self.assertEqual(find(r, 'article', 'stop', id='d1b-cellar')[0].attrs['data-cats'], 'food drinks', '"dining" is read as Food')
+        d['labels'] = {'cats': {'fun': 'Fun & games'}}
+        self.assertIn('Fun &amp; games', build.build(d))
+        d['stops']['cellar']['cat'] = 'nightlife'
+        with self.assertRaises(build.KitError):
+            build.build(d)
+
+    def test_globe(self):
+        op = find(self.root, 'section', id='opener')[0]
+        svg = find(op, 'svg', 'globe')[0]
+        for cls in ('g-sphere', 'g-grat', 'g-dots', 'g-coast', 'g-arc', 'g-pins'):
+            self.assertTrue([n for n in svg.iter() if cls in n.classes()], cls)
+        g = json.loads(find(self.root, 'script', id='globe-data')[0].text())
+        self.assertTrue(1500 < len(g['d']) // 2 < 3000, 'a dotted land fill')
+        self.assertGreater(sum(len(c) // 2 for c in g['c']), 2000, 'coastlines')
+        with open(os.path.join(HERE, 'assets', 'land-110m.json'), encoding='utf-8') as f:
+            land = json.load(f)
+        self.assertEqual(list(land['objects']), ['land'])
+        self.assertLess(os.path.getsize(os.path.join(HERE, 'assets', 'land-110m.json')), 80000, 'the 110m land, not a finer one')
+        js = open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read()
+        self.assertNotIn('fetch(', js)
+        self.assertNotIn('XMLHttpRequest', js)
+        self.assertIn('Natural Earth', find(self.root, 'section', id='credits')[0].text())
+        o = self.trip['opener']
+        self.assertEqual(o['home']['name'], 'Sample City')
+        self.assertEqual(o['dest']['name'], 'Example Bay')
+
+    def test_schedule_items_have_photos_and_links(self):
+        items = [li for li in find(self.root, 'li') if li.parent.tag == 'ol' and 'timeline' in li.parent.classes()]
+        with_stop = [li for li in items if find(li, 'a', 'tl-go')]
+        self.assertGreaterEqual(len(with_stop), 6)
+        for li in items:
+            strips = find(li, 'div', 'strip')
+            self.assertTrue(strips, 'every schedule item shows photos')
+            tiles = find(strips[0], 'figure', 'tile')
+            self.assertTrue(1 <= len(tiles) <= 3)
+            for t in tiles:
+                self.assertTrue(find(t, 'span', 'credit')[0].text().strip())
+        for li in with_stop:
+            self.assertTrue(find(li, 'a', 'lk'), 'and its official links')
+        harbour = find(self.root, 'article', 'stop', id='d1-harbour')[0]
+        kinds = [a.attrs.get('data-kind') for a in find(harbour, 'a', 'lk') if a.attrs.get('data-kind')]
+        self.assertEqual(kinds[:8], ['web', 'ig', 'fb', 'tt', 'yt', 'addr', 'tel', 'hours'])
+        emoji = {a.attrs['data-kind']: find(a, 'span', 'e')[0].text() for a in find(harbour, 'a', 'lk') if a.attrs.get('data-kind')}
+        self.assertEqual([emoji[k] for k in ('web', 'ig', 'fb', 'tt', 'yt', 'addr', 'tel', 'hours')], ['🌐', '📷', '📘', '🎵', '▶️', '📍', '📞', '⏰'])
+        addr = [a for a in find(harbour, 'a', 'lk') if a.attrs.get('data-kind') == 'addr'][0]
+        self.assertTrue(addr.attrs['href'].startswith('https://www.google.com/maps/'))
+        hours = [a for a in find(harbour, 'a', 'lk') if a.attrs.get('data-kind') == 'hours'][0]
+        self.assertIn('data-fact', hours.parent.attrs)
+        drawer = find(harbour, 'details', 'ig-drawer')
+        self.assertFalse(drawer, 'the harbour already embeds that Instagram account')
+        hotel = find(self.root, 'article', 'stop', id='d1-hotel')[0]
+        ig = find(hotel, 'details', 'ig-drawer')[0]
+        frame = find(ig, 'iframe')[0]
+        self.assertEqual(frame.attrs['data-src'], 'https://www.instagram.com/instagram/embed/')
+        self.assertNotIn('src', frame.attrs, 'loaded only when the drawer opens')
+
+    def test_official_link_rules(self):
+        def refused(link):
+            d = copy.deepcopy(self.data)
+            d['stops']['beach']['links'] = [link]
+            with self.assertRaises(build.KitError):
+                build.build(d)
+        refused({'kind': 'ig', 'url': 'https://example.com/instagram'})
+        refused({'kind': 'fb', 'url': 'https://notfacebook.com/page'})
+        refused({'kind': 'tt', 'url': 'https://www.tiktok.com.example.net/@a'})
+        refused({'kind': 'yt', 'url': 'http://www.youtube.com/@a'})
+        refused({'kind': 'addr', 'label': '1 Sea Road', 'url': 'https://maps.example.com/?q=1'})
+        refused({'kind': 'hours', 'label': 'Daily 9am to 5pm'})
+        bad = ('<html><body><ul class="links"><li><a class="lk" data-kind="ig" href="https://insta.example.com/a">x</a></li>'
+               '<li><a class="lk" data-kind="addr" href="https://www.bing.com/maps?q=1">1 Sea Road</a></li>'
+               '<li><a class="lk" data-kind="yt" href="https://m.youtube.com/@a">ok</a></li></ul></body></html>')
+        rules = [r for r, _ in build.check_html(bad)]
+        self.assertEqual(sorted(rules), ['address not on Google Maps', 'social link off its platform'])
+
+    def test_alternatives_and_worship(self):
+        harbour = find(self.root, 'article', 'stop', id='d1-harbour')[0]
+        alts = find(harbour, 'section', 'alts')[0]
+        self.assertIn("If it's closed or crowded", alts.text())
+        cards = find(alts, 'article', 'alt')
+        self.assertEqual([c.attrs['data-cats'] for c in cards], ['food', 'drinks snacks', 'worship'])
+        for c in cards:
+            hours = find(c, 'p', 'alt-hours')
+            self.assertTrue(hours and find(hours[0], 'a', 'src'), 'hours carry their source')
+            self.assertTrue(find(c, 'button', 'show-map'))
+        stays = find(self.root, 'section', id='stays')[0]
+        self.assertEqual(len(find(find(stays, 'div', 'worship')[0], 'article', 'alt')), 3)
+        cats = [p['cats'] for p in self.trip['nearby']]
+        self.assertIn(['worship'], cats)
+        self.assertGreaterEqual(len(self.trip['nearby']), 10)
+        self.assertTrue(find(self.root, 'input', id='mc-nearby'), 'a nearby-options layer on the map')
+        self.assertTrue(find(find(self.root, 'aside', id='map-centre')[0], 'div', 'legend-compact'), 'the legend lights pins on the map too')
+        d = copy.deepcopy(self.data)
+        d['stops']['harbour']['nearby'][0].pop('source')
+        with self.assertRaises(build.KitError):
+            build.build(d)
+
+    def test_play_the_trip(self):
+        tour = find(self.root, 'div', id='tour')[0]
+        self.assertEqual((tour.attrs.get('role'), tour.attrs.get('aria-modal')), ('dialog', 'true'))
+        self.assertIn('hidden', tour.attrs)
+        for cls in ('tour-prev', 'tour-pause', 'tour-next', 'tour-close'):
+            self.assertTrue(find(tour, 'button', cls), cls)
+        ids = {n.attrs['id'] for n in self.root.iter() if n.attrs.get('id')}
+        steps = self.trip['tour']
+        self.assertEqual(len(steps), sum(len(d['stops']) for d in self.data['days']))
+        for s in steps:
+            self.assertIn(s['id'], ids)
+        js = open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read()
+        compact = re.sub(r'\s+', '', js)
+        self.assertIn("if(e.key==='Escape'){e.preventDefault();closeTour();}", compact)
+        self.assertIn('tPlaying=!reduce;tPause.hidden=reduce;', compact, 'no autoplay under reduced motion: Next steps on')
+
+    def test_motion_and_phone_rules(self):
+        css = open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read()
+        compact = re.sub(r'\s+', '', css)
+        reduced = compact[compact.rindex('@media(prefers-reduced-motion:reduce)'):]
+        for rule in ('.hero-slide.onimg{animation:none}', '.rv{opacity:1;transform:none;transition:none}'):
+            self.assertIn(rule, reduced)
+        self.assertIn('body{padding-bottom:calc(96px+env(safe-area-inset-bottom))}', compact)
+        self.assertIn('html.has-opener.rail{opacity:0;visibility:hidden', compact)
+        self.assertIn('has-opener', find(self.root, 'html')[0].attrs.get('class', ''))
+        js = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read())
+        self.assertIn("if(slides.length>1&&!reduce)", js)
+        self.assertIn("if(!reduce&&'IntersectionObserver'inwindow){varrvEls", js)
+        self.assertIn('v.muted=true;v.loop=true;', js)
+
+    def test_page_weight_and_pinned_libraries(self):
+        self.assertLess(len(self.html.encode('utf-8')), 1_500_000)
+        for s in find(self.root, 'script') + find(self.root, 'link', rel='stylesheet'):
+            url = s.attrs.get('src') or s.attrs.get('href') or ''
+            if urllib.parse.urlsplit(url).hostname in SCRIPT_HOSTS:
+                self.assertRegex(url, r'@\d+\.\d+\.\d+/', 'library versions are pinned exactly')
 
     def test_json_block_cannot_close_the_script(self):
         d = copy.deepcopy(self.data)
