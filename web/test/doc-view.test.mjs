@@ -64,3 +64,8 @@ test('a trip page may ask for the forecast of its places, and nothing else', () 
   for (const b of bad) assert.equal(validMessage({ type: 'hj:weather-want', ...b }), null, JSON.stringify(b).slice(0, 80));
   assert.equal(validMessage({ type: 'hj:weather', key: 'harbour' }), null, 'answers only ever go into the frame');
 });
+
+test('a trip map may ask for its map ticket, and nothing more', () => {
+  assert.deepEqual(validMessage({ type: 'hj:tiles-want', base: 'https://evil.example/', extra: 1 }), { type: 'hj:tiles-want' });
+  assert.equal(validMessage({ type: 'hj:tiles', ticket: 'x' }), null, 'tickets only ever go into the frame');
+});

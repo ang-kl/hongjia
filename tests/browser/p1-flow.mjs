@@ -37,12 +37,23 @@ const weatherStub = createHttpServer((req, res) => {
 });
 await new Promise(done => weatherStub.listen(0, '127.0.0.1', done));
 process.on('exit', () => weatherStub.close());
+// A stand-in for OpenStreetMap's tile server (T2): a tiny PNG for every tile; the request heads
+// are kept so the check sees what the server sent.
+const tileAsks = [];
+const tileStub = createHttpServer((req, res) => {
+  tileAsks.push({ url: req.url, ua: req.headers['user-agent'] || '', referer: req.headers.referer || '' });
+  res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=3600' });
+  res.end(Buffer.from('89504e470d0a1a0a00', 'hex'));
+});
+await new Promise(done => tileStub.listen(0, '127.0.0.1', done));
+process.on('exit', () => tileStub.close());
 const port = await freePort();
 const server = spawn(resolve('target/release/hongjia-web'), [], {
   env: {
     ...process.env, PORT: String(port), HONGJIA_ALSO_LISTEN: '', RAILWAY_GIT_COMMIT_SHA: '',
     HONGJIA_PROFILES: 'alpha,beta,gamma,delta', HONGJIA_OWNER: 'delta', HONGJIA_FAMILY_PASSWORD: FAMILY,
-    HONGJIA_WEATHER_URL: `http://127.0.0.1:${weatherStub.address().port}`
+    HONGJIA_WEATHER_URL: `http://127.0.0.1:${weatherStub.address().port}`,
+    HONGJIA_TILES_URL: `http://127.0.0.1:${tileStub.address().port}`
   },
   stdio: ['ignore', 'inherit', 'inherit']
 });
@@ -893,13 +904,18 @@ const downloadOf = async (p, name) => {
 {
   const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
   const TRIP = `<!doctype html><html><head><meta charset="utf-8"><title>Trip weather</title></head><body>
-<h1>Trip weather sample</h1><p id="near">waiting</p><p id="far">waiting</p>
+<h1>Trip weather sample</h1><p id="near">waiting</p><p id="far">waiting</p><p id="tiles">waiting</p>
 <script>
 addEventListener('message', e => {
   if (e.source !== parent || !e.data || e.data.type !== 'hj:weather') return;
   const d = e.data;
   document.getElementById(d.key).textContent = !d.ok ? 'error ' + d.error : d.available ? 'days ' + d.days.length + ' tmax ' + d.days[0].tmax + ' rain ' + d.days[0].rain_pct + ' by ' + d.source : 'from ' + d.from;
 });
+addEventListener('message', e => {
+  if (e.source !== parent || !e.data || e.data.type !== 'hj:tiles') return;
+  document.getElementById('tiles').textContent = e.data.ok ? e.data.base + '|' + e.data.ticket : 'refused';
+});
+parent.postMessage({ type: 'hj:tiles-want' }, '*');
 parent.postMessage({ type: 'hj:weather-want', places: [
   { key: 'near', lat: 51.50735, lon: -0.12776, start: '${day(2)}', end: '${day(3)}' },
   { key: 'far', lat: 48.86, lon: 2.35, start: '${day(60)}', end: '${day(62)}' }
@@ -915,6 +931,18 @@ parent.postMessage({ type: 'hj:weather-want', places: [
   const far = await raw().waitForFunction(() => !document.getElementById('far').textContent.startsWith('waiting'), null, { timeout: 8000 }).then(() => raw().textContent('#far'), () => 'no answer');
   if (near !== 'days 2 tmax 36.4 rain 80 by Open-Meteo.com') failures.push(`the trip page's forecast: "${near}"`);
   if (far !== `from ${day(45)}`) failures.push(`a trip too far ahead: "${far}"`);
+  // T2: the map ticket reaches the frame, and with it the site hands out a tile it fetched once.
+  const tiles = await raw().waitForFunction(() => !document.getElementById('tiles').textContent.startsWith('waiting'), null, { timeout: 8000 }).then(() => raw().textContent('#tiles'), () => 'no answer');
+  const [tileBase, tileTicket] = tiles.split('|');
+  if (tileBase !== `${base}/tiles` || !/^[0-9]{1,12}\.[0-9a-f]{32}$/.test(tileTicket || '')) failures.push(`map ticket: "${tiles}"`);
+  else {
+    const fetchTile = () => page.evaluate(async url => { const r = await fetch(url); return { status: r.status, type: r.headers.get('content-type') }; }, `${tileBase}/12/3260/2373.png?t=${tileTicket}`);
+    const first = await fetchTile();
+    const again = await fetchTile();
+    if (first.status !== 200 || first.type !== 'image/png') failures.push(`map tile: ${JSON.stringify(first)}`);
+    if (again.status !== 200 || tileAsks.length !== 1) failures.push(`map tile was fetched ${tileAsks.length} times (expected once, then kept)`);
+    else if (!tileAsks[0].ua.startsWith('hongjia.org family site map relay') || tileAsks[0].referer !== 'https://hongjia.org/') failures.push(`map relay headers: ${JSON.stringify(tileAsks[0])}`);
+  }
   if (weatherAsks.length !== 1) failures.push(`the weather service was asked ${weatherAsks.length} times (expected once)`);
   else if (!weatherAsks[0].includes('latitude=51.51&longitude=-0.13&')) failures.push(`the server did not round the place: ${weatherAsks[0]}`);
 }

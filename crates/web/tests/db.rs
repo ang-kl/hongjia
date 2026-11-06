@@ -22,6 +22,7 @@ fn config() -> Config {
         family_password: FAMILY.into(),
         on_railway: false,
         weather_url: "http://127.0.0.1:9".into(),
+        tiles_url: "http://127.0.0.1:9".into(),
     }
 }
 
@@ -136,7 +137,8 @@ impl Client {
         stream.write_all(request.as_bytes()).await.expect("write");
         let mut bytes = Vec::new();
         stream.read_to_end(&mut bytes).await.expect("read");
-        let text = String::from_utf8(bytes).expect("utf-8");
+        // Pictures (map tiles) are not text; read them leniently.
+        let text = String::from_utf8_lossy(&bytes).into_owned();
         let (head, body) = text.split_once("\r\n\r\n").expect("head");
         let mut lines = head.split("\r\n");
         let status = lines
@@ -3763,5 +3765,136 @@ async fn trip_pages_get_the_forecast_through_the_server(pool: PgPool) {
     assert!(
         privacy.contains("Open-Meteo") && privacy.contains("rounded to about 1 km"),
         "the privacy page says what is sent"
+    );
+}
+
+/// A stand-in for OpenStreetMap's tile server: a tiny PNG for every tile, with a caching header,
+/// and the request heads kept so the test sees exactly what the server sent.
+async fn tile_stub() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind stub");
+    let port = listener.local_addr().expect("addr").port();
+    let log = seen.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let log = log.clone();
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 8192];
+                let n = socket.read(&mut buf).await.unwrap_or(0);
+                log.lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&buf[..n]).to_string());
+                let png: &[u8] = b"\x89PNG\r\n\x1a\n-not-a-real-picture-";
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: image/png\r\ncache-control: max-age=3600\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    png.len()
+                );
+                let _ = socket.write_all(head.as_bytes()).await;
+                let _ = socket.write_all(png).await;
+            });
+        }
+    });
+    (format!("http://127.0.0.1:{port}"), seen)
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn trip_maps_get_their_tiles_through_the_server(pool: PgPool) {
+    let (url, seen) = tile_stub().await;
+    let mut cfg = config();
+    cfg.tiles_url = url;
+    let port = start(pool.clone(), cfg).await;
+
+    let stranger = Client::new(port).get("/api/tile-ticket").await;
+    assert_eq!(stranger.status, 401, "tickets are for signed-in people");
+
+    let mut b = member(port, "beta").await;
+    let r = b.get("/api/tile-ticket").await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    let ticket = r
+        .body
+        .split(r#""ticket":""#)
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .expect("a ticket")
+        .to_string();
+
+    let tile = format!("/tiles/12/3260/2373.png?t={ticket}");
+    let mut anyone = Client::new(port);
+    assert_eq!(
+        anyone.get("/tiles/12/3260/2373.png").await.status,
+        403,
+        "no ticket"
+    );
+    assert_eq!(
+        anyone
+            .get("/tiles/12/3260/2373.png?t=1.00000000000000000000000000000000")
+            .await
+            .status,
+        403,
+        "a forged ticket"
+    );
+    assert_eq!(
+        anyone
+            .get(&format!("/tiles/20/0/0.png?t={ticket}"))
+            .await
+            .status,
+        404,
+        "beyond zoom 19"
+    );
+    assert_eq!(
+        seen.lock().unwrap().len(),
+        0,
+        "nothing was fetched for refused asks"
+    );
+
+    // The frame cannot send the sign-in cookie, so the ticket alone opens the tile.
+    let got = anyone.get(&tile).await;
+    assert_eq!(got.status, 200);
+    assert_eq!(got.header("content-type"), Some("image/png"));
+    assert_eq!(
+        got.header("cross-origin-resource-policy"),
+        Some("cross-origin")
+    );
+    {
+        let sent = seen.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        let head = sent[0].to_ascii_lowercase();
+        assert!(head.starts_with("get /12/3260/2373.png "), "{}", sent[0]);
+        assert!(
+            head.contains("user-agent: hongjia.org family site map relay"),
+            "{}",
+            sent[0]
+        );
+        assert!(
+            head.contains("referer: https://hongjia.org/"),
+            "{}",
+            sent[0]
+        );
+        assert!(!head.contains("cookie"), "nothing about the person is sent");
+    }
+    assert_eq!(anyone.get(&tile).await.status, 200);
+    assert_eq!(
+        seen.lock().unwrap().len(),
+        1,
+        "the second ask is answered from the database"
+    );
+    let kept: bool = sqlx::query_scalar(
+        "SELECT keep_until >= now() + interval '6 days 23 hours' FROM map_tiles WHERE z = 12 AND x = 3260 AND y = 2373",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        kept,
+        "kept for at least 7 days although the header said an hour"
+    );
+
+    let privacy = Client::new(port).get("/privacy").await.body;
+    assert!(
+        privacy.contains("map pictures"),
+        "the privacy page says what is fetched"
     );
 }

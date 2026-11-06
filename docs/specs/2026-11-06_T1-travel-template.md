@@ -91,3 +91,40 @@ The skill and kit live in `.claude/skills/travel-coffee-table/`, so a Claude ses
 - **`kit/schema.md`** documents every field. **`kit/example/trip.json`** is a fictional two-day trip that uses every component.
 - **`reference/subtypes.md`** has a complete checklist for road trip and countryside, and shorter ones for city and culture, nature and wildlife, food and wine, cruise, faith and heritage, young family, gentle travel for seniors, and celebration.
 - **Checks:** `kit/test_kit.py` has 17 tests and runs in CI, in the browser-js job. It builds the example and checks every component, the weather places, the allowed script sources, that `innerHTML` is never used with data, that no photo slot is empty, that every photo has a credit, and both audience modes.
+
+## Follow-up T2: map pictures through the site (6 November 2026)
+
+- **Why:**
+  - Live, the route map showed "Access blocked". OpenStreetMap's tile servers refuse requests without a Referer, and a page in the site's locked frame (an opaque origin) never sends one. A local test confirmed this: 12 of 12 tile requests went out with no Referer.
+  - The owner weighed a free CARTO key, which needs a sign-up, and Google, which needs a Google Cloud account with billing for a custom map. The owner chose "server map".
+- **OpenStreetMap's tile usage policy** (operations.osmfoundation.org/policies/tiles, read 6 November 2026):
+  - It "generally" does not recommend a caching relay.
+  - A relay must send a clear, contactable User-Agent identifying the service, must not strip the Referer, and must honour caching headers or "cache each tile for at least 7 days".
+  - Bulk downloading and offline use are not allowed.
+  - The credit "© OpenStreetMap contributors" must be clearly on the map.
+- **Design:**
+  1. The trip page sends `hj:tiles-want`.
+  2. The document page asks `GET /api/tile-ticket` (signed-in people only) and passes `hj:tiles` back into the frame, with the tile base and a ticket. The ticket lasts 12 hours, is signed with the site's internal key, and opens map tiles only.
+  3. The page loads `/tiles/{z}/{x}/{y}.png?t=ticket`. The frame cannot send the sign-in cookie, so the ticket is what admits it.
+- **The server:**
+  - It checks the address (zoom 0 to 19, inside the grid) and the ticket.
+  - It serves the tile from the `map_tiles` table if it is still within its keeping time. Otherwise it fetches the tile once from OpenStreetMap, with the User-Agent "hongjia.org family site map relay (+https://hongjia.org/privacy)" and the Referer `https://hongjia.org/`.
+  - It keeps each tile for at least 7 days, or longer if the caching headers say so, and keeps at most 3,000 tiles, dropping the oldest first.
+  - It makes at most 120 requests a minute and two at a time, never prefetches, and serves a stale copy if OpenStreetMap is unreachable.
+  - Tiles are served with `Cross-Origin-Resource-Policy: cross-origin`, so the locked frame can show them.
+- **Privacy:**
+  - Family devices never contact OpenStreetMap. Only tile addresses leave the server.
+  - The "What we collect" page says so and credits OpenStreetMap.
+- **Setting:** `HONGJIA_TILES_URL` defaults to `https://tile.openstreetmap.org`. Plain http is accepted only off Railway, for the tests' stand-in.
+- **Open point for the owner:** OpenStreetMap asks for a contactable User-Agent. The relay names the site and its public privacy page; adding a contact email would follow the policy more closely, if the owner agrees to publish one.
+- **Checks:**
+  - **Unit tests:** ticket signing and expiry; tile addresses; tiles kept for at least a week.
+  - **Database test, against a stand-in tile server:**
+    - a ticket only for signed-in people;
+    - 403 without a ticket or with a forged one, and 404 beyond zoom 19;
+    - the tile served with the cross-origin header, with the User-Agent and Referer as designed and no cookie;
+    - a second request served from the database;
+    - the tile kept for at least 7 days although the header said an hour;
+    - the privacy page updated.
+  - **Page tests:** `hj:tiles-want` is accepted with no other fields, and `hj:tiles` is never accepted from the frame.
+  - **Browser check:** a trip page receives the ticket; the tile is fetched once and then kept; the headers are as designed.
