@@ -21,6 +21,7 @@ fn config() -> Config {
         public_origin: None,
         family_password: FAMILY.into(),
         on_railway: false,
+        weather_url: "http://127.0.0.1:9".into(),
     }
 }
 
@@ -3633,4 +3634,134 @@ async fn markdown_documents_are_formatted_pages(pool: PgPool) {
         Some("text/plain; charset=utf-8")
     );
     assert_eq!(raw.body, "# not a heading");
+}
+
+/// A stand-in for Open-Meteo: it answers every request with a two-day forecast and keeps the
+/// request lines, so the test sees exactly what the server sent out.
+async fn weather_stub() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind stub");
+    let port = listener.local_addr().expect("addr").port();
+    let log = seen.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let log = log.clone();
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 8192];
+                let n = socket.read(&mut buf).await.unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                let line = request.lines().next().unwrap_or("").to_string();
+                let start = line
+                    .split("start_date=")
+                    .nth(1)
+                    .map(|s| s[..10].to_string())
+                    .unwrap_or_default();
+                log.lock().unwrap().push(line);
+                let body = format!(
+                    r#"{{"latitude":51.51,"note":"<b>not passed on</b>","daily":{{"time":["{start}","{start}"],"weather_code":[61,0],"temperature_2m_max":[36.4,24.0],"temperature_2m_min":[21.0,15.0],"precipitation_probability_max":[80,5],"precipitation_sum":[6.2,0.0],"wind_speed_10m_max":[22.0,18.0],"wind_gusts_10m_max":[48.0,30.0],"uv_index_max":[10.2,7.0]}}}}"#
+                );
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(reply.as_bytes()).await;
+            });
+        }
+    });
+    (format!("http://127.0.0.1:{port}"), seen)
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn trip_pages_get_the_forecast_through_the_server(pool: PgPool) {
+    use hongjia_web::family::weather::{date_of, today};
+    let (url, seen) = weather_stub().await;
+    let mut cfg = config();
+    cfg.weather_url = url;
+    let port = start(pool.clone(), cfg).await;
+    let t = today();
+    let ask = |from: i64, to: i64| {
+        format!(
+            "/api/weather?lat=51.50735&lon=-0.12776&start={}&end={}",
+            date_of(from),
+            date_of(to)
+        )
+    };
+
+    let stranger = Client::new(port).get(&ask(t + 2, t + 4)).await;
+    assert_eq!(stranger.status, 401, "only signed-in people");
+
+    let mut b = member(port, "beta").await;
+    let r = b.get(&ask(t + 2, t + 4)).await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert!(r.body.contains(r#""available":true"#), "{}", r.body);
+    assert!(
+        r.body.contains(r#""tmax":36.4"#) && r.body.contains(r#""rain_pct":80"#),
+        "{}",
+        r.body
+    );
+    assert!(
+        r.body.contains("Open-Meteo.com"),
+        "the credit travels with the data"
+    );
+    assert!(
+        !r.body.contains("not passed on"),
+        "only the readings are passed on"
+    );
+    {
+        let sent = seen.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert!(
+            sent[0].contains("latitude=51.51&longitude=-0.13&"),
+            "rounded to about 1 km: {}",
+            sent[0]
+        );
+        assert!(sent[0].contains(&format!(
+            "start_date={}&end_date={}",
+            date_of(t + 2),
+            date_of(t + 4)
+        )));
+        assert!(
+            !sent[0].contains("beta"),
+            "nothing about the person is sent"
+        );
+    }
+
+    let again = b.get(&ask(t + 2, t + 4)).await;
+    assert_eq!(again.status, 200);
+    assert_eq!(
+        seen.lock().unwrap().len(),
+        1,
+        "the second ask is answered from the hour's copy"
+    );
+
+    let later = b.get(&ask(t + 40, t + 45)).await;
+    assert_eq!(later.status, 200);
+    assert!(
+        later.body.contains(r#""available":false"#)
+            && later
+                .body
+                .contains(&format!(r#""from":"{}""#, date_of(t + 25))),
+        "{}",
+        later.body
+    );
+    let past = b.get(&ask(t - 10, t - 5)).await;
+    assert!(past.body.contains(r#""past":true"#), "{}", past.body);
+    assert_eq!(
+        seen.lock().unwrap().len(),
+        1,
+        "no call for dates the forecast cannot reach"
+    );
+
+    let bad = b
+        .get("/api/weather?lat=95&lon=0&start=2030-06-20&end=2030-06-21")
+        .await;
+    assert_eq!(bad.status, 400);
+    let privacy = Client::new(port).get("/privacy").await.body;
+    assert!(
+        privacy.contains("Open-Meteo") && privacy.contains("rounded to about 1 km"),
+        "the privacy page says what is sent"
+    );
 }

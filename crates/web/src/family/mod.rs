@@ -15,6 +15,7 @@ pub mod redact;
 mod review;
 pub mod signature;
 pub mod store;
+pub mod weather;
 pub mod web;
 
 use axum::{
@@ -39,6 +40,9 @@ pub struct Config {
     /// The one family password (the owner's choice, 5 November 2026). Set in Railway, never committed.
     pub family_password: String,
     pub on_railway: bool,
+    /// Where trip-page forecasts come from (Open-Meteo unless `HONGJIA_WEATHER_URL` says otherwise,
+    /// as the tests do).
+    pub weather_url: String,
 }
 
 impl Config {
@@ -88,12 +92,21 @@ impl Config {
         let family_password = get("HONGJIA_FAMILY_PASSWORD")
             .filter(|v| !v.is_empty())
             .ok_or("HONGJIA_FAMILY_PASSWORD is required")?;
+        let weather_url =
+            present("HONGJIA_WEATHER_URL").unwrap_or_else(|| weather::DEFAULT_URL.to_string());
+        if !(weather_url.starts_with("https://")
+            || (!on_railway && weather_url.starts_with("http://")))
+            || weather_url.ends_with('/')
+        {
+            return Err("HONGJIA_WEATHER_URL must look like https://api.open-meteo.com".into());
+        }
         Ok(Config {
             profiles,
             owner,
             public_origin,
             family_password,
             on_railway,
+            weather_url,
         })
     }
 
@@ -196,6 +209,7 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route("/api/location", post(handlers::location))
         .route("/api/search", get(explore::search))
         .route("/api/library", get(explore::library))
+        .route("/api/weather", get(weather::forecast))
         .route(
             "/documents",
             get(documents::index).post(documents::upload).layer(
@@ -380,6 +394,33 @@ mod tests {
         );
         assert!(config(&[("HONGJIA_PROFILES", "alpha"), ("HONGJIA_OWNER", "beta")]).is_err());
         assert!(config(&[("HONGJIA_OWNER", "alpha")]).is_err());
+    }
+
+    #[test]
+    fn weather_comes_from_open_meteo_unless_told_otherwise() {
+        let base = [
+            ("HONGJIA_PROFILES", "alpha"),
+            ("HONGJIA_OWNER", "alpha"),
+            ("HONGJIA_FAMILY_PASSWORD", "family"),
+        ];
+        assert_eq!(config(&base).unwrap().weather_url, weather::DEFAULT_URL);
+        let mut local = base.to_vec();
+        local.push(("HONGJIA_WEATHER_URL", "http://127.0.0.1:9000"));
+        assert_eq!(config(&local).unwrap().weather_url, "http://127.0.0.1:9000");
+        for bad in [
+            "api.open-meteo.com",
+            "https://api.open-meteo.com/",
+            "ftp://x",
+        ] {
+            let mut wrong = base.to_vec();
+            wrong.push(("HONGJIA_WEATHER_URL", bad));
+            assert!(config(&wrong).is_err(), "{bad}");
+        }
+        let mut railway = base.to_vec();
+        railway.push(("RAILWAY_ENVIRONMENT", "production"));
+        railway.push(("HONGJIA_PUBLIC_ORIGIN", "https://hongjia.org"));
+        railway.push(("HONGJIA_WEATHER_URL", "http://127.0.0.1:9000"));
+        assert!(config(&railway).is_err(), "plain http is for tests only");
     }
 
     #[test]
