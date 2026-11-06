@@ -887,6 +887,38 @@ const downloadOf = async (p, name) => {
   await page.keyboard.press('Escape');
 }
 
+// Trip pages (travel kit, Phase 1): the page names its places and dates, the server asks the
+// weather service (the stand-in above) and the forecast comes back into the frame. A trip too far
+// ahead gets the day its forecast starts, and the service is not asked.
+{
+  const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  const TRIP = `<!doctype html><html><head><meta charset="utf-8"><title>Trip weather</title></head><body>
+<h1>Trip weather sample</h1><p id="near">waiting</p><p id="far">waiting</p>
+<script>
+addEventListener('message', e => {
+  if (e.source !== parent || !e.data || e.data.type !== 'hj:weather') return;
+  const d = e.data;
+  document.getElementById(d.key).textContent = !d.ok ? 'error ' + d.error : d.available ? 'days ' + d.days.length + ' tmax ' + d.days[0].tmax + ' rain ' + d.days[0].rain_pct + ' by ' + d.source : 'from ' + d.from;
+});
+parent.postMessage({ type: 'hj:weather-want', places: [
+  { key: 'near', lat: 51.50735, lon: -0.12776, start: '${day(2)}', end: '${day(3)}' },
+  { key: 'far', lat: 48.86, lon: 2.35, start: '${day(60)}', end: '${day(62)}' }
+] }, '*');
+</script></body></html>`;
+  await page.goto(base + '/documents/new');
+  await page.setInputFiles('input[name=file]', { name: 'trip-weather.html', mimeType: 'text/html', buffer: Buffer.from(TRIP) });
+  await page.click('form[action="/documents"] button[type=submit]');
+  await page.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
+  const raw = () => rawFrame(page);
+  await page.waitForTimeout(800);
+  const near = await raw().waitForFunction(() => !document.getElementById('near').textContent.startsWith('waiting'), null, { timeout: 8000 }).then(() => raw().textContent('#near'), () => 'no answer');
+  const far = await raw().waitForFunction(() => !document.getElementById('far').textContent.startsWith('waiting'), null, { timeout: 8000 }).then(() => raw().textContent('#far'), () => 'no answer');
+  if (near !== 'days 2 tmax 36.4 rain 80 by Open-Meteo.com') failures.push(`the trip page's forecast: "${near}"`);
+  if (far !== `from ${day(45)}`) failures.push(`a trip too far ahead: "${far}"`);
+  if (weatherAsks.length !== 1) failures.push(`the weather service was asked ${weatherAsks.length} times (expected once)`);
+  else if (!weatherAsks[0].includes('latitude=51.51&longitude=-0.13&')) failures.push(`the server did not round the place: ${weatherAsks[0]}`);
+}
+
 await page.goto(base + sketchPath, { waitUntil: 'networkidle' });
 await page.waitForTimeout(600);
 const expectedDrawings = await page.locator('.ink-layer g').count();
@@ -972,38 +1004,6 @@ async function checkFabs(p, label, width, height, problems, shot) {
   }
   const csp = await p.evaluate(() => window.__csp);
   if (csp.length) problems.push(`CSP after the buttons: ${csp.join('; ')}`);
-}
-
-// Trip pages (travel kit, Phase 1): the page names its places and dates, the server asks the
-// weather service (the stand-in above) and the forecast comes back into the frame. A trip too far
-// ahead gets the day its forecast starts, and the service is not asked.
-{
-  const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
-  const TRIP = `<!doctype html><html><head><meta charset="utf-8"><title>Trip weather</title></head><body>
-<h1>Trip weather sample</h1><p id="near">waiting</p><p id="far">waiting</p>
-<script>
-addEventListener('message', e => {
-  if (e.source !== parent || !e.data || e.data.type !== 'hj:weather') return;
-  const d = e.data;
-  document.getElementById(d.key).textContent = !d.ok ? 'error ' + d.error : d.available ? 'days ' + d.days.length + ' tmax ' + d.days[0].tmax + ' rain ' + d.days[0].rain_pct + ' by ' + d.source : 'from ' + d.from;
-});
-parent.postMessage({ type: 'hj:weather-want', places: [
-  { key: 'near', lat: 51.50735, lon: -0.12776, start: '${day(2)}', end: '${day(3)}' },
-  { key: 'far', lat: 48.86, lon: 2.35, start: '${day(60)}', end: '${day(62)}' }
-] }, '*');
-</script></body></html>`;
-  await page.goto(base + '/documents/new');
-  await page.setInputFiles('input[name=file]', { name: 'trip-weather.html', mimeType: 'text/html', buffer: Buffer.from(TRIP) });
-  await page.click('form[action="/documents"] button[type=submit]');
-  await page.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
-  const raw = () => rawFrame(page);
-  await page.waitForTimeout(800);
-  const near = await raw().waitForFunction(() => !document.getElementById('near').textContent.startsWith('waiting'), null, { timeout: 8000 }).then(() => raw().textContent('#near'), () => 'no answer');
-  const far = await raw().waitForFunction(() => !document.getElementById('far').textContent.startsWith('waiting'), null, { timeout: 8000 }).then(() => raw().textContent('#far'), () => 'no answer');
-  if (near !== 'days 2 tmax 36.4 rain 80 by Open-Meteo.com') failures.push(`the trip page's forecast: "${near}"`);
-  if (far !== `from ${day(45)}`) failures.push(`a trip too far ahead: "${far}"`);
-  if (weatherAsks.length !== 1) failures.push(`the weather service was asked ${weatherAsks.length} times (expected once)`);
-  else if (!weatherAsks[0].includes('latitude=51.51&longitude=-0.13&')) failures.push(`the server did not round the place: ${weatherAsks[0]}`);
 }
 
 const PAGES = [['signin', '/', false], ['privacy', '/privacy', false], ['documents', '/documents', true], ['upload', '/documents/new', true], ['document', docPath, true], ['markup', markupPath, true], ['sketch', sketchPath, true], ['signing', signPath, true], ['picture', picturePath, true], ['redaction', redactPath, true], ['consent', '/consent', true], ['about', '/about', true], ['journal', '/journal', true], ['owner', '/owner', true]];
