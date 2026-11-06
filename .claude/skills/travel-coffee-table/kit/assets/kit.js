@@ -52,7 +52,7 @@ $$('details[data-cc]').forEach(function(d){
 });
 
 /* ---- map command centre ---- */
-var map=null, routeLayer=null, safetyLayer=null, markers=[], trail=null, dayIdx=0, flying=false, flyTimer=null;
+var map=null, routeLayer=null, safetyLayer=null, markers=[], trail=null, dayIdx=0, flying=false, flyTimer=null, flight=0;
 var daySel=$('#mc-day'), stopSel=$('#mc-stop'), legSel=$('#mc-leg'), stopList=$('#mc-stops'), flyBtn=$('#fly');
 D.days.forEach(function(d,i){var o=document.createElement('option');o.value=i;o.textContent=d.label+': '+d.title;daySel.appendChild(o);});
 
@@ -95,6 +95,8 @@ function focusStop(i){
   if(markers[i]){markers[i].openPopup();}
 }
 function selectDay(i){
+  // A route flight belongs to one day: changing the day ends it first.
+  if(flying){ stopFly(); }
   dayIdx=Math.max(0,Math.min(D.days.length-1,i|0)); daySel.value=dayIdx; fillSelectors(); drawDay();
   if(currentTab!=='route'){ showTab(currentTab); }
 }
@@ -105,26 +107,28 @@ legSel.addEventListener('change',function(){showTab('dir');});
 function animatePath(path,ms,done){
   if(!trail){done();return;}
   if(ms<=0||path.length<2){ path.forEach(function(p){trail.addLatLng(p);}); done(); return; }
-  var n=path.length, start=null, added=0;
-  function step(ts){ if(!flying){return;} if(start===null){start=ts;} var k=Math.min(1,(ts-start)/ms), want=Math.max(1,Math.round(k*n));
+  var n=path.length, start=null, added=0, mine=flight;
+  function step(ts){ if(!flying||mine!==flight){return;} if(start===null){start=ts;} var k=Math.min(1,(ts-start)/ms), want=Math.max(1,Math.round(k*n));
     while(added<want){trail.addLatLng(path[added]);added++;}
     if(k<1){requestAnimationFrame(step);}else{done();} }
   requestAnimationFrame(step);
 }
-function stopFly(){ flying=false; clearTimeout(flyTimer); if(flyBtn){flyBtn.disabled=false;flyBtn.textContent=t('fly','Fly route');} }
+function stopFly(){ flying=false; flight++; clearTimeout(flyTimer); if(map&&map.stop){map.stop();} if(flyBtn){flyBtn.disabled=false;flyBtn.textContent=t('fly','Fly route');} }
 function flyRoute(){
   if(!map){return;}
   if(flying){ stopFly(); fit(); return; }
   showTab('route'); flying=true; flyBtn.textContent=t('fly_stop','Stop');
-  var d=D.days[dayIdx], i=0;
+  // Each flight has its own number; callbacks left over from an earlier flight do nothing.
+  var d=D.days[dayIdx], i=0, mine=++flight;
+  var live=function(){ return flying&&mine===flight; };
   if(trail){routeLayer.removeLayer(trail);}
   trail=L.polyline([],{color:'#7a5c28',weight:6,opacity:.9}).addTo(routeLayer);
   function next(){
-    if(!flying){return;}
+    if(!live()){return;}
     if(i>=d.stops.length){ stopFly(); fit(); return; }
     var s=d.stops[i], done=false;
-    function arrived(){ if(done||!flying){return;} done=true; clearTimeout(flyTimer);
-      markers.forEach(function(m,j){m.setIcon(letterIcon(d.stops[j].letter,j===i));});
+    function arrived(){ if(done||!live()){return;} done=true; clearTimeout(flyTimer);
+      markers.forEach(function(m,j){ if(d.stops[j]){ m.setIcon(letterIcon(d.stops[j].letter,j===i)); } });
       if(markers[i]){markers[i].openPopup();}
       var l=d.legs[i]; i++;
       if(l){ animatePath(l.path,reduce?0:1100,function(){ flyTimer=setTimeout(next,reduce?60:350); }); } else { flyTimer=setTimeout(next,reduce?60:700); }

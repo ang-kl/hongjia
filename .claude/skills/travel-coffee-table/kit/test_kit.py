@@ -156,6 +156,17 @@ class KitTest(unittest.TestCase):
         self.assertIn('Open-Meteo.com', compact)
         self.assertIn('Weatherdataby', re.sub(r'\s+', '', self.html))
 
+    def test_changing_day_ends_a_route_flight(self):
+        # Codex review: a flight's callbacks used the old day after the day changed, and threw.
+        # Changing the day stops the flight, and every callback checks it belongs to the live flight.
+        js = ''.join(n.text() for n in find(self.root, 'script') if not n.attrs.get('src') and n.attrs.get('type') != 'application/json')
+        compact = re.sub(r'\s+', '', js)
+        day = compact[compact.index('functionselectDay('):]
+        self.assertTrue(day[:day.index('dayIdx=')].endswith('if(flying){stopFly();}'))
+        self.assertIn('flight++', compact[compact.index('functionstopFly('):])
+        self.assertIn('mine=++flight', compact)
+        self.assertIn('if(done||!live()){return;}', compact)
+
     # ------------------------------------------------------------ owner's rules
     def test_only_allowed_script_hosts(self):
         for s in find(self.root, 'script'):
