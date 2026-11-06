@@ -427,7 +427,15 @@
        "lng": 0.0812,
        "hours": "Daily 8am to 4pm (fictional)",
        "source": "ex_tourism",
-       "website": "https://example.com/example-bay/eat"
+       "website": "https://example.com/example-bay/eat",
+       "awards": [
+        {
+         "award": "Example Readers’ Choice",
+         "year": "2025",
+         "body": "Example Food Guide (fictional)",
+         "source": "https://example.com/example-bay/awards"
+        }
+       ]
       },
       {
        "name": "The Net Loft",
@@ -515,7 +523,44 @@
       }
      ]
     }
-   ]
+   ],
+   "taste": {
+    "text": "Try the harbour’s smoked fish on rye, a local speciality.",
+    "items": [
+     {
+      "name": "Smokehouse Kiosk",
+      "cat": [
+       "snacks"
+      ],
+      "kind": "Smokehouse",
+      "why": "Hot-smoked fish to take away.",
+      "lat": 0.0473,
+      "lng": 0.0815,
+      "hours": "Daily 9am to 5pm (fictional)",
+      "source": "ex_tourism",
+      "website": "https://example.com/example-bay/shop"
+     }
+    ]
+   },
+   "shop": {
+    "text": "The lanes behind the quay have small boutiques.",
+    "hours": "General shops 9am to 5pm today (fictional rule) [[src:ex_tourism]].",
+    "items": [
+     {
+      "name": "Quay Lanes",
+      "cat": [
+       "shopping"
+      ],
+      "kind": "Shopping lanes",
+      "why": "Boutiques and a bookshop, step-free paving.",
+      "lat": 0.0478,
+      "lng": 0.082,
+      "hours": "Daily 9am to 5pm (fictional)",
+      "source": "ex_tourism",
+      "website": "https://example.com/example-bay/shop"
+     }
+    ]
+   }
   },
   {
    "when": "Sun 13 Jun",
@@ -1995,6 +2040,26 @@
      "source": "ex_tourism",
      "distance_note": "300 m in a straight line from the planned stop; walking time is a rough estimate."
     }
+   ],
+   "awards": [
+    {
+     "award": "Example Food Guide, one hat",
+     "year": "2026",
+     "body": "Example Food Guide (fictional)",
+     "source": "ex_tourism"
+    }
+   ],
+   "social": [
+    {
+     "kind": "instagram",
+     "url": "https://www.instagram.com/reel/C0ExampleReel/",
+     "by": "examplebaytourism"
+    },
+    {
+     "kind": "facebook",
+     "url": "https://www.facebook.com/examplebaytourism/posts/1",
+     "by": "examplebaytourism"
+    }
    ]
   },
   "lighthouse": {
@@ -2067,7 +2132,19 @@
     "spot": "The gallery rail on the seaward side",
     "tip": "Late afternoon light; benches by the door.",
     "source": "ex_tourism"
-   }
+   },
+   "social": [
+    {
+     "kind": "instagram",
+     "url": "https://www.instagram.com/p/C0ExampleBay1/",
+     "by": "examplebaytourism"
+    },
+    {
+     "kind": "tiktok",
+     "url": "https://www.tiktok.com/@examplebaytourism/video/7300000000000000001",
+     "by": "examplebaytourism"
+    }
+   ]
   },
   "beach": {
    "name": "Lantern Beach",
@@ -2650,5 +2727,105 @@
  },
  "page": {
   "meal_choices": 4
+ },
+ "taste_shop": {
+  "nav": "Taste & Shop",
+  "kicker": "Food, sweets and shopping",
+  "title": "Taste & *Shop*",
+  "intro": "What to taste, where to snack, the markets on your days and where to shop, by area.",
+  "areas": [
+   {
+    "area": "bay",
+    "signature": [
+     {
+      "name": "Smoked fish on rye",
+      "where": "Smokehouse Kiosk on the quay",
+      "why": "The bay’s best-known snack.",
+      "season": "All year",
+      "source": "ex_tourism"
+     }
+    ],
+    "sweets": [
+     {
+      "name": "Gull Fudge Shop",
+      "cat": [
+       "snacks"
+      ],
+      "kind": "Fudge",
+      "why": "Fudge made on site.",
+      "lat": 0.0479,
+      "lng": 0.0824,
+      "hours": "Daily 9am to 5pm (fictional)",
+      "source": "ex_tourism",
+      "website": "https://example.com/example-bay/shop"
+     }
+    ],
+    "markets": [
+     {
+      "name": "Sunday Quay Market",
+      "cat": [
+       "shopping"
+      ],
+      "kind": "Market",
+      "why": "Produce and crafts.",
+      "lat": 0.0472,
+      "lng": 0.0811,
+      "hours": "Sundays 8am to noon (fictional)",
+      "source": "ex_tourism",
+      "website": "https://example.com/example-bay/shop"
+     }
+    ],
+    "shopping": [
+     {
+      "name": "Lantern Arcade",
+      "cat": [
+       "shopping"
+      ],
+      "kind": "Arcade",
+      "why": "Fashion and gifts under one roof; lifts.",
+      "lat": 0.0484,
+      "lng": 0.0829,
+      "hours": "Daily 9am to 5pm (fictional)",
+      "source": "ex_tourism",
+      "website": "https://example.com/example-bay/shop"
+     }
+    ],
+    "bring_home": [
+     {
+      "what": "Bay sea salt",
+      "where": "Most delis on the quay.",
+      "note": "",
+      "source": "ex_tourism"
+     }
+    ]
+   }
+  ],
+  "blocks": [
+   {
+    "type": "table",
+    "caption": "Shop hours on your days (fictional)",
+    "head": [
+     "Day",
+     "Where",
+     "General shops",
+     "Source"
+    ],
+    "rows": [
+     [
+      "Day 1",
+      "Example Bay",
+      "9am to 5pm",
+      "[[src:ex_tourism]]"
+     ],
+     [
+      "Day 2",
+      "Lantern Coast",
+      "9am to 1pm",
+      "[[src:ex_tourism]]"
+     ]
+    ],
+    "facts": true
+   }
+  ]
  }
 }

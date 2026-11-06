@@ -54,7 +54,14 @@ generic and stay in this folder:
    `days[].meals`, open on that date, with the planned place counted (the owner asks for four:
    `page.meal_choices: 4`). Each place gets its best photo spot (`photo_spot`) only where an official
    source names one. Route lines and notes link their places with `[[place:key|text]]`, and stay
-   cards name their place, so every place name opens its panel. Concierge panels per area. Prose sections: overview, holidays and weather, stays, transport,
+   cards name their place, so every place name opens its panel. Food, snacks and shopping matter
+   most to this family: each day gets "Taste of the day" and "Shop the day" (with that day's shop trading
+   hours, holidays included), and `taste_shop` gives each area its signature tastes, sweet stops, markets
+   on the family's day, shopping and what to bring home, with the trading-hours table. "Highest star"
+   means published awards and guide listings (`awards`), never Google or other star ratings in the page.
+   For the Gallery view, add official accounts' posts per stop (`social`), chosen because they show that
+   place and match the page's words; say "from the official accounts", not "most popular", unless
+   popularity was measured. Concierge panels per area. Prose sections: overview, holidays and weather, stays, transport,
    backups, checklist. Upgrades per area. The data file for a real trip is private: keep it outside
    the repository (see Privacy).
 5. **Render**: `python3 kit/build.py trip.json -o trip.html`.

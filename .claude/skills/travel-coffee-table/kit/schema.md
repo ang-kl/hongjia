@@ -172,6 +172,8 @@ Shown on the map when the reader ticks the safety box.
 | `line` | | One plain line for the opener's cards and the trip tour (default: the stop's first role). |
 | `nearby` | | "If it's closed or crowded": small cards under the stop, and pins on the map's Nearby options layer. Each `{name, cat, why, distance, distance_note, hours, website, lat, lng, q, source}`: `name` and `cat` required; `why` is *rich*; `hours` needs `source` (a source key or an https URL). `distance` is one plain line people read at a glance ("About 3 min walk", "About 5 min drive", "In the same park"); how it was worked out goes in `distance_note`, shown as its title. `lat` and `lng` go together: without them the card still shows, with a Google Maps link that searches `q` (default: the name) but no pin and no Show on map, for a place that has no fixed spot or no confirmed one. Places of worship come the same way, with `cat` `worship` and an optional `faith`. Optional `instagram` (the venue's own account, `https://www.instagram.com/<handle>/`, only when its own website links to it), `address`, `photo` (a `photos` id or a photo object) and `photo_spot` (as for stops). |
 | `instagram_tag` | | Adds `#tag` (Instagram photos), letters and digits only. |
+| `awards` | | Published awards or guide listings only, never star ratings: `[{award, year, body, source}]`; `award` and `source` (a source key or an https page, preferably the awarding body's) required. Shown as "🏆" chips on the card and in the panel. Also allowed on nearby alternatives and meal choices. |
+| `social` | | Posts for the Gallery view, from official accounts only (the venue's own, linked from its website, or the official tourism body): `[{kind, url, by}]`. `kind` `instagram` (`https://www.instagram.com/p/<code>/` or `/reel/<code>/`), `tiktok` (`https://www.tiktok.com/@<handle>/video/<id>`) or `facebook` (any https facebook.com link, shown as a link only); `by` is the account's handle. Each post loads only when tapped. Never label posts "most popular" unless that was measured. |
 | `photo_spot` | | The place's best photo spot, as an official source names it: `{spot, tip, source}`; `spot` and `source` (a source key or an https page) required. Shown on the card ("📸 Photo spot") and in the place's panel. Never from popularity or guesswork. |
 | `tiktok_search` | | Adds a TikTok search. |
 | `details` | | `{text, source}` or `{text, url}`: the "Details" links under the link row. |
@@ -211,6 +213,7 @@ Suitability marks:
 | `plan_c` | | Plan C (heat, wind or storm): `{stop, role, replaces}` items. |
 | `plan_notes` | | `{"b": rich, "c": rich}`: one line under each plan's heading. |
 | `weather` | | A `weather.places` key: the day's forecast strip. |
+| `taste`, `shop` | | The day's two boxes, "Taste of the day" and "Shop the day": `{text, hours, items}`. `text` and `hours` are *rich* (`hours`, the shops' trading hours that day, is a fact and needs a source tag); `items` are cards like a stop's `nearby` (`cat` defaults to `food` and `shopping`). |
 | `meals` | | The day's meals, each with its choices: `{meal, time, note, choices}`. `meal` is `breakfast`, `brunch`, `lunch`, `dinner` or `snack`; `note` is *rich*; each choice is `{stop, role}` (a planned stop, marked "Planned") or a card like a stop's `nearby` (`cat` defaults to `food`; `hours` need a `source`). With `page.meal_choices`, the count must match. |
 | `nearby` | | Optional extras: `{id, name, kind, why, hours, hours_sources, lat, lng, q, links, photo}`; `id`, `name`, `why`, `lat`, `lng`, `q` required; `hours` is a fact, so give `hours_sources` (source keys or https URLs); `photo` is a `photos` id or a photo object; `cat` puts it in the legend and on the map's Nearby options layer. |
 
@@ -362,6 +365,25 @@ with Back and Next, closes with Esc, and under reduced motion does not play by i
 `worship`: `[{base, title, items}]`, where `base` is an area id (its name heads the group) or `title`
 names it, and `items` are like a stop's `nearby` (`cat` defaults to `worship`; add `faith`). They show
 in the stays section and on the map's Nearby options layer.
+
+## Taste & Shop
+
+`taste_shop` (in `page.order` after `days`): `{nav, kicker, title, intro, areas, blocks}`. Each area is
+`{area, title, intro, signature, sweets, markets, shopping, bring_home}`: `area` is an `areas` id (or give
+`title`); `signature` lists local things to taste, `{name, where, why, season, source}` with `name` and
+`source` required; `sweets`, `markets` and `shopping` are cards like a stop's `nearby` (with their hours
+and sources on the family's day there); `bring_home` is `{what, where, note, source}`. `blocks` hold the
+trading-hours table for the trip's days (a `table` block whose rows each carry a source tag). The section
+has "Hungry?" and "Shop nearby" buttons: Near me filtered to food, snacks and drinks, or to shops.
+
+## The Gallery view
+
+One switch in the top bar, Read or Gallery, turns the page into a picture book and back. Each day opens
+on its title, then a mosaic of three shapes: wide photos, portrait cards (Instagram posts) and tall cards
+(Reels and TikTok videos), each with the place's name (it opens the panel), the page's own line about it
+and the photo's credit. Posts come from `stops[].social` and load only when tapped, from the embed
+addresses `https://www.instagram.com/(p|reel)/<code>/embed/captioned/` and
+`https://www.tiktok.com/embed/v2/<id>`; Facebook posts open Facebook. Reading mode keeps every word.
 
 ## Place panels, Share and Near me
 
