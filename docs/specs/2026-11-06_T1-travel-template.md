@@ -1,6 +1,6 @@
 # T1: Travel template, Phase 1
 
-Version 1, 6 November 2026. Follows the owner's requests of 6 November 2026. Trip details stay out of this public repository, so the owner's words name the trip as [the trip].
+Version 2, 6 November 2026. Follows the owner's requests of 6 November 2026. Trip details stay out of this public repository, so the owner's words name the trip as [the trip].
 
 ## Owner requests and decisions
 
@@ -74,3 +74,20 @@ Version 1, 6 November 2026. Follows the owner's requests of 6 November 2026. Tri
   - The privacy page names Open-Meteo.
 - **Page tests:** `hj:weather-want` accepts a good ask and refuses wrong keys, repeats, too many places, bad numbers and bad dates. The page never accepts `hj:weather` from the frame.
 - **Browser check:** a sample trip page asks for two places. The near one gets the stand-in's forecast through the server; the far one gets the day its forecast starts. The stand-in is asked once, with rounded coordinates.
+
+## Travel skill and page kit
+
+The skill and kit live in `.claude/skills/travel-coffee-table/`, so a Claude session working on this repository finds the skill. Everything there is generic. Data files for real trips live outside the repository.
+
+- **`SKILL.md`** covers:
+  - when to use it: an upload whose intention is a trip or tour;
+  - the workflow: intake, then the owner's choices (audience mode, luxury level, sub-type), research with every fact sourced, the data file, the render, `--check`, the owner's review, and only then filing as a new version;
+  - the quality bar ("super-luxury" and "wow" in both look and content), Plan A/B/C, the weather protocol, and the privacy rules.
+- **`kit/build.py`** (Python 3 standard library only) renders one data file into one self-contained page in the approved coffee-table design. `--check` refuses blank picture holders, photos without a credit, facts without a source, and plain `http://` links. Text from the data file is escaped, and rich fields allow only a short list of tokens.
+- **`kit/assets/kit.js`** builds the page's behaviour with `textContent`, never `innerHTML`, and makes no network calls. It sends `hj:weather-want` only inside a frame, and accepts `hj:weather` only from the parent window.
+- **Plan A/B/C:** each day has Plan A (its stops) and may list Plan B (rain) and Plan C (heat, wind or storm). The rules come from the data file. Inside the forecast window the page highlights the plan the rules suggest, and never hides the others. Before that, it shows "Forecast from" a date, with the rules.
+- **Audience:** the document's owner chooses `party` (one travelling group) or `lenses` (switchable kinds of traveller, using stop suitability marks such as step-free, walking, shade, seating, toilets, children and seniors).
+- **Upgrades:** an optional section of luxury upgrades per area, each with its price as sourced and how far ahead to book. Upgrades never replace the plan.
+- **`kit/schema.md`** documents every field. **`kit/example/trip.json`** is a fictional two-day trip that uses every component.
+- **`reference/subtypes.md`** has a complete checklist for road trip and countryside, and shorter ones for city and culture, nature and wildlife, food and wine, cruise, faith and heritage, young family, gentle travel for seniors, and celebration.
+- **Checks:** `kit/test_kit.py` has 17 tests and runs in CI, in the browser-js job. It builds the example and checks every component, the weather places, the allowed script sources, that `innerHTML` is never used with data, that no photo slot is empty, that every photo has a credit, and both audience modes.
