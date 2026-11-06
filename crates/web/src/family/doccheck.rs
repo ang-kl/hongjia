@@ -628,7 +628,13 @@ fn decode_entities(text: &str) -> String {
     while let Some(amp) = rest.find('&') {
         out.push_str(&rest[..amp]);
         let tail = &rest[amp..];
-        let Some(semi) = tail[..tail.len().min(12)].find(';') else {
+        // Look for the ';' within the next 12 bytes, cut at a character boundary: text such as
+        // "& ⏰ Hours" puts a multi-byte character there, and slicing inside it panicked.
+        let mut window = tail.len().min(12);
+        while !tail.is_char_boundary(window) {
+            window -= 1;
+        }
+        let Some(semi) = tail[..window].find(';') else {
             out.push('&');
             rest = &tail[1..];
             continue;
@@ -1601,5 +1607,17 @@ localStorage.setItem('k', 'v');
             decode_entities("a &amp; b &#39;c&#x27; &bogus; &"),
             "a & b 'c' &bogus; &"
         );
+    }
+
+    #[test]
+    fn an_ampersand_before_wide_characters_does_not_crash_the_check() {
+        // A trip page had "Food & Drinks ⏰ Hours": the 12-byte look-ahead for ';' ended inside
+        // the clock emoji, and the upload check panicked.
+        assert_eq!(decode_entities("Food &  ⏰ Hours"), "Food &  ⏰ Hours");
+        assert_eq!(decode_entities("&é;"), "&é;");
+        assert_eq!(decode_entities("café &amp; ⏰"), "café & ⏰");
+        for text in ["&⏰⏰⏰⏰", "& 🍫🍫🍫", "&amp⏰;", "ab&cdefghij⏰k;"] {
+            let _ = decode_entities(text);
+        }
     }
 }
