@@ -50,7 +50,11 @@ generic and stay in this folder:
    "if it's closed or crowded" alternatives nearby, with places of worship near each base. Chips
    carry a short label only (notes go in their title); write distances as one plain line ("About
    3 min walk") with the method in `distance_note`; a place with no confirmed spot may leave out
-   `lat`/`lng` (it shows without a pin). Concierge panels per area. Prose sections: overview, holidays and weather, stays, transport,
+   `lat`/`lng` (it shows without a pin). Every meal (breakfast, lunch, dinner) gets its choices in
+   `days[].meals`, open on that date, with the planned place counted (the owner asks for four:
+   `page.meal_choices: 4`). Each place gets its best photo spot (`photo_spot`) only where an official
+   source names one. Route lines and notes link their places with `[[place:key|text]]`, and stay
+   cards name their place, so every place name opens its panel. Concierge panels per area. Prose sections: overview, holidays and weather, stays, transport,
    backups, checklist. Upgrades per area. The data file for a real trip is private: keep it outside
    the repository (see Privacy).
 5. **Render**: `python3 kit/build.py trip.json -o trip.html`.
@@ -64,11 +68,14 @@ generic and stay in this folder:
 
 The owner wants both the look and the content to be super-luxury and to "wow".
 
-- **Look**: the approved design (white page, gold, Playfair Display headings, mono kickers), a
-  full-screen opening that makes the reader want to go now, generous photography (up to four per
+- **Look**: the Atelier design (6 November 2026): warm ivory and a deep green, Fraunces display
+  headings with one italic accent word (`*word*` in titles), Inter text and letter-spaced labels,
+  rounded photo cards with their credits laid over the picture, a frosted top bar, a photo band
+  opening each day; a full-screen opening that makes the reader want to go now, generous photography (up to four per
   stop, the best first, and photos on every schedule item), clips where they exist, live posts
   from official accounts, the globe, a map for every day, a legend that lights places up, nothing
-  cramped, nothing wider than a 390 px phone. Movement is gentle and stops under reduced motion.
+  cramped, nothing wider than a 390 px phone. Place names open a panel in the page rather than a
+  new window. Movement uses the Web Animations API, is gentle and stops under reduced motion.
   Accessibility stays: 44 px targets, keyboard use, screen-reader labels, print mode.
 - **Content**: a concierge's knowledge, not a brochure's. Each stop says why it is there, the best
   time, the photo moments, the easier version, and what is nearby. Real distances and road times

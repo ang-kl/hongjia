@@ -24,9 +24,13 @@ left out of the page and out of the top navigation.
 | `[[src:KEY]]`, `[[src:KEY\|label]]` | a source tag for `sources.KEY` (gold when checked, grey when carried over) |
 | `[[tel:+00 0000 0000\|shown text]]` | a phone link (digits, spaces, brackets, a leading +) |
 | `[[link:https://…\|text]]` | a link (https, mailto, tel or an in-page `#anchor` only) |
+| `[[place:KEY]]`, `[[place:KEY\|text]]` | the name of `places.KEY` (or `text`), underlined; it opens the place's panel in the page, never a new window. Use it in route lines such as "[[place:station\|Station]] → [[place:hotel\|Hotel]]" |
 | `**words**` | bold |
 | `[[added]] … [[/added]]` | a note set off with a gold rule ("added in this edition") |
 | `[[br]]` | a line break (table cells) |
+
+Titles (the masthead and opener title, section titles and day titles) may set one word in the
+accent italic with single asterisks: `"Arrive, settle in, *exhale*"`.
 
 Any link anywhere in the file must be `https://` (or `tel:`/`mailto:` where a phone or email link
 makes sense). Pictures may also be `data:image/…` URIs. Plain `http://` is refused.
@@ -69,6 +73,8 @@ booking status).
 
 ### `page`, `nav`, `labels`
 
+- `page.meal_choices`: when set (for example `4`), every meal in `days[].meals` must list exactly
+  that many choices, the planned place counted; the check refuses the file otherwise.
 - `page.order`: the sections in page order. Default:
   `overview, audience, plans, map, days, concierge, holidays, stays, transport, backups, checklist, upgrades, credits, sources`.
 - `nav.days_label`: the small word before the day numbers in the top bar (a month, for example).
@@ -164,8 +170,9 @@ Shown on the map when the reader ticks the safety box.
 | `links` | | The official links, shown without opening anything: `{kind, url, label, note}`. Kinds: 🌐 `web`, 📷 `ig` (Instagram), 📘 `fb` (Facebook), 🎵 `tt` (TikTok), ▶️ `yt` (YouTube), 📍 `addr` (the address as `label`; it links to a Google Maps search, or to `url` if that is on google.com/maps), 📞 `tel`, ⏰ `hours` (the hours as `label`, with their `source` key or `url`: hours are a fact), and `mail`, `book`, `x`. Social links must be https on instagram.com, facebook.com, tiktok.com or youtube.com. Google Maps (unless an address is given) and Google Earth are added from the place. With an Instagram link, the card also gets a drawer with the venue's own profile embed, loaded only when opened. **Layout**: one wrapping row of small single-line chips (website, socials, call, maps; text never wraps), then the address as a line of text linking to Google Maps (`note` names whose address it is), then the hours: one line when the text is 60 characters or less, otherwise a small "⏰ Hours ▸" disclosure with the quoted hours and their source. A `tel` chip shows the number on wide screens and "Call" on phones: put the number as written in `label` (or `note`) and a name such as "Reception" in the other; the name goes in the chip's title; when a stop has two venues, `short` (a short venue name, up to 24 characters) makes it "Café · 0000 000" and "Call Café". Notes never appear inside a chip: they become its title (hover text), so anything that matters belongs in the sources. When one stop has two venues, give each chip a short `label` that says which ("Café website", "Café Instagram"). |
 | `cat` | | Legend category, or a list (see Legend categories). |
 | `line` | | One plain line for the opener's cards and the trip tour (default: the stop's first role). |
-| `nearby` | | "If it's closed or crowded": small cards under the stop, and pins on the map's Nearby options layer. Each `{name, cat, why, distance, distance_note, hours, website, lat, lng, q, source}`: `name` and `cat` required; `why` is *rich*; `hours` needs `source` (a source key or an https URL). `distance` is one plain line people read at a glance ("About 3 min walk", "About 5 min drive", "In the same park"); how it was worked out goes in `distance_note`, shown as its title. `lat` and `lng` go together: without them the card still shows, with a Google Maps link that searches `q` (default: the name) but no pin and no Show on map, for a place that has no fixed spot or no confirmed one. Places of worship come the same way, with `cat` `worship` and an optional `faith`. |
+| `nearby` | | "If it's closed or crowded": small cards under the stop, and pins on the map's Nearby options layer. Each `{name, cat, why, distance, distance_note, hours, website, lat, lng, q, source}`: `name` and `cat` required; `why` is *rich*; `hours` needs `source` (a source key or an https URL). `distance` is one plain line people read at a glance ("About 3 min walk", "About 5 min drive", "In the same park"); how it was worked out goes in `distance_note`, shown as its title. `lat` and `lng` go together: without them the card still shows, with a Google Maps link that searches `q` (default: the name) but no pin and no Show on map, for a place that has no fixed spot or no confirmed one. Places of worship come the same way, with `cat` `worship` and an optional `faith`. Optional `instagram` (the venue's own account, `https://www.instagram.com/<handle>/`, only when its own website links to it), `address`, `photo` (a `photos` id or a photo object) and `photo_spot` (as for stops). |
 | `instagram_tag` | | Adds `#tag` (Instagram photos), letters and digits only. |
+| `photo_spot` | | The place's best photo spot, as an official source names it: `{spot, tip, source}`; `spot` and `source` (a source key or an https page) required. Shown on the card ("📸 Photo spot") and in the place's panel. Never from popularity or guesswork. |
 | `tiktok_search` | | Adds a TikTok search. |
 | `details` | | `{text, source}` or `{text, url}`: the "Details" links under the link row. |
 | `clips` | | Videos: `{sources: [{src, type}], poster, alt, cap, credit, page, host, licence, licence_url}`; `poster`, `alt`, `cap`, `credit` and one source are required. |
@@ -204,6 +211,7 @@ Suitability marks:
 | `plan_c` | | Plan C (heat, wind or storm): `{stop, role, replaces}` items. |
 | `plan_notes` | | `{"b": rich, "c": rich}`: one line under each plan's heading. |
 | `weather` | | A `weather.places` key: the day's forecast strip. |
+| `meals` | | The day's meals, each with its choices: `{meal, time, note, choices}`. `meal` is `breakfast`, `brunch`, `lunch`, `dinner` or `snack`; `note` is *rich*; each choice is `{stop, role}` (a planned stop, marked "Planned") or a card like a stop's `nearby` (`cat` defaults to `food`; `hours` need a `source`). With `page.meal_choices`, the count must match. |
 | `nearby` | | Optional extras: `{id, name, kind, why, hours, hours_sources, lat, lng, q, links, photo}`; `id`, `name`, `why`, `lat`, `lng`, `q` required; `hours` is a fact, so give `hours_sources` (source keys or https URLs); `photo` is a `photos` id or a photo object; `cat` puts it in the legend and on the map's Nearby options layer. |
 
 ## Plans and weather
@@ -273,6 +281,7 @@ Blocks (`type`):
 | `alert` | `title`, `text` *rich* |
 | `list` | `items` *rich*, `style`: `mini` (default) or `principles`, `title`, `box` (wrapper class, for example `avoid`), `facts` |
 | `bases` | `items`: `{label, name, text, note}` |
+| `cards` | `items`: `{kicker, title, paras, place}`; `layout` `two` or `three`; `style` `stay`; with `place` (a `places` id) the title opens that place's panel |
 | `anchors` | `items`: `{label, code, lines}` (flights, trains, ferries) |
 | `details` | `summary`, `items` and/or `paras` (*rich*), `style: "howto"` |
 | `cards` | `items`: `{kicker, title, paras}`, `layout`: `two` or `three`, `style: "stay"`, `facts` |
@@ -353,6 +362,26 @@ with Back and Next, closes with Esc, and under reduced motion does not play by i
 `worship`: `[{base, title, items}]`, where `base` is an area id (its name heads the group) or `title`
 names it, and `items` are like a stop's `nearby` (`cat` defaults to `worship`; add `faith`). They show
 in the stays section and on the map's Nearby options layer.
+
+## Place panels, Share and Near me
+
+Every place name on the page (stop cards, nearby alternatives, places of worship, meal choices, the
+day's extras, stay cards and `[[place:…]]`) is underlined and opens one panel inside the page: from
+the bottom on a phone (drag it down to close), from the right on a wider screen. It shows the photo
+with its credit, what the place is, its address, hours and photo spot with their sources, Show on
+map and Share, then the outside links (website, Google Maps, Instagram), each marked ↗ because it
+opens a new tab, and the venue's own Instagram posts, loaded only when the panel opens. Escape, ×,
+or a tap outside closes it, and the reader is back where they were.
+
+- **Share**: on the family site the locked page cannot share, so it asks the site
+  (`hj:share-want`): a place by its public facts and an https link; a day only by the document's
+  link on the site (the owner, 6 November 2026: "link only"). Opened elsewhere, it uses the
+  browser's share menu or copies the link.
+- **Near me**: on the family site the site asks the person in its own words, takes a rough reading
+  (never high accuracy) and sends back only the nearest places' keys and distances to the nearest
+  half kilometre (`hj:near-want` and `hj:near`); the page never receives coordinates.
+- **Motion** uses the Web Animations API through one helper, and none at all when the reader asks
+  for reduced motion; no animation is left filling after it ends.
 
 ## The check (`--check`)
 

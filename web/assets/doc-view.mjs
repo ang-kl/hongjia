@@ -15,9 +15,15 @@ import { createSignaturePad, signatureNodes } from './signature.mjs';
 export const LIMITS = { key: 200, value: 4000, storage: 8000, label: 200, quote: 1000, around: 64, id: 20, text: 500, body: 4000, path: 400 };
 export const COLORS = ['yellow', 'green', 'blue', 'pink', 'orange'];
 export const STAMPS = [['check', '✓'], ['cross', '✗'], ['approved', 'Approved'], ['reviewed', 'Reviewed'], ['signedoff', 'Signed off']];
-const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape', 'hj:weather-want', 'hj:tiles-want']);
+const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape', 'hj:weather-want', 'hj:tiles-want', 'hj:share-want', 'hj:near-want']);
 /// A trip page may ask for the forecast of up to this many places (travel kit, Phase 1).
 export const MAX_WEATHER_PLACES = 12;
+/// A trip page may ask which of up to this many places are nearest ("Near me", 6 November 2026).
+export const MAX_NEAR_PLACES = 200;
+/// The nearest places sent back, each with a rough distance only.
+export const NEAR_ANSWERS = 20;
+/// Lengths a trip page may ask this page to share (the Web Share API, 6 November 2026).
+export const SHARE_LIMITS = { title: 120, text: 300, url: 2000 };
 const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 const PLACE_KEY = /^[a-z0-9][a-z0-9-]{0,29}$/;
 /// Loupe magnifications (D3): 0 is closed.
@@ -113,8 +119,63 @@ export function validMessage(data) {
     case 'hj:tiles-want':
       // A trip page's map asks for a ticket to load its map pictures through this site.
       return { type: data.type };
+    case 'hj:share-want':
+      // The locked frame cannot share, so a trip page asks this page. A place is shared by its
+      // public facts and an https link; the document itself only by its link on this site (the
+      // owner, 6 November 2026: "link only"), so trip details never leave in the message.
+      if (data.kind === 'doc') {
+        if (!isText(data.title ?? '', SHARE_LIMITS.title)) return null;
+        return { type: data.type, kind: 'doc', title: data.title ?? '' };
+      }
+      if (data.kind !== 'place' || !isText(data.title, SHARE_LIMITS.title) || !data.title.trim()) return null;
+      if (!isText(data.text ?? '', SHARE_LIMITS.text) || !shareUrl(data.url)) return null;
+      return { type: data.type, kind: 'place', title: data.title, text: data.text ?? '', url: data.url };
+    case 'hj:near-want': {
+      // "Near me": a trip page names its places; this page asks the person, then the device, and
+      // answers with the nearest keys and rough distances, never the person's coordinates.
+      if (!Array.isArray(data.places) || data.places.length < 1 || data.places.length > MAX_NEAR_PLACES) return null;
+      const places = [];
+      for (const p of data.places) {
+        if (!p || typeof p !== 'object' || !isText(p.key, 30) || !PLACE_KEY.test(p.key)) return null;
+        if (!isNumber(p.lat, -90, 90) || !isNumber(p.lon, -180, 180)) return null;
+        places.push({ key: p.key, lat: p.lat, lon: p.lon });
+      }
+      if (new Set(places.map(p => p.key)).size !== places.length) return null;
+      return { type: data.type, places };
+    }
   }
   return null;
+}
+
+/// An address a trip page may ask to share: https only, no user name or password in it.
+export function shareUrl(v) {
+  if (!isText(v, SHARE_LIMITS.url) || !v.startsWith('https://')) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === 'https:' && !u.username && !u.password && u.hostname.includes('.');
+  } catch {
+    return false;
+  }
+}
+
+/// Distance on the Earth's surface in kilometres (haversine, mean radius 6,371 km).
+export function distanceKm(a, b) {
+  const rad = d => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/// A distance as the trip page sees it: to the nearest half kilometre, and 0.5 for anything closer.
+export const roughKm = km => Math.max(0.5, Math.round(km * 2) / 2);
+
+/// The nearest places to a position, closest first, with rough distances only.
+export function nearest(here, places, n = NEAR_ANSWERS) {
+  return places
+    .map(p => ({ key: p.key, d: distanceKm(here, p) }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, n)
+    .map(p => ({ key: p.key, km: roughKm(p.d) }));
 }
 
 /// A simple budget: at most `limit` events in any `windowMs`.
@@ -346,6 +407,126 @@ function start() {
         answer = { ok: false, error: 'The forecast could not be fetched just now.' };
       }
       toFrame({ type: 'hj:weather', key: p.key, ...answer });
+    }
+  };
+
+  // Share and Near me for trip pages (6 November 2026). The locked frame may not use either, so
+  // it asks this page. Every question to the person is shown here, in the site's own bar and
+  // words, never by the document: share what, or use this device's location once.
+  const askBar = document.createElement('div');
+  askBar.className = 'doc-ask';
+  askBar.hidden = true;
+  askBar.setAttribute('role', 'dialog');
+  askBar.setAttribute('aria-live', 'polite');
+  document.body.append(askBar);
+  let askDone = null;
+  const closeAsk = result => {
+    askBar.hidden = true;
+    askBar.replaceChildren();
+    const done = askDone;
+    askDone = null;
+    if (done) done(result);
+  };
+  const ask = (label, words, buttons) => {
+    if (askDone) closeAsk('replaced');
+    const text = document.createElement('p');
+    text.textContent = words;
+    const row = document.createElement('div');
+    row.className = 'doc-ask-row';
+    for (const [value, name, solid] of buttons) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = solid ? 'pill solid' : 'pill';
+      b.textContent = name;
+      b.dataset.ask = value;
+      row.append(b);
+    }
+    askBar.setAttribute('aria-label', label);
+    askBar.replaceChildren(text, row);
+    askBar.hidden = false;
+    askBar.querySelector('button')?.focus({ preventScroll: true });
+    return new Promise(resolve => { askDone = resolve; });
+  };
+  askBar.addEventListener('click', event => {
+    const b = event.target.closest('button[data-ask]');
+    if (b) closeAsk(b.dataset.ask);
+  });
+  askBar.addEventListener('keydown', event => { if (event.key === 'Escape') closeAsk('no'); });
+
+  const allowShare = rateLimiter(1, 2_000);
+  let sharing = false;
+  const systemShare = async data => {
+    try {
+      await navigator.share(data);
+      return 'share';
+    } catch (error) {
+      return error?.name === 'AbortError' ? 'cancel' : 'refused';
+    }
+  };
+  const shareFrom = async message => {
+    if (sharing || !allowShare(Date.now())) return;
+    const data = message.kind === 'doc'
+      ? { title: message.title || document.title, url: `${location.origin}${base}` }
+      : { title: message.title, ...(message.text ? { text: message.text } : {}), url: message.url };
+    // A trip page shares outside places only; this site's own addresses are shared as the document.
+    if (message.kind === 'place' && new URL(data.url).origin === location.origin) return;
+    sharing = true;
+    let how = 'refused';
+    try {
+      const can = typeof navigator.share === 'function' && (!navigator.canShare || navigator.canShare(data));
+      // A tap inside the frame usually lets this page share at once; when the browser says no,
+      // the person taps Share in this page's own bar instead.
+      if (can) how = await systemShare(data);
+      if (how === 'refused') {
+        const what = message.kind === 'doc' ? 'the link to this document (family sign-in needed)' : `“${data.title}”`;
+        const choice = await ask('Share', `Share ${what}?`, [
+          ...(can ? [['share', 'Share…', true]] : []), ['copy', 'Copy link', !can], ['no', 'Cancel', false]
+        ]);
+        if (choice === 'share') how = await systemShare(data);
+        else if (choice === 'copy') {
+          try {
+            await navigator.clipboard.writeText(data.url);
+            how = 'copy';
+            announce('Link copied.');
+          } catch {
+            how = 'refused';
+          }
+        } else how = 'cancel';
+      }
+    } finally {
+      sharing = false;
+    }
+    toFrame({ type: 'hj:shared', ok: how === 'share' || how === 'copy', how });
+  };
+
+  // Near me: asked once per load of the document, in this page's words; the reading is coarse
+  // (no high accuracy, a cached reading up to five minutes old) and is used here only to sort the
+  // trip page's places. It is never sent to the server, stored, or passed into the frame.
+  const allowNear = rateLimiter(1, 5_000);
+  let nearAgreed = false;
+  let nearBusy = false;
+  const nearFrom = async places => {
+    if (nearBusy || !allowNear(Date.now())) return;
+    const reply = answer => toFrame({ type: 'hj:near', ...answer });
+    if (!('geolocation' in navigator)) return reply({ ok: false, reason: 'unsupported' });
+    nearBusy = true;
+    try {
+      if (!nearAgreed) {
+        const choice = await ask('Near me', 'Find the trip places nearest to you? Your rough location is used on this device only, to sort the list; it is not sent to the site or kept.', [
+          ['yes', 'Use my location', true], ['no', 'Not now', false]
+        ]);
+        if (choice !== 'yes') return reply({ ok: false, reason: 'declined' });
+        nearAgreed = true;
+      }
+      const here = await new Promise(resolve => navigator.geolocation.getCurrentPosition(
+        p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+        e => resolve({ error: e?.code === 1 ? 'denied' : e?.code === 3 ? 'timeout' : 'unavailable' }),
+        { enableHighAccuracy: false, maximumAge: 300_000, timeout: 15_000 }
+      ));
+      if (here.error) return reply({ ok: false, reason: here.error });
+      reply({ ok: true, places: nearest(here, places) });
+    } finally {
+      nearBusy = false;
     }
   };
 
@@ -1292,6 +1473,12 @@ function start() {
         break;
       case 'hj:weather-want':
         askWeather(message.places);
+        break;
+      case 'hj:share-want':
+        shareFrom(message);
+        break;
+      case 'hj:near-want':
+        nearFrom(message.places);
         break;
       case 'hj:field':
         save(`f:${message.key}`, { kind: 'field', op: 'set', key: message.key, value: message.value, label: message.label });

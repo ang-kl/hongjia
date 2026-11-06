@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validMessage, rateLimiter, targetText, LIMITS, MAX_WEATHER_PLACES } from '../assets/doc-view.mjs';
+import { validMessage, rateLimiter, targetText, LIMITS, MAX_WEATHER_PLACES, MAX_NEAR_PLACES, NEAR_ANSWERS, SHARE_LIMITS, shareUrl, distanceKm, roughKm, nearest } from '../assets/doc-view.mjs';
 
 test('only known messages with bounded strings are accepted', () => {
   assert.deepEqual(validMessage({ type: 'hj:ready', extra: 1 }), { type: 'hj:ready' });
@@ -68,4 +68,67 @@ test('a trip page may ask for the forecast of its places, and nothing else', () 
 test('a trip map may ask for its map ticket, and nothing more', () => {
   assert.deepEqual(validMessage({ type: 'hj:tiles-want', base: 'https://evil.example/', extra: 1 }), { type: 'hj:tiles-want' });
   assert.equal(validMessage({ type: 'hj:tiles', ticket: 'x' }), null, 'tickets only ever go into the frame');
+});
+
+test('a trip page may ask to share a place by its public facts and an https link', () => {
+  const place = { type: 'hj:share-want', kind: 'place', title: 'Harbour Café', text: '1 Quay Street', url: 'https://example.com/cafe' };
+  assert.deepEqual(validMessage({ ...place, extra: '<b>' }), place);
+  assert.deepEqual(validMessage({ ...place, text: undefined }), { ...place, text: '' });
+  const bad = [
+    { url: 'http://example.com/cafe' },
+    { url: 'javascript:alert(1)' },
+    { url: 'https://user:pass@example.com/' },
+    { url: 'https://localhost/x' },
+    { url: 'https://example.com/' + 'x'.repeat(SHARE_LIMITS.url) },
+    { url: 5 },
+    { title: '' },
+    { title: '   ' },
+    { title: 't'.repeat(SHARE_LIMITS.title + 1) },
+    { text: 'x'.repeat(SHARE_LIMITS.text + 1) },
+    { kind: 'file' }
+  ];
+  for (const b of bad) assert.equal(validMessage({ ...place, ...b }), null, JSON.stringify(b).slice(0, 80));
+  assert.equal(shareUrl('https://www.instagram.com/harbour.cafe/'), true);
+  assert.equal(shareUrl('https://example.com:99999/'), false, 'a broken address is refused');
+});
+
+test('a trip page may share the document only by its link: no text and no address of its own', () => {
+  assert.deepEqual(validMessage({ type: 'hj:share-want', kind: 'doc', title: 'Day 3', text: 'secret plans', url: 'https://evil.example/' }), { type: 'hj:share-want', kind: 'doc', title: 'Day 3' });
+  assert.deepEqual(validMessage({ type: 'hj:share-want', kind: 'doc' }), { type: 'hj:share-want', kind: 'doc', title: '' });
+  assert.equal(validMessage({ type: 'hj:share-want', kind: 'doc', title: 't'.repeat(SHARE_LIMITS.title + 1) }), null);
+  assert.equal(validMessage({ type: 'hj:shared', ok: true }), null, 'answers only ever go into the frame');
+});
+
+test('Near me: a trip page names its places, and never receives a position', () => {
+  const p = { key: 'harbour', lat: 51.51, lon: -0.13 };
+  assert.deepEqual(validMessage({ type: 'hj:near-want', places: [{ ...p, start: '2030-06-20', name: '<b>' }] }), { type: 'hj:near-want', places: [p] });
+  const bad = [
+    { places: [] },
+    { places: Array.from({ length: MAX_NEAR_PLACES + 1 }, (_, i) => ({ ...p, key: `p${i}` })) },
+    { places: [p, p] },
+    { places: [{ ...p, key: 'Harbour' }] },
+    { places: [{ ...p, lat: -91 }] },
+    { places: [{ ...p, lon: Infinity }] },
+    { places: [{ ...p, lat: '51.5' }] }
+  ];
+  for (const b of bad) assert.equal(validMessage({ type: 'hj:near-want', ...b }), null, JSON.stringify(b).slice(0, 80));
+  assert.equal(validMessage({ type: 'hj:near', places: [] }), null, 'answers only ever go into the frame');
+});
+
+test('Near me sorts by distance and gives rough distances only', () => {
+  const here = { lat: 51.5007, lon: -0.1246 };
+  const places = [
+    { key: 'far', lat: 48.8584, lon: 2.2945 },
+    { key: 'near', lat: 51.5014, lon: -0.1419 },
+    { key: 'next-door', lat: 51.5008, lon: -0.1247 }
+  ];
+  const km = distanceKm(here, places[0]);
+  assert.ok(km > 330 && km < 350, `London to Paris is about 340 km, got ${km}`);
+  assert.deepEqual(nearest(here, places), [{ key: 'next-door', km: 0.5 }, { key: 'near', km: 1 }, { key: 'far', km: Math.round(km * 2) / 2 }]);
+  assert.equal(roughKm(0.01), 0.5);
+  assert.equal(roughKm(1.26), 1.5);
+  const many = Array.from({ length: 50 }, (_, i) => ({ key: `p${i}`, lat: 51 + i / 100, lon: 0 }));
+  const answer = nearest({ lat: 51, lon: 0 }, many);
+  assert.equal(answer.length, NEAR_ANSWERS);
+  for (const a of answer) assert.deepEqual(Object.keys(a).sort(), ['key', 'km'], 'only keys and rough distances');
 });

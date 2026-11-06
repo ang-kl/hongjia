@@ -745,6 +745,13 @@ button.pill[hidden] { display: none; }
 .anno-item.anno-danger:not([aria-disabled="true"]) { color: #a3261b; }
 .anno-pill { position: fixed; z-index: 54; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
 .anno-pill[hidden] { display: none; }
+/* Share and Near me questions from trip pages: the site's own bar, above the document. */
+.doc-ask { position: fixed; z-index: 56; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(520px, calc(100vw - 32px)); padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink); box-shadow: 0 12px 32px rgb(20 55 62 / 0.18); }
+.doc-ask[hidden] { display: none; }
+.doc-ask p { margin: 0 0 10px; line-height: 1.4; }
+.doc-ask-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.doc-ask-row .pill { min-height: 44px; padding: 0 16px; border: 1px solid var(--ink); border-radius: 999px; background: none; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+.doc-ask-row .pill.solid { background: var(--ink); color: var(--card); }
 .anno-menu[hidden], .anno-form[hidden], .mention-list[hidden], .anno-colors[hidden] { display: none; }
 .anno-item {
   display: flex;

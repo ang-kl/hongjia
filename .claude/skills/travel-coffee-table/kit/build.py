@@ -156,7 +156,21 @@ LABELS.update({
     'tour': 'Play the trip', 'tour_pause': 'Pause', 'tour_play': 'Play', 'tour_next': 'Next', 'tour_prev': 'Back',
     'tour_close': 'Close the tour', 'tour_from': 'From {home} to {dest}', 'tour_way': 'The way there',
     'globe_credit': 'Globe: land outlines from Natural Earth (public domain), 1:110m, via world-atlas 2.0.2 (ISC licence).',
+    # place panels, meals, photo spots, Share and Near me (6 November 2026)
+    'sheet_close': 'Close', 'sheet_aria': 'Place details', 'photo_spot': 'Photo spot', 'planned': 'Planned',
+    'meals': 'Meals', 'meals_aria': 'Meals for day {n}', 'meal_choices': '{n} choices',
+    'meal_breakfast': 'Breakfast', 'meal_brunch': 'Brunch', 'meal_lunch': 'Lunch', 'meal_dinner': 'Dinner', 'meal_snack': 'Snack',
+    'share': 'Share', 'share_day': 'Share this day', 'shared': 'Shared.', 'copied': 'Link copied.',
+    'near_me': 'Near me', 'near_title': 'Nearest to you', 'near_wait': 'Waiting for your answer…',
+    'near_note': 'Straight-line distances, to the nearest half kilometre. Your location stays on your device.',
+    'near_declined': 'Nothing was shared.', 'near_denied': 'Location is turned off for this page in your browser settings.',
+    'near_unavailable': 'Your device could not find a location just now.', 'near_unsupported': 'This browser cannot give a location.',
+    'near_none': 'No places with a map pin yet.', 'about_km': 'about {km} km', 'new_tab': 'opens a new tab',
+    'ig_posts': 'Latest posts from @{h} on Instagram', 'address': 'Address',
 })
+MEALS = ('breakfast', 'brunch', 'lunch', 'dinner', 'snack')
+MEAL_ICONS = {'breakfast': '🍳', 'brunch': '🥐', 'lunch': '🍽️', 'dinner': '🌙', 'snack': '🍰'}
+IG_URL = re.compile(r'^https://(?:www\.)?instagram\.com/([A-Za-z0-9._]{1,30})/?$')
 
 
 def norm_cats(v, where):
@@ -327,7 +341,11 @@ class Page:
         self.cat_labels = {k: lab for k, _, lab in CATS}
         self.cat_labels.update({k: v for k, v in ((data.get('labels') or {}).get('cats') or {}).items() if k in self.cat_labels})
         self.cat_icons = {k: icon for k, icon, _ in CATS}
+        self.panels = {}       # place panels for the page's script: pid -> facts shown in the panel
+        self.place_pid = {}    # places key -> pid
+        self.alt_pid = {}      # (name, lat, lng) -> pid, so an alternative shown twice opens one panel
         self.validate()
+        self.collect_places()
 
     # ------------------------------------------------------------------ validation
     def validate_tiles(self):
@@ -396,6 +414,8 @@ class Page:
                 for s in c['sources']:
                     check_url(s.get('src'), f'stops.{key}.clips[{i}]')
             self.stop_cats[key] = norm_cats(st.get('cat'), f'stops.{key}.cat')
+            if st.get('photo_spot'):
+                self.check_spot(st['photo_spot'], f'stops.{key}.photo_spot')
             for i, x in enumerate(st.get('nearby') or []):
                 self.check_alt(x, f'stops.{key}.nearby[{i}]')
         for gi, g in enumerate(d.get('worship') or []):
@@ -434,6 +454,21 @@ class Page:
                         raise KitError(f'{w}.timeline[{j}]: unknown photo {pid!r}')
             for j, x in enumerate(day.get('nearby') or []):
                 norm_cats(x.get('cat'), f'{w}.nearby[{j}].cat')
+            want = (d.get('page') or {}).get('meal_choices')
+            for j, m in enumerate(day.get('meals') or []):
+                if m.get('meal') not in MEALS:
+                    raise KitError(f'{w}.meals[{j}].meal must be one of {", ".join(MEALS)}')
+                choices = m.get('choices') or []
+                if not choices:
+                    raise KitError(f'{w}.meals[{j}]: list the choices')
+                if want and len(choices) != want:
+                    raise KitError(f'{w}.meals[{j}] ({m["meal"]}): {len(choices)} choices; this page asks for {want} per meal (page.meal_choices)')
+                for c, x in enumerate(choices):
+                    if 'stop' in x:
+                        if x['stop'] not in self.stops:
+                            raise KitError(f'{w}.meals[{j}].choices[{c}]: unknown stop {x["stop"]!r}')
+                    else:
+                        self.check_alt(x, f'{w}.meals[{j}].choices[{c}]', default='food')
         self.validate_weather()
         self.validate_plans()
         self.validate_audience()
@@ -467,6 +502,19 @@ class Page:
             raise KitError(f'{where}: hours are a fact; give their source')
         if x.get('source') and x['source'] not in self.sources:
             check_url(x['source'], f'{where}.source')
+        if x.get('instagram') and not IG_URL.match(x['instagram']):
+            raise KitError(f'{where}.instagram: the venue\'s own account, as https://www.instagram.com/<handle>/')
+        if x.get('photo_spot'):
+            self.check_spot(x['photo_spot'], f'{where}.photo_spot')
+        if x.get('photo'):
+            self.photo(x['photo'], f'{where}.photo')
+
+    def check_spot(self, sp, where):
+        """A photo spot names the spot and the official source that names it (a source key or an https page)."""
+        if not isinstance(sp, dict) or not sp.get('spot') or not sp.get('source'):
+            raise KitError(f'{where}: a photo spot needs "spot" and its "source"')
+        if sp['source'] not in self.sources:
+            check_url(sp['source'], f'{where}.source')
 
     def validate_opener(self):
         o = self.opener_d
@@ -573,7 +621,147 @@ class Page:
                         raise KitError(f'audience.lenses[{i}].needs: unknown mark {m}')
 
     # ------------------------------------------------------------------ inline text
-    TOKEN = re.compile(r'\[\[(src|tel|link):([^\]|]*)(?:\|([^\]]*))?\]\]')
+    TOKEN = re.compile(r'\[\[(src|tel|link|place):([^\]|]*)(?:\|([^\]]*))?\]\]')
+
+    # ------------------------------------------------------------------ place panels
+    # Every place name on the page is a link that opens one panel inside the page (the owner,
+    # 6 November 2026: option A), instead of a new window that is hard to come back from on a
+    # tablet or phone. The panel's facts travel to the page's script as data, never as HTML.
+    def new_pid(self, prefix, raw):
+        base = prefix + '-' + (re.sub(r'[^a-z0-9]+', '-', str(raw).lower()).strip('-') or 'x')
+        base = base[:26].rstrip('-')
+        pid, n = base, 2
+        while pid in self.panels:
+            pid = f'{base}-{n}'
+            n += 1
+        return pid
+
+    def plain(self, s):
+        """A text field without its markup, for the panel (which shows plain text only)."""
+        if s is None:
+            return ''
+        if isinstance(s, list):
+            return ' '.join(self.plain(x) for x in s)
+        out = str(s).replace('[[added]]', '').replace('[[/added]]', '').replace('[[br]]', ' ')
+        out = re.sub(r'\*\*(.+?)\*\*', r'\1', out)
+
+        def tok(m):
+            kind, a, b = m.group(1), m.group(2), m.group(3)
+            if kind == 'src':
+                return ''
+            if kind == 'place':
+                return b or (self.places.get(a) or {}).get('name', a)
+            return b or a
+        out = self.TOKEN.sub(tok, out)
+        return re.sub(r'\s+', ' ', out).strip()
+
+    def accent(self, s):
+        """A title, escaped, with *one word* set in the accent italic."""
+        return re.sub(r'(?<!\*)\*(?!\*)([^*]+?)\*(?!\*)', r'<em>\1</em>', E(s))
+
+    def pl_link(self, pid, html, anchor=''):
+        href = f'#{E(anchor)}' if anchor else '#'
+        return f'<a class="pl" href="{href}" data-place="{E(pid)}">{html}</a>'
+
+    def gmaps(self, q):
+        return 'https://www.google.com/maps/search/?api=1&query=' + urllib.parse.quote(q)
+
+    def panel_photo(self, ref, where):
+        p = self.photo(ref, where)
+        return dict(src=p['src'], alt=p['alt'], credit=self.plain(p.get('credit_prefix') or self.L['photo']) + ': ' + p['credit'],
+                    credit_url=p.get('credit_url') or '', host=p.get('host') or '')
+
+    def panel_spot(self, sp, where):
+        if not sp:
+            return None
+        src = self.sources.get(sp['source'])
+        url = (src or {}).get('url') or ('' if src else sp['source'])
+        label = (src or {}).get('label') or host_of(url).removeprefix('www.')
+        return dict(spot=sp['spot'], tip=sp.get('tip') or '', src=label, src_url=url)
+
+    def collect_places(self):
+        """One panel per place in "places", with the facts of the stop that tells most about it."""
+        for key, pl in self.places.items():
+            self.place_pid[key] = self.new_pid('p', key)
+            self.panels[self.place_pid[key]] = None
+        for key, pl in self.places.items():
+            stops = [(sid, st) for sid, st in self.stops.items() if st.get('place') == key]
+            stops.sort(key=lambda x: (x[0] != key, -(len(x[1].get('links') or []) + len(x[1].get('photos') or []))))
+            sid, st = stops[0] if stops else (None, {})
+            w = f'places.{key}'
+            panel = dict(name=pl['name'], lat=pl['lat'], lng=pl['lng'], maps=self.gmaps(pl['q']), cats=[], what='', anchor='', day=-1, idx=-1)
+            if sid:
+                panel['cats'] = self.stop_cats.get(sid) or []
+                panel['what'] = self.plain(st.get('line') or self.first_role(sid))
+                panel['anchor'] = self.stop_anchor(sid)
+                if st.get('photos'):
+                    panel['photo'] = self.panel_photo(st['photos'][0], w + '.photo')
+                for i, it in enumerate(st.get('links') or []):
+                    kind, url, label = self.official_link(it, f'stops.{sid}.links[{i}]')
+                    if kind == 'web' and 'web' not in panel:
+                        panel['web'] = url
+                    elif kind == 'addr' and 'addr' not in panel:
+                        panel['addr'] = label
+                        panel['maps'] = url
+                    elif kind == 'hours' and 'hours' not in panel:
+                        panel['hours'] = label
+                        panel['hours_src'] = url
+                    elif kind == 'tel' and 'tel' not in panel:
+                        panel['tel'] = url
+                handle = self.ig_handle(st, include_embedded=True)
+                if handle:
+                    panel['ig'] = handle
+                if st.get('photo_spot'):
+                    panel['spot'] = self.panel_spot(st['photo_spot'], f'stops.{sid}.photo_spot')
+            for n, day in enumerate(self.days):
+                if key in day['route']:
+                    panel['day'], panel['idx'] = n, day['route'].index(key)
+                    break
+            if panel['cats']:
+                panel['icon'] = self.cat_icons[panel['cats'][0]]
+            self.panels[self.place_pid[key]] = panel
+
+    def alt_panel(self, x, where, default=None, anchor_id=''):
+        """The panel of a nearby alternative, a place of worship or a meal choice (one per place)."""
+        seen = (x['name'], x.get('lat'), x.get('lng'))
+        if seen in self.alt_pid:
+            return self.alt_pid[seen], False
+        pid = self.new_pid('a', x['name'])
+        self.alt_pid[seen] = pid
+        cats = norm_cats(x.get('cat') or default, where + '.cat')
+        pinned = x.get('lat') is not None and x.get('lng') is not None
+        q = x.get('q') or (f'{x["name"]} {x["lat"]:.5f},{x["lng"]:.5f}' if pinned else x['name'])
+        what = ' '.join(t for t in (self.plain(x.get('faith') or x.get('kind')), self.plain(x.get('why'))) if t)
+        panel = dict(name=x['name'], cats=cats, icon=self.cat_icons[cats[0]], what=what, maps=self.gmaps(q),
+                     anchor=anchor_id or f'alt-{pid}', day=-1, idx=-1, dist=x.get('distance') or '')
+        if pinned:
+            panel['lat'], panel['lng'] = x['lat'], x['lng']
+        if x.get('website'):
+            panel['web'] = x['website']
+        if x.get('address'):
+            panel['addr'] = x['address']
+        if x.get('hours'):
+            panel['hours'] = self.plain(x['hours'])
+            key = x.get('source') or next(iter(x.get('hours_sources') or []), '')
+            src = self.sources.get(key)
+            panel['hours_src'] = (src or {}).get('url') or ('' if src else key or '')
+        m = IG_URL.match(x.get('instagram') or '')
+        if m:
+            panel['ig'] = m.group(1)
+        if x.get('photo'):
+            panel['photo'] = self.panel_photo(x['photo'], where + '.photo')
+        if x.get('photo_spot'):
+            panel['spot'] = self.panel_spot(x['photo_spot'], where + '.photo_spot')
+        self.panels[pid] = panel
+        return pid, True
+
+    def spot_line(self, sp, where):
+        if not sp:
+            return ''
+        src = self.src_tag(sp['source'], where=where) if sp['source'] in self.sources else \
+            f'<a class="src" href="{E(sp["source"])}" target="_blank" rel="noopener">{E(host_of(sp["source"]).removeprefix("www."))}</a>'
+        tip = f'. {E(sp["tip"])}' if sp.get('tip') else ''
+        return f'<p class="spot" data-fact><span aria-hidden="true">📸</span> <b>{E(self.L["photo_spot"])}:</b> {E(sp["spot"])}{tip} {src}</p>'
 
     def rich(self, s, where='text'):
         """Escape a text field, then expand the kit's inline tokens (schema.md, "Text fields")."""
@@ -597,6 +785,10 @@ class Page:
         kind, a, b = m.group(1), unescape(m.group(2)), unescape(m.group(3)) if m.group(3) is not None else None
         if kind == 'src':
             return self.src_tag(a, b, where)
+        if kind == 'place':
+            if a not in self.place_pid:
+                raise KitError(f'{where}: unknown place {a!r} in [[place:...]]')
+            return self.pl_link(self.place_pid[a], E(b or self.places[a]['name']), self.panels[self.place_pid[a]]['anchor'] if self.panels.get(self.place_pid[a]) else '')
         if kind == 'tel':
             num = re.sub(r'[\s()-]', '', a)
             if not re.match(r'^\+?[0-9]{2,16}$', num):
@@ -885,13 +1077,14 @@ class Page:
         cats = self.stop_cats.get(sid) or []
         out = (f'<article class="stop" id="{E(did)}"{self.cats_attr(cats)}>'
                f'<header class="stop-h"><span class="pin-letter" aria-hidden="true">{letter}</span>'
-               f'<div><h4>{E(st["name"])}</h4><p class="role">{E(role)}</p>{self.cat_chips(cats)}</div>'
+               f'<div><h4>{self.pl_link(self.place_pid[st["place"]], E(st["name"]), did)}</h4><p class="role">{E(role)}</p>{self.cat_chips(cats)}</div>'
                f'<button type="button" class="btn-ghost show-map" data-day="{n - 1}" data-idx="{idx if plan == "a" else -1}" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" data-name="{E(st["name"])}" data-note="{E(note)}">{E(self.L["show_on_map"])}</button></header>'
                f'{self.suits(st, sid)}'
                f'{self.bento(st.get("photos"), w + ".photos")}'
                f'{self.clips(st.get("clips"))}'
                f'{self.posts(st.get("embeds"))}'
                f'{self.link_row(st.get("links"), pl, st.get("instagram_tag"), st.get("tiktok_search"), w + ".links")}'
+               f'{self.spot_line(st.get("photo_spot"), w + ".photo_spot")}'
                f'<p class="links-note">{E(self.L["links_note"])}{(" " + E(self.L["details"]) + ": " + details) if details else ""}</p>'
                f'{self.alts(st.get("nearby"), st["name"], n, w + ".nearby")}')
         if prompts:
@@ -907,9 +1100,9 @@ class Page:
             out += f'<details class="drawer" data-cc="{E(st["area"])}"><summary>{E(self.fmt("concierge_drawer", name=area["name"]))}</summary><div class="cc-slot"></div></details>'
         return out + '</article>'
 
-    def ig_handle(self, st):
+    def ig_handle(self, st, include_embedded=False):
         """The venue's own Instagram handle, from its Instagram link, unless its posts are already embedded."""
-        embedded = {e['handle'].lower() for e in st.get('embeds') or [] if e.get('kind') == 'instagram'}
+        embedded = set() if include_embedded else {e['handle'].lower() for e in st.get('embeds') or [] if e.get('kind') == 'instagram'}
         for it in st.get('links') or []:
             if it.get('kind') == 'ig':
                 m = re.match(r'^https://(?:www\.)?instagram\.com/([A-Za-z0-9._]{1,30})/?$', it.get('url') or '')
@@ -942,8 +1135,15 @@ class Page:
         tip = f' title="{E(x["distance_note"])}"' if x.get('distance_note') else ''
         dist = f'<p class="alt-dist"{tip}>{E(x["distance"])}</p>' if x.get('distance') else ''
         faith = f'<p class="alt-faith">{E(x["faith"])}</p>' if x.get('faith') else ''
-        return (f'<article class="alt"{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{icon}</span> <b>{E(x["name"])}</b></p>{dist}'
+        pid, first = self.alt_panel(x, where, default)
+        aid = f' id="{E(self.panels[pid]["anchor"])}"' if first else ''
+        ig = IG_URL.match(x.get('instagram') or '')
+        if ig:
+            links.insert(1 if x.get('website') else 0, f'<a href="{E(x["instagram"])}" target="_blank" rel="noopener" data-kind="ig">📸 @{E(ig.group(1))}</a>')
+        return (f'<article class="alt"{aid}{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{icon}</span> '
+                f'<b>{self.pl_link(pid, E(x["name"]), self.panels[pid]["anchor"])}</b></p>{dist}'
                 f'{faith}' + (f'<p>{self.rich(x["why"], where + ".why")}</p>' if x.get('why') else '') + hours
+                + self.spot_line(x.get('photo_spot'), where + '.photo_spot')
                 + f'<p class="alt-links">{" · ".join(links)}</p></article>')
 
     def alts(self, items, name, n, where):
@@ -1038,13 +1238,23 @@ class Page:
         cards = ''.join(self.stop_card(day, n, it, 'a') for it in day['stops'])
         alts = [p for p in ('b', 'c') if day.get('plan_' + p)]
         meta = ''.join(f'<span class="pill{" pill-line" if k == "badge" else ""}">{E(day[k])}</span>' for k in ('base', 'badge') if day.get(k))
-        kicker = E(day['when']) + (f' · {E(day["route_label"])}' if day.get('route_label') else '')
+        kicker = E(day['when']) + (f' · {self.rich(day["route_label"], w + ".route_label")}' if day.get('route_label') else '')
         chosen = ' data-chosen="a"' if alts else ''
+        band = ''
+        for it in day['stops']:
+            ph = (self.stops[it['stop']].get('photos') or [None])[0]
+            if ph:
+                p = self.photo(ph, w + '.band')
+                band = (f'<figure class="day-band"><img src="{E(p["src"])}" alt="{E(p["alt"])}" loading="lazy" decoding="async" referrerpolicy="no-referrer">'
+                        f'<figcaption><span class="credit">{self.credit(p, original=False)}</span></figcaption></figure>')
+                break
         out = (f'<article class="day" id="day-{n}" data-day="{n - 1}"{chosen}>'
-               f'<header class="day-h"><div class="day-num"><span class="mono">{E(self.L["day"])}</span><b>{n:02d}</b></div>'
-               f'<div class="day-t"><p class="mono kicker">{kicker}</p><h3>{E(day["title"])}</h3>'
+               f'<header class="day-h{" has-band" if band else ""}">{band}<div class="day-num"><span class="mono">{E(self.L["day"])}</span><b>{n:02d}</b></div>'
+               f'<div class="day-t"><p class="mono kicker">{kicker}</p><h3>{self.accent(day["title"])}</h3>'
                + (f'<p class="dek">{E(day["sub"])}</p>' if day.get('sub') else '')
-               + (f'<p class="day-meta">{meta}</p>' if meta else '') + '</div></header>'
+               + (f'<p class="day-meta">{meta}</p>' if meta else '')
+               + f'<button type="button" class="btn-ghost share-day" data-share-day="{n}" hidden><span aria-hidden="true">↗</span> {E(self.L["share_day"])}</button>'
+               + '</div></header>'
                + self.plans_bar(day, n, alts)
                + f'<div class="plan plan-a{" on" if alts else ""}" data-plan="a">' + (self.plan_head('a') if alts else '')
                + f'<div class="route-strip" aria-label="{E(self.fmt("stops_for_day", n=n))}">{stops_strip}</div>'
@@ -1057,8 +1267,38 @@ class Page:
             out += (f'<section class="plan plan-alt" data-plan="{p}" aria-label="{E(self.fmt("plan_for_day", p=p.upper(), n=n, label=self.plan_label(p)))}">'
                     + self.plan_head(p) + (f'<p class="plan-why">{self.rich(note, w + ".plan_notes")}</p>' if note else '')
                     + '<div class="stops">' + ''.join(self.stop_card(day, n, it, p) for it in day['plan_' + p]) + '</div></section>')
+        out += self.meals_html(day, n)
         out += self.nearby(day, n)
         return out + '</article>'
+
+    def meals_html(self, day, n):
+        """Each meal of the day with its choices (the planned place counts as one), all on the page."""
+        meals = day.get('meals') or []
+        if not meals:
+            return ''
+        w = f'days[{n - 1}].meals'
+        out = f'<section class="meals" aria-label="{E(self.fmt("meals_aria", n=n))}"><p class="mono kicker">{E(self.L["meals"])}</p>'
+        for j, m in enumerate(meals):
+            cards = []
+            for c, x in enumerate(m['choices']):
+                if 'stop' in x:
+                    st = self.stops[x['stop']]
+                    pid = self.place_pid[st['place']]
+                    cats = self.stop_cats.get(x['stop']) or ['food']
+                    pl = self.places[st['place']]
+                    role = x.get('role') or self.first_role(x['stop'])
+                    cards.append(f'<article class="alt alt-planned"{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{self.cat_icons[cats[0]]}</span> '
+                                 f'<b>{self.pl_link(pid, E(st["name"]), self.panels[pid]["anchor"])}</b> <span class="badge">{E(self.L["planned"])}</span></p>'
+                                 + (f'<p>{E(role)}</p>' if role else '')
+                                 + f'<p class="alt-links"><button type="button" class="linkish show-map" data-day="{n - 1}" data-idx="-1" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" '
+                                   f'data-name="{E(st["name"])}" data-note="{E(self.L["planned"])}">{E(self.L["alt_map"])}</button></p></article>')
+                else:
+                    cards.append(self.alt_card(x, n, f'{w}[{j}].choices[{c}]', default='food'))
+            head = f'{MEAL_ICONS[m["meal"]]} {E(self.L["meal_" + m["meal"]])}' + (f' · {E(m["time"])}' if m.get('time') else '')
+            out += (f'<div class="meal" data-meal="{m["meal"]}"><h4 class="meal-h">{head} <span class="meal-n">{E(self.fmt("meal_choices", n=len(cards)))}</span></h4>'
+                    + (f'<p class="meal-note">{self.rich(m["note"], f"{w}[{j}].note")}</p>' if m.get('note') else '')
+                    + f'<div class="alts-grid">{"".join(cards)}</div></div>')
+        return out + '</section>'
 
     def nearby(self, day, n):
         items = day.get('nearby') or []
@@ -1083,7 +1323,10 @@ class Page:
                 hours = f'<p class="fine" data-fact>{self.rich(x["hours"], w + ".hours")}{(" " + " ".join(tags)) if tags else ""}</p>'
             place = {'q': x['q'], 'lat': x['lat'], 'lng': x['lng']}
             ncats = norm_cats(x.get('cat'), w + '.cat')
-            cards.append(f'<article class="near" id="x{n}-{E(x["id"])}"{self.cats_attr(ncats)}>{ph}<div class="near-b"><p class="mono kicker">{E(x.get("kind"))}</p><h4>{E(x["name"])}</h4>'
+            nid = f'x{n}-{x["id"]}'
+            npid, _ = self.alt_panel(dict(x, cat=ncats, why=x.get('why'), website=next((it.get('url') for it in x.get('links') or [] if it.get('kind', 'web') == 'web'), None)),
+                                     w, anchor_id=nid)
+            cards.append(f'<article class="near" id="{E(nid)}"{self.cats_attr(ncats)}>{ph}<div class="near-b"><p class="mono kicker">{E(x.get("kind"))}</p><h4>{self.pl_link(npid, E(x["name"]), nid)}</h4>'
                          f'<p>{self.rich(x["why"], w + ".why")}</p>{hours}{self.link_row(x.get("links"), place, where=w + ".links")}</div></article>')
         return (f'<section class="nearby" aria-label="{E(self.fmt("nearby_aria", n=n))}"><p class="mono kicker">{E(self.L["nearby_kicker"])}</p>'
                 f'<div class="nearby-grid">{"".join(cards)}</div></section>')
@@ -1178,7 +1421,12 @@ class Page:
             arts = []
             for x in b.get('items') or []:
                 k = f'<p class="mono kicker">{E(x["kicker"])}</p>' if x.get('kicker') else ''
-                arts.append(f'<article{cls}>{k}<h3>{E(x.get("title"))}</h3>' + ''.join(f'<p{fact}>{self.rich(p, w)}</p>' for p in as_list(x.get('paras'))) + '</article>')
+                title = E(x.get('title'))
+                if x.get('place'):
+                    if x['place'] not in self.place_pid:
+                        raise KitError(f'{w}: unknown place {x["place"]!r}')
+                    title = self.pl_link(self.place_pid[x['place']], title, self.panels[self.place_pid[x['place']]]['anchor'])
+                arts.append(f'<article{cls}>{k}<h3>{title}</h3>' + ''.join(f'<p{fact}>{self.rich(p, w)}</p>' for p in as_list(x.get('paras'))) + '</article>')
             return f'<div class="{layout}">' + ''.join(arts) + '</div>'
         if t == 'columns':
             return '<div class="two">' + ''.join(f'<div>{self.blocks(col, w + ".columns")}</div>' for col in b.get('columns') or []) + '</div>'
@@ -1217,7 +1465,7 @@ class Page:
 
     def head(self, s, w):
         out = f'<p class="mono kicker">{E(s["kicker"])}</p>' if s.get('kicker') else ''
-        out += f'<h2>{E(s["title"])}</h2>' if s.get('title') else ''
+        out += f'<h2>{self.accent(s["title"])}</h2>' if s.get('title') else ''
         cls = ' class="fine"' if s.get('intro_style') == 'fine' else ''
         out += ''.join(f'<p{cls}>{self.rich(p, w + ".intro")}</p>' for p in as_list(s.get('intro')))
         return out
@@ -1255,7 +1503,7 @@ class Page:
         web_html = f'<a class="ocard-web" href="{E(check_url(web["url"], where))}" target="_blank" rel="noopener">🌐 {E(self.L["website"])}</a>' if web else ''
         line = st.get('line') or self.first_role(sid)
         return (f'<article class="ocard"{self.cats_attr(cats)}>{ph}<div class="ocard-b">{self.cat_chips(cats)}'
-                f'<a class="ocard-t" href="#{E(anchor)}"><h4>{E(st["name"])}</h4>' + (f'<p>{E(line)}</p>' if line else '') + f'</a>{web_html}</div></article>')
+                f'<a class="ocard-t" href="#{E(anchor)}" data-place="{E(self.place_pid[st["place"]])}"><h4>{E(st["name"])}</h4>' + (f'<p>{E(line)}</p>' if line else '') + f'</a>{web_html}</div></article>')
 
     def globe_svg(self, gid, label):
         return (f'<svg class="globe" data-globe viewBox="0 0 400 400" role="img" aria-label="{E(label)}" tabindex="0">'
@@ -1313,7 +1561,7 @@ class Page:
         return (f'<section id="opener" class="opener" aria-label="{E(title)}">'
                 f'<div class="hero"><div class="hero-slides">{"".join(slides)}</div><div class="hero-in">'
                 + (f'<p class="mono kicker hero-k">{E(o.get("kicker") or m.get("kicker"))}</p>' if (o.get('kicker') or m.get('kicker')) else '')
-                + f'<h1 class="hero-t">{E(title)}</h1>'
+                + f'<h1 class="hero-t">{self.accent(title)}</h1>'
                 + (f'<p class="hero-dates">{E(o["dates"])}</p>' if o.get('dates') else '')
                 + (f'<p class="hero-live">{live}</p>' if live else '')
                 + f'<p class="hero-ctas"><button type="button" class="btn-gold btn-hero" id="play-trip"><span aria-hidden="true">▶</span> {E(self.L["op_play"])}</button>'
@@ -1384,7 +1632,7 @@ class Page:
                         for f in m.get('facts') or [])
         return (f'<header class="mast" id="top"><div class="mast-in">'
                 + (f'<p class="mono kicker">{E(m["kicker"])}</p>' if m.get('kicker') else '')
-                + (f'<h2 class="mast-h">{E(m["title"])}</h2>' if self.opener_d else f'<h1>{E(m["title"])}</h1>')
+                + (f'<h2 class="mast-h">{self.accent(m["title"])}</h2>' if self.opener_d else f'<h1>{self.accent(m["title"])}</h1>')
                 + (f'<p class="lede">{E(m["lede"])}</p>' if m.get('lede') else '')
                 + (f'<ul class="facts" aria-label="{E(self.L["trip_facts"])}">{facts}</ul>' if facts else '')
                 + f'<div class="mast-bar"><p class="mono edition">{E(m.get("edition"))}</p>'
@@ -1446,6 +1694,7 @@ class Page:
                 f'<button type="button" role="tab" id="tab-dir" aria-controls="panel-dir" aria-selected="false" tabindex="-1">{E(self.L["tab_dir"])}</button></div>'
                 f'<div class="panel" id="panel-route" role="tabpanel" aria-labelledby="tab-route"><div class="mc-tools">'
                 f'<button type="button" id="fly" class="btn-gold">{E(self.L["fly"])}</button>'
+                f'<button type="button" class="btn-ghost near-me" data-near-me><span aria-hidden="true">📍</span> {E(self.L["near_me"])}</button>'
                 + (f'<label class="check"><input type="checkbox" id="mc-safety"> {E(m.get("safety_label") or self.L["safety"])}</label>' if self.d.get('safety') else '')
                 + (f'<label class="check"><input type="checkbox" id="mc-nearby"> {E(self.L["nearby_pins"])}</label>' if self.nearby_pins() else '')
                 + f'</div>' + (self.legend(compact=True) if self.opener_d else '') + f'<div id="leaflet" class="mapbox" role="region" aria-label="{E(self.L["route_map"])}"></div><ol id="mc-stops" class="mc-stops"></ol>'
@@ -1602,6 +1851,17 @@ class Page:
                 f'<figure><img alt=""><figcaption><span class="lb-cap"></span><span class="lb-credit"></span></figcaption></figure>'
                 f'<button type="button" class="lb-next" aria-label="{E(self.L["lb_next"])}">›</button></div>')
 
+    def sheet_html(self):
+        """The place panel: from the bottom on a phone, from the side on a wider screen. Its contents are
+        built by the page's script from the panel data, with text nodes only."""
+        return (f'<div class="sheet" id="sheet" hidden><div class="sheet-scrim" data-sheet-close></div>'
+                f'<section class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-h" aria-label="{E(self.L["sheet_aria"])}">'
+                f'<div class="sheet-grip" aria-hidden="true"><i></i></div>'
+                f'<header class="sheet-top"><p class="mono kicker sheet-k"></p><h3 id="sheet-h" tabindex="-1"></h3>'
+                f'<button type="button" class="sheet-x" data-sheet-close aria-label="{E(self.L["sheet_close"])}">×</button></header>'
+                f'<div class="sheet-body"></div></section></div>'
+                f'<p class="toast" role="status" aria-live="polite" hidden></p>')
+
     # ------------------------------------------------------------------ data for the page's script
     def trip_json(self):
         meta = self.d['meta']
@@ -1631,7 +1891,10 @@ class Page:
                                      'wx_frame', 'wx_credit', 'wx_licence', 'wx_rain', 'wx_gust', 'wx_wind', 'wx_uv', 'wx_suggests', 'wx_fits',
                                      'wx_no_plan', 'wx_max_min', 'plans_rules', 'lens_fits', 'lens_check', 'lens_unknown', 'lens_for', 'rail_start', 'to',
                                      'cd_to_go', 'cd_one', 'cd_today', 'cd_during', 'local_time', 'lg_lit', 'lg_none', 'tour_pause', 'tour_play',
-                                     'tour_from', 'tour_way', 'nearby_pins')}
+                                     'tour_from', 'tour_way', 'nearby_pins', 'photo_spot', 'share', 'share_day', 'shared', 'copied',
+                                     'near_me', 'near_title', 'near_wait', 'near_note', 'near_declined', 'near_denied', 'near_unavailable',
+                                     'near_unsupported', 'near_none', 'about_km', 'new_tab', 'ig_posts', 'address', 'website', 'google_maps',
+                                     'alt_map', 'hours', 'embed_note', 'call', 'stop_details')}
         ui['months'] = self.L.get('months') or MONTHS
         ui['wmo'] = {str(k): list(v) for k, v in WMO.items()}
         ui['marks'] = MARK_NAMES
@@ -1650,6 +1913,7 @@ class Page:
                                    lenses=[dict(key=l['key'], label=l['label'], needs=l.get('needs') or []) for l in self.audience.get('lenses') or []])
         out['cats'] = {k: [icon, self.cat_labels[k]] for k, icon, _ in CATS}
         out['nearby'] = self.nearby_pins()
+        out['panels'] = {k: v for k, v in self.panels.items() if v}
         if self.opener_d:
             o = self.opener_d
             dest, bases = self.opener_points()
@@ -1669,7 +1933,9 @@ class Page:
                  'plans': self.plans_section, 'upgrades': self.upgrades_section, 'credits': self.credits_section, 'sources': self.sources_section}
         body = ''.join(parts[s]() if s in parts else self.prose(s) for s in present)
         templates = ''.join(f'<template id="cc-{E(a)}">{self.area_compact(a)}</template>' for a in self.areas)
-        fonts = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap'
+        # Atelier type (6 November 2026): Fraunces for display, with its italic for the accent words, and
+        # Inter for text and the letter-spaced labels. Both are SIL Open Font Licence fonts on Google Fonts.
+        fonts = 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Inter:wght@300..700&display=swap'
         return ('<!doctype html>\n'
                 f'<html lang="{E(meta["lang"])}" data-mode="light"{" class=" + chr(34) + "has-opener" + chr(34) if self.opener_d else ""}>\n<head>\n<meta charset="utf-8">\n'
                 '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<meta name="color-scheme" content="light">\n'
@@ -1679,7 +1945,7 @@ class Page:
                 '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">\n'
                 f'<style>{css}</style>\n</head>\n<body>\n<a class="skip" href="#days">{E(self.L["skip"])}</a>\n'
                 f'{self.opener_html()}\n{self.masthead()}\n{self.topnav(present)}\n<main class="layout">\n{body}\n{self.footer()}\n</main>\n'
-                f'{self.rail()}\n{self.lightbox()}\n{self.tour_html()}\n{templates}\n'
+                f'{self.rail()}\n{self.lightbox()}\n{self.sheet_html()}\n{self.tour_html()}\n{templates}\n'
                 f'<script type="application/json" id="trip-data">{safe_json(self.trip_json())}</script>\n'
                 + (f'<script type="application/json" id="globe-data">{safe_json(globe_data())}</script>\n' if self.opener_d else '')
                 + '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>\n'

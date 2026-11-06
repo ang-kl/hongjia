@@ -3766,6 +3766,12 @@ async fn trip_pages_get_the_forecast_through_the_server(pool: PgPool) {
         privacy.contains("Open-Meteo") && privacy.contains("rounded to about 1 km"),
         "the privacy page says what is sent"
     );
+    assert!(
+        privacy.contains("Instagram then sees")
+            && privacy.contains("Near me")
+            && privacy.contains("not sent to the site"),
+        "the privacy page covers Instagram panels and Near me"
+    );
 }
 
 /// A stand-in for OpenStreetMap's tile server: a tiny PNG for every tile, with a caching header,

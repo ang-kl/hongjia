@@ -17,7 +17,7 @@
  },
  "masthead": {
   "kicker": "Travel coffee-table kit · a fictional sample",
-  "title": "Example Bay & the Lantern Coast",
+  "title": "Example Bay & the *Lantern* Coast",
   "lede": "Two unhurried days of harbour light, a lighthouse, sea cliffs and a Sunday market. Every place here is invented.",
   "facts": [
    {
@@ -239,8 +239,8 @@
   {
    "when": "Sat 12 Jun",
    "iso": "2027-06-12",
-   "route_label": "Station → Harbour → Lantern Point",
-   "title": "Arrive by the sea",
+   "route_label": "[[place:station|Station]] → [[place:harbour|Harbour]] → [[place:lighthouse|Lantern Point]]",
+   "title": "Arrive by the *sea*",
    "sub": "A gentle first day: the quay, the lighthouse and a long lunch.",
    "base": "Example Bay · night 1 of 1",
    "badge": "Arrival + one outing",
@@ -333,7 +333,7 @@
    "info": [
     {
      "title": "Getting around",
-     "text": "Taxi or bus 7; the harbour is a short walk from the hotel. [[added]]Road distance 4.8 km to the point [[src:ex_routes]].[[/added]]"
+     "text": "[[place:station|Station]] → [[place:hotel|Hotel Tidewater]]: a five-minute taxi. Taxi or bus 7; the harbour is a short walk from the hotel. [[added]]Road distance 4.8 km to the point [[src:ex_routes]].[[/added]]"
     },
     {
      "title": "Meals",
@@ -404,6 +404,115 @@
      "cat": [
       "sights",
       "shopping"
+     ]
+    }
+   ],
+   "meals": [
+    {
+     "meal": "lunch",
+     "time": "12:30",
+     "note": "Seated and unhurried, near [[place:harbour|the harbour]].",
+     "choices": [
+      {
+       "stop": "harbour"
+      },
+      {
+       "name": "Harbour Kitchen",
+       "cat": [
+        "food"
+       ],
+       "kind": "Seafood kitchen",
+       "why": "Ground-floor tables by the water.",
+       "lat": 0.0471,
+       "lng": 0.0812,
+       "hours": "Daily 8am to 4pm (fictional)",
+       "source": "ex_tourism",
+       "website": "https://example.com/example-bay/eat"
+      },
+      {
+       "name": "The Net Loft",
+       "cat": [
+        "food"
+       ],
+       "kind": "Bistro",
+       "why": "Lift to the dining room.",
+       "lat": 0.0475,
+       "lng": 0.0819,
+       "hours": "Daily 8am to 4pm (fictional)",
+       "source": "ex_tourism",
+       "website": "https://example.com/example-bay/eat"
+      },
+      {
+       "name": "Quay Bakery",
+       "cat": [
+        "food"
+       ],
+       "kind": "Bakery café",
+       "why": "Soup and sandwiches; benches outside.",
+       "lat": 0.0468,
+       "lng": 0.0808,
+       "hours": "Daily 8am to 4pm (fictional)",
+       "source": "ex_tourism",
+       "website": "https://example.com/example-bay/eat"
+      }
+     ]
+    },
+    {
+     "meal": "dinner",
+     "time": "18:30",
+     "choices": [
+      {
+       "name": "Tidewater Dining Room",
+       "cat": [
+        "food"
+       ],
+       "kind": "Hotel restaurant",
+       "why": "In the hotel; no stairs.",
+       "lat": 0.0488,
+       "lng": 0.0831,
+       "hours": "Daily 8am to 4pm (fictional)",
+       "source": "ex_tourism",
+       "website": "https://example.com/example-bay/eat"
+      },
+      {
+       "name": "Lantern Grill",
+       "cat": [
+        "food"
+       ],
+       "kind": "Grill",
+       "why": "Early sitting from 5.30pm.",
+       "lat": 0.0493,
+       "lng": 0.0841,
+       "hours": "Daily 8am to 4pm (fictional)",
+       "source": "ex_tourism",
+       "website": "https://example.com/example-bay/eat"
+      },
+      {
+       "name": "Bay Noodle House",
+       "cat": [
+        "food"
+       ],
+       "kind": "Noodle bar",
+       "why": "Quick and quiet.",
+       "lat": 0.0481,
+       "lng": 0.0826,
+       "hours": "Daily 8am to 4pm (fictional)",
+       "source": "ex_tourism",
+       "website": "https://example.com/example-bay/eat"
+      },
+      {
+       "name": "Gull Pizzeria",
+       "cat": [
+        "food"
+       ],
+       "kind": "Pizzeria",
+       "why": "Takeaway or a few tables.",
+       "lat": 0.0477,
+       "lng": 0.0822,
+       "hours": "Daily 8am to 4pm (fictional)",
+       "source": "ex_tourism",
+       "website": "https://example.com/example-bay/eat"
+      }
      ]
     }
    ]
@@ -640,7 +749,8 @@
       "title": "Hotel Tidewater",
       "paras": [
        "Sea-view rooms; two with roll-in showers [[src:ex_hotel]]."
-      ]
+      ],
+      "place": "hotel"
      },
      {
       "kicker": "Example Bay · alternative",
@@ -1952,7 +2062,12 @@
      "source": "ex_hours",
      "q": "Lamp Room Tea Cart, Example Bay lighthouse"
     }
-   ]
+   ],
+   "photo_spot": {
+    "spot": "The gallery rail on the seaward side",
+    "tip": "Late afternoon light; benches by the door.",
+    "source": "ex_tourism"
+   }
   },
   "beach": {
    "name": "Lantern Beach",
@@ -2450,7 +2565,12 @@
      "website": "https://example.com/example-bay/st-example",
      "lat": 0.0491,
      "lng": 0.0838,
-     "source": "ex_tourism"
+     "source": "ex_tourism",
+     "instagram": "https://www.instagram.com/example.church/",
+     "photo_spot": {
+      "spot": "The lych gate",
+      "source": "https://example.com/example-bay/st-example"
+     }
     },
     {
      "name": "Example Bay Mosque",
@@ -2527,5 +2647,8 @@
    "market-1",
    "library-1"
   ]
+ },
+ "page": {
+  "meal_choices": 4
  }
 }
