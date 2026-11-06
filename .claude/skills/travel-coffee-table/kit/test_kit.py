@@ -24,6 +24,66 @@ STYLE_HOSTS = {'fonts.googleapis.com', 'cdnjs.cloudflare.com', 'cdn.jsdelivr.net
 FRAME_PREFIXES = ('https://maps.google.com/maps', 'https://www.google.com/maps/', 'https://www.instagram.com/', 'https://www.tiktok.com/embed/')
 HTML_SINKS = re.compile(r'\b(innerHTML|outerHTML|insertAdjacentHTML|document\.write)\b')
 
+PANEL_JS = r"""
+const { chromium } = require('playwright');
+const fs = require('fs'), path = require('path');
+const page = process.argv[2], dir = path.dirname(page), name = path.basename(page);
+fs.writeFileSync(path.join(dir, 'parent.html'), `<!doctype html><meta charset="utf-8"><body style="margin:0"><iframe src="${name}" style="border:0;width:390px;height:844px"></iframe>
+<script>window.WANT=null; window.SHARE=null; window.addEventListener('message', function(e){
+  if (e.data && e.data.type === 'hj:near-want') { window.WANT = e.data; var keys = e.data.places.slice(0, 2).map(function(p){ return { key: p.key, km: 1.5 }; });
+    e.source.postMessage({ type: 'hj:near', ok: true, places: keys.concat([{ key: 'p-nowhere', km: 1 }]), lat: 1, lon: 2 }, '*'); }
+  if (e.data && e.data.type === 'hj:share-want') { window.SHARE = e.data; e.source.postMessage({ type: 'hj:shared', ok: true, how: 'copy' }, '*'); }
+});</script>`);
+(async () => {
+  const browser = await chromium.launch();
+  const out = {};
+  for (const reduced of [false, true]) {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: reduced ? 'reduce' : 'no-preference' });
+    await ctx.route(/^https?:/, r => r.abort());
+    const p = await ctx.newPage();
+    const errors = []; p.on('pageerror', e => errors.push(e.message));
+    await p.goto('file://' + page, { waitUntil: 'load' });
+    await p.waitForTimeout(400);
+    const r = await p.evaluate(async () => {
+      const anims = () => document.getAnimations().filter(a => !(a instanceof CSSAnimation) && !(a instanceof CSSTransition)).length;
+      const before = anims();
+      const a = [...document.querySelectorAll('.worship a.pl')][0]; a.click();
+      await new Promise(f => setTimeout(f, 60));
+      const sheet = document.getElementById('sheet'), ig = sheet.querySelector('.sh-ig iframe');
+      const opened = { shown: !sheet.hidden, title: document.getElementById('sheet-h').textContent, focus: document.activeElement.id,
+        ig: ig ? ig.getAttribute('src') : '', out: [...sheet.querySelectorAll('.sh-out a')].map(x => [x.textContent, x.target]), running: anims() - before,
+        spot: (sheet.querySelector('.sh-facts') || {}).textContent || '' };
+      sheet.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await new Promise(f => setTimeout(f, 500));
+      return Object.assign(opened, { closed: sheet.hidden, back: document.activeElement === a });
+    });
+    out[reduced ? 'reduced' : 'motion'] = Object.assign(r, { errors });
+    await ctx.close();
+  }
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.route(/^https?:/, r => r.abort());
+  const p = await ctx.newPage();
+  const errors = []; p.on('pageerror', e => errors.push(e.message));
+  await p.goto('file://' + path.join(dir, 'parent.html'), { waitUntil: 'load' });
+  await p.waitForTimeout(600);
+  const f = p.frames().find(x => x.url().endsWith('/' + name));
+  await f.evaluate(() => document.querySelector('[data-near-me]').click());
+  await p.waitForTimeout(400);
+  const near = await f.evaluate(() => ({ items: [...document.querySelectorAll('.near-list li')].map(li => li.textContent), text: document.querySelector('.sheet-body').textContent }));
+  await f.evaluate(() => { document.querySelector('#sheet [data-sheet-close]').click(); });
+  await p.waitForTimeout(400);
+  await f.evaluate(() => { document.querySelector('.worship a.pl').click(); });
+  await p.waitForTimeout(200);
+  await f.evaluate(() => { [...document.querySelectorAll('.sh-acts button')].find(b => /Share/.test(b.textContent)).click(); });
+  await p.waitForTimeout(300);
+  const toast = await f.evaluate(() => { const t = document.querySelector('.toast'); return t.hidden ? '' : t.textContent; });
+  const day = await f.evaluate(() => { const b = document.querySelector('[data-share-day]'); return b && !b.hidden; });
+  out.framed = { want: await p.evaluate(() => window.WANT), share: await p.evaluate(() => window.SHARE), near, toast, day, errors };
+  await browser.close();
+  process.stdout.write(JSON.stringify(out));
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+
 
 def find_browser():
     import shutil
@@ -782,6 +842,153 @@ class KitTest(unittest.TestCase):
         block = html.split('id="trip-data">', 1)[1].split('</script>', 1)[0]
         self.assertNotIn('<', block)
         self.assertEqual(json.loads(block)['days'][0]['title'], d['days'][0]['title'])
+
+    # ------------------------------------------------------------ place panels, meals, photo spots (6 November 2026)
+    def test_place_names_open_panels(self):
+        panels = self.trip['panels']
+        ids = {n.attrs['id'] for n in self.root.iter() if n.attrs.get('id')}
+        links = find(self.root, 'a', 'pl')
+        self.assertGreater(len(links), 20)
+        for a in links:
+            self.assertIn(a.attrs.get('data-place'), panels, a.text())
+            self.assertNotIn('target', a.attrs, 'a place name never opens a new window')
+            href = a.attrs.get('href', '')
+            self.assertTrue(href == '#' or href[1:] in ids, href)
+        for card in find(self.root, 'article', 'stop'):
+            self.assertTrue(find(find(card, 'h4')[0], 'a', 'pl'), 'every stop name is a link')
+        for card in find(self.root, 'article', 'alt'):
+            self.assertTrue(find(card, 'a', 'pl'), 'every alternative, place of worship and meal choice name is a link')
+        stays = find(self.root, 'section', id='stays')[0]
+        self.assertEqual(find(stays, 'a', 'pl')[0].attrs['data-place'], 'p-hotel', 'a stay card names its place')
+        day1 = find(self.root, 'article', id='day-1')[0]
+        kicker = find(find(day1, 'header', 'day-h')[0], 'p', 'kicker')[0]
+        self.assertEqual([a.text() for a in find(kicker, 'a', 'pl')], ['Station', 'Harbour', 'Lantern Point'], 'route labels link each place')
+        info = [n for n in find(day1, 'section') if n.up(lambda x: 'info4' in x.classes())]
+        self.assertTrue(any(find(n, 'a', 'pl') for n in info), '[[place:...]] in day notes')
+        for pid, p in panels.items():
+            self.assertRegex(pid, r'^[pa]-[a-z0-9-]{1,27}$')
+            self.assertTrue(p['name'])
+            self.assertTrue(p['maps'].startswith('https://www.google.com/maps'), pid)
+            for k in ('web', 'hours_src'):
+                if p.get(k):
+                    self.assertTrue(p[k].startswith('https://'), (pid, k))
+            if p.get('photo'):
+                self.assertTrue(p['photo']['credit'], f'{pid}: a panel photo keeps its credit')
+        with self.assertRaises(build.KitError):
+            d = copy.deepcopy(self.data)
+            d['days'][0]['info'][0]['text'] = '[[place:nowhere]]'
+            build.build(d)
+
+    def test_place_panel_markup(self):
+        sheet = find(self.root, 'div', id='sheet')[0]
+        self.assertIn('hidden', sheet.attrs)
+        card = find(sheet, 'section', 'sheet-card')[0]
+        self.assertEqual((card.attrs.get('role'), card.attrs.get('aria-modal'), card.attrs.get('aria-labelledby')), ('dialog', 'true', 'sheet-h'))
+        self.assertTrue(find(sheet, 'button', 'sheet-x', data_sheet_close=True))
+        self.assertTrue(find(self.root, 'p', 'toast', role='status'))
+        self.assertTrue(find(self.root, 'button', 'near-me', data_near_me=True))
+        self.assertEqual(len(find(self.root, 'button', 'share-day')), len(self.data['days']))
+
+    def test_meals_have_their_choices(self):
+        day1 = find(self.root, 'article', id='day-1')[0]
+        meals = find(day1, 'div', 'meal')
+        self.assertEqual([m.attrs['data-meal'] for m in meals], ['lunch', 'dinner'])
+        for m in meals:
+            self.assertEqual(len(find(m, 'article', 'alt')), 4, 'four choices, the planned place counted')
+            self.assertIn('4 choices', find(m, 'h4')[0].text())
+        self.assertEqual(len(find(meals[0], 'article', 'alt-planned')), 1)
+        self.assertTrue(find(meals[0], 'span', 'badge'))
+        d = copy.deepcopy(self.data)
+        d['days'][0]['meals'][1]['choices'].pop()
+        with self.assertRaisesRegex(build.KitError, 'meal_choices'):
+            build.build(d)
+        d = copy.deepcopy(self.data)
+        d['days'][0]['meals'][0]['meal'] = 'elevenses'
+        with self.assertRaises(build.KitError):
+            build.build(d)
+        d = copy.deepcopy(self.data)
+        d['days'][0]['meals'][0]['choices'][1]['hours'] = 'Daily 9 to 5'
+        del d['days'][0]['meals'][0]['choices'][1]['source']
+        with self.assertRaisesRegex(build.KitError, 'source'):
+            build.build(d)
+
+    def test_photo_spots_and_venue_instagram(self):
+        spots = find(self.root, 'p', 'spot')
+        self.assertEqual(len(spots), len(find(self.root, 'article', id='d1-lighthouse')) + 1)
+        for sp in spots:
+            self.assertIn('Photo spot', sp.text())
+            self.assertTrue(find(sp, 'a', 'src'), 'a photo spot names its source')
+        church = next(p for p in self.trip['panels'].values() if p['name'] == "St Example's Church")
+        self.assertEqual((church['ig'], church['spot']['spot']), ('example.church', 'The lych gate'))
+        self.assertTrue(self.trip['panels']['p-lighthouse']['spot']['src_url'].startswith('https://'))
+        for bad in ({'spot': 'Somewhere'}, {'source': 'ex_tourism'}, {'spot': 'x', 'source': 'http://example.com/'}):
+            d = copy.deepcopy(self.data)
+            d['stops']['lighthouse']['photo_spot'] = bad
+            with self.assertRaises(build.KitError):
+                build.build(d)
+        for bad in ('https://example.com/example.church', 'https://www.instagram.com/p/abc/x', 'http://www.instagram.com/example.church/'):
+            d = copy.deepcopy(self.data)
+            d['worship'][0]['items'][0]['instagram'] = bad
+            with self.assertRaises(build.KitError):
+                build.build(d)
+
+    def test_title_accents(self):
+        self.assertIn('Example Bay &amp; the <em>Lantern</em> Coast', self.html)
+        self.assertIn('Arrive by the <em>sea</em>', self.html)
+        page = build.Page(copy.deepcopy(self.data))
+        self.assertEqual(page.accent('**not** an *accent* <b>'), '**not** an <em>accent</em> &lt;b&gt;')
+
+    def test_motion_only_through_the_web_animations_helper(self):
+        js = open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read()
+        compact = re.sub(r'\s+', '', js)
+        self.assertEqual(compact.count('.animate('), 1, 'every animation goes through motion()')
+        self.assertIn("functionmotion(e,frames,opts){if(reduce||!e||typeofe.animate!=='function'){returnnull;}", compact)
+        self.assertNotIn('forwards', js, 'no animation is left filling after it ends')
+        self.assertIn("sheetCard.style.transform=to;", compact, 'the panel closes onto its own style')
+        self.assertIn("if(tAnim){tAnim.pause();}", compact, 'Play the trip pauses its animation')
+
+    def test_share_and_near_me_protocol(self):
+        js = open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read()
+        compact = re.sub(r'\s+', '', js)
+        self.assertIn("window.parent.postMessage({type:'hj:share-want',kind:'place',title:String(p.name).slice(0,120),text:text,url:url},'*');", compact)
+        self.assertIn("window.parent.postMessage({type:'hj:share-want',kind:'doc',title:title},'*');", compact, 'a day is shared by its link only')
+        self.assertIn("window.parent.postMessage({type:'hj:near-want',places:places},'*');", compact)
+        panel = compact[compact.index('/*====placepanels'):]
+        self.assertIn("if(event.source!==window.parent){return;}", panel)
+        self.assertIn("returnx&&typeofx.key==='string'&&P[x.key]&&typeofx.km==='number'&&isFinite(x.km);", panel, 'only known keys and distances are used')
+        self.assertIn('{enableHighAccuracy:false,maximumAge:300000,timeout:15000}', panel, 'never precise location')
+        self.assertFalse(HTML_SINKS.search(panel))
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_place_panel_in_a_browser(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            script = os.path.join(tmp, 'panel.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(PANEL_JS)
+            out = subprocess.run([NODE, script, page], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        for k in ('motion', 'reduced'):
+            r = res[k]
+            self.assertEqual(r['errors'], [], k)
+            self.assertEqual((r['shown'], r['title'], r['focus'], r['closed'], r['back']), (True, "St Example's Church", 'sheet-h', True, True), k)
+            self.assertEqual(r['ig'], 'https://www.instagram.com/example.church/embed/')
+            self.assertTrue(r['out'] and all(t == '_blank' and '↗' in x for x, t in r['out']), 'outside links are marked and grouped')
+            self.assertIn('The lych gate', r['spot'])
+        self.assertGreater(res['motion']['running'], 0, 'the panel moves in')
+        self.assertEqual(res['reduced']['running'], 0, 'and does not move when motion is reduced')
+        fr = res['framed']
+        self.assertEqual(fr['errors'], [])
+        self.assertTrue(fr['want']['places'] and all(set(p) == {'key', 'lat', 'lon'} for p in fr['want']['places']))
+        self.assertEqual(len(fr['near']['items']), 2, 'unknown keys in the answer are dropped')
+        self.assertTrue(all('about 1.5 km' in x for x in fr['near']['items']))
+        self.assertEqual((fr['share']['kind'], fr['share']['title']), ('place', "St Example's Church"))
+        self.assertTrue(fr['share']['url'].startswith('https://'))
+        self.assertEqual((fr['toast'], fr['day']), ('Link copied.', True))
 
 
 if __name__ == '__main__':

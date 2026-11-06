@@ -905,7 +905,17 @@ const downloadOf = async (p, name) => {
   const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
   const TRIP = `<!doctype html><html><head><meta charset="utf-8"><title>Trip weather</title></head><body>
 <h1>Trip weather sample</h1><p id="near">waiting</p><p id="far">waiting</p><p id="tiles">waiting</p>
+<button id="share-place">Share place</button><button id="share-doc">Share day</button><button id="near-me">Near me</button>
+<p id="shared">waiting</p><p id="nearby">waiting</p>
 <script>
+addEventListener('message', e => {
+  if (e.source !== parent || !e.data) return;
+  if (e.data.type === 'hj:shared') document.getElementById('shared').textContent = e.data.how;
+  if (e.data.type === 'hj:near') document.getElementById('nearby').textContent = JSON.stringify(e.data);
+});
+document.getElementById('share-place').onclick = () => parent.postMessage({ type: 'hj:share-want', kind: 'place', title: 'Harbour Café', text: '1 Quay Street', url: 'https://example.com/cafe' }, '*');
+document.getElementById('share-doc').onclick = () => parent.postMessage({ type: 'hj:share-want', kind: 'doc', title: 'Day 3', text: 'secret plans', url: 'https://evil.example/' }, '*');
+document.getElementById('near-me').onclick = () => parent.postMessage({ type: 'hj:near-want', places: [{ key: 'harbour', lat: 51.5014, lon: -0.1419 }, { key: 'next-door', lat: 51.5008, lon: -0.1247 }, { key: 'paris', lat: 48.8584, lon: 2.2945 }] }, '*');
 addEventListener('message', e => {
   if (e.source !== parent || !e.data || e.data.type !== 'hj:weather') return;
   const d = e.data;
@@ -945,6 +955,46 @@ parent.postMessage({ type: 'hj:weather-want', places: [
   }
   if (weatherAsks.length !== 1) failures.push(`the weather service was asked ${weatherAsks.length} times (expected once)`);
   else if (!weatherAsks[0].includes('latitude=51.51&longitude=-0.13&')) failures.push(`the server did not round the place: ${weatherAsks[0]}`);
+
+  // Share and Near me (6 November 2026): the locked frame asks; this page asks the person in the
+  // site's own bar, shares a place's https link or only this document's link, and answers Near me
+  // with keys and rough distances, never a position.
+  await setup.grantPermissions(['geolocation', 'clipboard-read', 'clipboard-write'], { origin: base });
+  await setup.setGeolocation({ latitude: 51.5007, longitude: -0.1246, accuracy: 30 });
+  const docUrl = page.url().split('#')[0];
+  const systemShare = await page.evaluate(() => typeof navigator.share === 'function');
+  const answer = async id => {
+    await raw().evaluate(() => { document.getElementById('shared').textContent = 'waiting'; });
+    await raw().click(`#${id}`);
+    if (!systemShare) {
+      await page.locator('.doc-ask button[data-ask="copy"]').click({ timeout: 4000 }).catch(() => failures.push(`no Copy link in the site's bar for ${id}`));
+    }
+    return raw().waitForFunction(() => document.getElementById('shared').textContent !== 'waiting', null, { timeout: 6000 }).then(() => raw().textContent('#shared'), () => 'no answer');
+  };
+  if (!systemShare) {
+    const placeHow = await answer('share-place');
+    const placeCopied = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
+    if (placeHow !== 'copy' || placeCopied !== 'https://example.com/cafe') failures.push(`share a place: ${placeHow}, copied "${placeCopied}"`);
+    await page.waitForTimeout(2100);
+    const docHow = await answer('share-doc');
+    const docCopied = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
+    if (docHow !== 'copy' || docCopied !== docUrl) failures.push(`share the document by its link only: ${docHow}, copied "${docCopied}" (expected ${docUrl})`);
+  }
+  await raw().click('#near-me');
+  const ask = page.locator('.doc-ask');
+  const askText = await ask.textContent({ timeout: 4000 }).catch(() => '');
+  if (!/not sent to the site/.test(askText)) failures.push(`Near me asks in the site's words first: "${askText}"`);
+  await page.locator('.doc-ask button[data-ask="yes"]').click({ timeout: 4000 }).catch(() => failures.push('no "Use my location" in the bar'));
+  const nearby = await raw().waitForFunction(() => document.getElementById('nearby').textContent !== 'waiting', null, { timeout: 8000 }).then(() => raw().textContent('#nearby'), () => 'no answer');
+  try {
+    const got = JSON.parse(nearby);
+    const keys = got.places.map(p => p.key).join(',');
+    const fields = new Set(got.places.flatMap(p => Object.keys(p)));
+    if (!got.ok || keys !== 'next-door,harbour,paris' || [...fields].sort().join(',') !== 'key,km' || 'lat' in got || 'lon' in got) failures.push(`Near me answer: ${nearby}`);
+    if (got.places[0].km !== 0.5 || got.places[1].km !== 1) failures.push(`Near me distances are rough: ${nearby}`);
+  } catch {
+    failures.push(`Near me answer: ${nearby}`);
+  }
 }
 
 await page.goto(base + sketchPath, { waitUntil: 'networkidle' });

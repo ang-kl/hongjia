@@ -484,6 +484,10 @@ mod tests {
         }
         assert!(CONTENT_SECURITY_POLICY.contains("form-action 'self'"));
         assert!(PERMISSIONS_POLICY.contains("geolocation=(self)"));
+        // Trip pages' Share button: `web-share` is left at its default, `self`, so only the site's
+        // own page may open the share menu (the locked document frame has an opaque origin, so it
+        // never matches). It is not named, because browsers without Web Share warn about the name.
+        assert!(!PERMISSIONS_POLICY.contains("web-share"));
         assert!(PERMISSIONS_POLICY.contains("camera=()"));
     }
 }

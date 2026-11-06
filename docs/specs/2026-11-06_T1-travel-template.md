@@ -128,3 +128,57 @@ The skill and kit live in `.claude/skills/travel-coffee-table/`, so a Claude ses
     - the privacy page updated.
   - **Page tests:** `hj:tiles-want` is accepted with no other fields, and `hj:tiles` is never accepted from the frame.
   - **Browser check:** a trip page receives the ticket; the tile is fetched once and then kept; the headers are as designed.
+
+## Follow-up T3: places in the page, Share, Near me and the Atelier look (6 November 2026)
+
+- **Owner requests and decisions:**
+  - "incorporate more IG links … rather than open windows and hard to go back especially tablet or phone. think UI.UX" Decision: option A, a place panel inside the page.
+  - "critic" of the Geolocation API. Decision: "near me yes".
+  - "incorporate Web Animations API (WAAPI) and Web Share API". Decision for a day: "link only".
+  - Instagram first for "stays worship main stops".
+  - "sub-header like "MAKE IT EASIER" should be larger font size".
+  - A route line such as "[place] → [place]" should link both places.
+  - "each place should list top IG place to take photo". Decision: one spot per place, from official sources only.
+  - "Food for meals should have 4 choices each". Decision: every meal, four in total, the planned place counted.
+  - A "wow" feeling like a luxury travel atelier, "without reducing any of the content".
+- **Place panel (kit):**
+  - Every place name is underlined and opens one panel in the page: from the bottom on a phone (drag down to close), from the right on wider screens.
+  - It shows the photo with its credit, what the place is, address, hours and photo spot with their sources, Show on map and Share, then the outside links marked ↗, and the venue's own Instagram posts, loaded only when it opens.
+  - Escape, × or a tap outside closes it, and focus returns to the name that opened it.
+  - `[[place:key|text]]` links a place from any rich text, including the day's route line; stay cards may name their place.
+- **Meals and photo spots (kit):** `days[].meals` lists each meal's choices, and `page.meal_choices` makes the check refuse a meal with a different count. `photo_spot` needs its source.
+- **Share (site and kit):**
+  - The locked frame cannot share, so it sends `hj:share-want`. A place goes as its name, a line and an https link; a day goes as the document's link on the site only.
+  - The document page checks the message and opens the device's share menu. If the browser refuses, the site's own bar offers Share or Copy link.
+  - `web-share` is left at its default (`self`); naming it made browsers without Web Share warn.
+- **Near me (site and kit):**
+  - The trip page sends `hj:near-want`: up to 200 place keys with their coordinates.
+  - The document page asks the person in its own words, once per load: "Your rough location is used on this device only … it is not sent to the site or kept."
+  - It then takes one low-accuracy reading (no high accuracy, a cached reading up to five minutes old, 15 seconds at most).
+  - It answers `hj:near` with the 20 nearest keys and distances to the nearest half kilometre. Coordinates never go into the frame or to the server.
+- **Geolocation API critique (MDN, read 6 November 2026):**
+  - There is no option for approximate location only, so the site rounds and keeps the reading on the device.
+  - How long a "yes" lasts is the browser's choice.
+  - Accuracy is a 95% radius.
+  - High accuracy and continuous tracking cost battery, so the site takes one reading on a tap.
+  - The API is blocked in the locked frame by design.
+- **Motion:** the Web Animations API, through one helper that does nothing under reduced motion.
+  - It covers the panel, the reveal on scroll, the legend's pulse, and Play the trip's progress, which now pauses and resumes.
+  - No animation is left filling: the panel is closed by setting its end state first.
+- **Atelier look:**
+  - Type and colour: Fraunces with an italic accent word (`*word*` in titles), Inter text and letter-spaced labels, ivory and a deep green.
+  - Cards: rounded and lifted, with photo credits laid over the picture; highlight cards are photo cards.
+  - A frosted top bar, a photo band opening each day, and larger sub-headers. No content was removed.
+- **Privacy page:** new lines for Instagram panels (Instagram sees the device's network address when one opens) and Near me.
+- **Checks:**
+  - Page tests: the share and near messages accepted and refused, nearest and rough distances, and that answers never come from the frame.
+  - The database test covers the privacy lines.
+  - Kit tests (41):
+    - panels and place links;
+    - meals counted;
+    - photo spots and venue Instagram;
+    - accents;
+    - motion only through the helper;
+    - the message protocol;
+    - a browser test of the panel with and without reduced motion, and of Near me and Share inside a frame.
+  - The release browser check covers sharing a place and the document's link through the site's bar, and Near me answering with keys and rough distances only.
