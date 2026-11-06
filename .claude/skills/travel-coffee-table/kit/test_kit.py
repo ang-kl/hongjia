@@ -78,7 +78,7 @@ const TICKET = '1730880000.' + '0123456789abcdef'.repeat(2);
 const good = { type: 'hj:tiles', ok: true, base: 'http://127.0.0.1:9/tiles', ticket: TICKET, expires: 1730883600 };
 const scenarios = {
   good: [good, 50], refused: [{ type: 'hj:tiles', ok: false }, 50], silent: [null, 0], late: [good, 9000],
-  badBase: [Object.assign({}, good, { base: 'http://hongjia.example/tiles' }), 50],
+  badBase: [Object.assign({}, good, { base: 'http://family.example/tiles' }), 50],
   badTicket: [Object.assign({}, good, { ticket: TICKET + '&x=1' }), 50], stranger: ['stranger', 50],
 };
 function parentHtml(answer, delay) {
@@ -457,11 +457,11 @@ class KitTest(unittest.TestCase):
             src = re.search(r'var ' + name + r'=/(.+?)/;', js).group(1)
             return re.compile(src[:-1] + r'\Z' if src.endswith('$') else src)
         base, ticket = js_regex('TILES_BASE'), js_regex('TILES_TICKET')
-        for ok in ('https://hongjia.org/tiles', 'https://family.example.net:8443/tiles', 'http://127.0.0.1:8080/tiles', 'http://localhost:3000/tiles'):
+        for ok in ('https://family.example.org/tiles', 'https://family.example.net:8443/tiles', 'http://127.0.0.1:8080/tiles', 'http://localhost:3000/tiles'):
             self.assertTrue(base.match(ok), ok)
-        for bad in ('http://hongjia.org/tiles', 'https://hongjia.org/tiles/', 'https://hongjia.org/x/tiles', 'https://hongjia.org/tiles?x=1',
-                    'https://HONGJIA.org/tiles', 'https://a.org:123456/tiles', 'http://10.0.0.1:80/tiles', 'http://localhost/tiles',
-                    'https://user@hongjia.org/tiles', 'javascript:alert(1)//tiles', 'https://hongjia.org/tiles\n', '//hongjia.org/tiles'):
+        for bad in ('http://family.example.org/tiles', 'https://family.example.org/tiles/', 'https://family.example.org/x/tiles', 'https://family.example.org/tiles?x=1',
+                    'https://FAMILY.example.org/tiles', 'https://a.org:123456/tiles', 'http://10.0.0.1:80/tiles', 'http://localhost/tiles',
+                    'https://user@family.example.org/tiles', 'javascript:alert(1)//tiles', 'https://family.example.org/tiles\n', '//family.example.org/tiles'):
             self.assertFalse(base.match(bad), bad)
         for ok in ('1730880000.0123456789abcdef0123456789abcdef', '1.ffffffffffffffffffffffffffffffff'):
             self.assertTrue(ticket.match(ok), ok)
