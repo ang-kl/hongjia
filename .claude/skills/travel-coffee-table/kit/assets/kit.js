@@ -204,16 +204,54 @@ function initMap(){
   var box=$('#leaflet');
   if(!window.L){ clear(box); box.appendChild(el('p','map-fallback',t('map_fallback','The route map could not load here.'))); if(flyBtn){flyBtn.disabled=true;} return; }
   map=L.map(box,{scrollWheelZoom:false,zoomControl:true,attributionControl:true});
-  // Tiles: CARTO with the trip's key inside the family site (OpenStreetMap's servers refuse its
-  // locked frame); the credits are fixed here, never taken from the data.
-  var T=D.tiles||{}, carto=T.provider==='carto'&&/^https:\/\/basemaps\.cartocdn\.com\/rastertiles\/[a-z_]+\/\{z\}\/\{x\}\/\{y\}\{r\}\.png\?key=[A-Za-z0-9._-]+$/.test(T.url||'');
-  var osmCredit='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
-  L.tileLayer(carto?T.url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:carto?20:19,referrerPolicy:'strict-origin-when-cross-origin',
-    attribution:carto?osmCredit+' &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>':osmCredit}).addTo(map);
+  // Tiles. "site" (the default): OpenStreetMap through the family site's relay, with a ticket the
+  // site gives this page when asked; anywhere else, no tile server is contacted. "carto": CARTO with
+  // the trip's key. "osm": OpenStreetMap directly (refused inside the site's locked frame).
+  // The credits are fixed here, never taken from the data, and always shown on the map.
+  var T=D.tiles||{}, osmCredit='<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">&copy; OpenStreetMap contributors</a>';
+  if(T.provider==='site'){ siteTiles(box,osmCredit); }
+  else {
+    var carto=T.provider==='carto'&&/^https:\/\/basemaps\.cartocdn\.com\/rastertiles\/[a-z_]+\/\{z\}\/\{x\}\/\{y\}\{r\}\.png\?key=[A-Za-z0-9._-]+$/.test(T.url||'');
+    L.tileLayer(carto?T.url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:carto?20:19,referrerPolicy:'strict-origin-when-cross-origin',
+      attribution:carto?osmCredit+' &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>':osmCredit}).addTo(map);
+  }
   routeLayer=L.layerGroup().addTo(map); safetyLayer=L.layerGroup().addTo(map); nearbyLayer=L.layerGroup().addTo(map);
   map.on('focus',function(){map.scrollWheelZoom.enable();}); map.on('blur',function(){map.scrollWheelZoom.disable();});
   selectDay(0);
   window.addEventListener('resize',function(){ map.invalidateSize(); });
+}
+/* Tile relay protocol. Only inside a frame, once: parent.postMessage({type:'hj:tiles-want'},'*').
+   Accepted only from window.parent: {type:'hj:tiles', ok:true, base, ticket, expires} or
+   {type:'hj:tiles', ok:false}. base is the site's origin plus /tiles (https, or http on
+   127.0.0.1/localhost for local tests); ticket is digits, a dot and 32 hex digits. Until a good
+   answer, after ok:false, after 8 seconds without one, or outside a frame, the map keeps its
+   routes and pins on a plain background with a notice, and no tile server is contacted. */
+var TILES_BASE=/^(https:\/\/[a-z0-9.-]+(:[0-9]{1,5})?|http:\/\/(127\.0\.0\.1|localhost):[0-9]{1,5})\/tiles$/;
+var TILES_TICKET=/^[0-9]{1,12}\.[0-9a-f]{32}$/;
+function siteTiles(box,credit){
+  var layer=null, closed=false, timer=0, notice=null;
+  box.classList.add('no-tiles');
+  var Notice=L.Control.extend({options:{position:'topright'},onAdd:function(){ var n=el('p','tiles-notice',t('tiles_notice','Map pictures load inside the family site.')); n.setAttribute('role','status'); return n; }});
+  notice=new Notice(); notice.addTo(map);
+  var framed=false; try{ framed=window.parent!==window; }catch(e){ framed=true; }
+  if(!framed){ return; }
+  window.addEventListener('message',function(event){
+    if(event.source!==window.parent){return;}
+    var a=event.data; if(!a||typeof a!=='object'||a.type!=='hj:tiles'){return;}
+    if(closed&&!layer){return;}
+    var good=a.ok===true&&typeof a.base==='string'&&typeof a.ticket==='string'&&TILES_BASE.test(a.base)&&TILES_TICKET.test(a.ticket);
+    if(!good){ if(!layer){ closed=true; clearTimeout(timer); } return; }
+    var url=a.base+'/{z}/{x}/{y}.png?t='+a.ticket;
+    if(layer){ layer.setUrl(url); return; }
+    closed=true; clearTimeout(timer);
+    layer=L.tileLayer(url,{maxZoom:19,attribution:credit}).addTo(map);
+    box.classList.remove('no-tiles');
+    if(notice){ map.removeControl(notice); notice=null; }
+  });
+  var asked=false;
+  var ask=function(){ if(asked){return;} asked=true; timer=setTimeout(function(){ closed=true; },8000);
+    try{ window.parent.postMessage({type:'hj:tiles-want'},'*'); }catch(e){} };
+  if(document.readyState==='complete'){ ask(); } else { window.addEventListener('load',ask); }
 }
 fillSelectors();
 initMap();

@@ -15,6 +15,7 @@ pub mod redact;
 mod review;
 pub mod signature;
 pub mod store;
+pub mod tiles;
 pub mod weather;
 pub mod web;
 
@@ -43,6 +44,9 @@ pub struct Config {
     /// Where trip-page forecasts come from (Open-Meteo unless `HONGJIA_WEATHER_URL` says otherwise,
     /// as the tests do).
     pub weather_url: String,
+    /// Where trip-page map tiles come from (OpenStreetMap unless `HONGJIA_TILES_URL` says
+    /// otherwise, as the tests do).
+    pub tiles_url: String,
 }
 
 impl Config {
@@ -100,6 +104,13 @@ impl Config {
         {
             return Err("HONGJIA_WEATHER_URL must look like https://api.open-meteo.com".into());
         }
+        let tiles_url =
+            present("HONGJIA_TILES_URL").unwrap_or_else(|| tiles::DEFAULT_URL.to_string());
+        if !(tiles_url.starts_with("https://") || (!on_railway && tiles_url.starts_with("http://")))
+            || tiles_url.ends_with('/')
+        {
+            return Err("HONGJIA_TILES_URL must look like https://tile.openstreetmap.org".into());
+        }
         Ok(Config {
             profiles,
             owner,
@@ -107,6 +118,7 @@ impl Config {
             family_password,
             on_railway,
             weather_url,
+            tiles_url,
         })
     }
 
@@ -210,6 +222,8 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route("/api/search", get(explore::search))
         .route("/api/library", get(explore::library))
         .route("/api/weather", get(weather::forecast))
+        .route("/api/tile-ticket", get(tiles::ticket))
+        .route("/tiles/{z}/{x}/{file}", get(tiles::tile))
         .route(
             "/documents",
             get(documents::index).post(documents::upload).layer(
@@ -404,6 +418,10 @@ mod tests {
             ("HONGJIA_FAMILY_PASSWORD", "family"),
         ];
         assert_eq!(config(&base).unwrap().weather_url, weather::DEFAULT_URL);
+        assert_eq!(config(&base).unwrap().tiles_url, tiles::DEFAULT_URL);
+        let mut bad_tiles = base.to_vec();
+        bad_tiles.push(("HONGJIA_TILES_URL", "https://tile.openstreetmap.org/"));
+        assert!(config(&bad_tiles).is_err());
         let mut local = base.to_vec();
         local.push(("HONGJIA_WEATHER_URL", "http://127.0.0.1:9000"));
         assert_eq!(config(&local).unwrap().weather_url, "http://127.0.0.1:9000");

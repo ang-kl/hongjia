@@ -42,10 +42,13 @@ METRICS = ('code', 'tmax', 'tmin', 'rain_pct', 'rain_mm', 'wind_kmh', 'gust_kmh'
 OPS = ('>=', '>', '<=', '<', 'in')
 PLANS = ('a', 'b', 'c')
 # Map tiles. OpenStreetMap's own tile servers refuse requests without a Referer, and a page in the
-# family site's locked frame (an opaque origin) never sends one, so pages for the site use CARTO's
-# raster basemaps with the family's key, kept in the private trip file. The key is visible in the
-# page and cannot be locked to the site (no Referer), so it must be a free, revocable one.
-TILE_PROVIDERS = ('carto', 'osm')
+# family site's locked frame (an opaque origin) never sends one. So by default ("site") the page asks
+# the family site for a short-lived ticket and loads OpenStreetMap tiles through the site's relay
+# (TILES_WANT / TILES_ANSWER in kit.js); opened anywhere else it keeps its routes and pins on a plain
+# background with a notice, and contacts no tile server. "carto" (CARTO's raster basemaps with the
+# family's free, revocable key, kept in the private trip file) still works; "osm" (OpenStreetMap
+# directly) is accepted but --check reports it, as it is blocked inside the site.
+TILE_PROVIDERS = ('site', 'carto', 'osm')
 CARTO_STYLES = ('voyager', 'light_all')
 TILE_KEY = re.compile(r'^[A-Za-z0-9._-]{4,200}$')
 
@@ -106,6 +109,7 @@ LABELS = {
     'map_note_pin': "Google Maps searches the stop's name and address. Check the returned pin before travelling.",
     'map_note_dir': 'Google directions for one leg. A navigation aid, not proof of road time.',
     'map_fallback': 'The route map could not load here. The Google pin and directions tabs still work.',
+    'tiles_notice': 'Map pictures load inside the family site.',
     'short_walk': 'short walk', 'optional': 'optional', 'to': 'to',
     'plan_a': 'As planned', 'plan_b': 'If it rains', 'plan_c': 'Heat, wind or storm', 'plan': 'Plan {p}',
     'plans_for_day': 'Plans for day {n}', 'choose_plan': 'Choose a plan', 'chosen': 'Chosen', 'suggested': 'Forecast suggests',
@@ -317,7 +321,7 @@ class Page:
         self.plans = data.get('plans') or None
         self.weather = data.get('weather') or None
         self.audience = data.get('audience') or None
-        self.tiles = (data.get('map') or {}).get('tiles') or {'provider': 'osm'}
+        self.tiles = (data.get('map') or {}).get('tiles') or {'provider': 'site'}
         self.opener_d = data.get('opener') or None
         self.stop_cats = {}
         self.cat_labels = {k: lab for k, _, lab in CATS}
@@ -340,6 +344,8 @@ class Page:
         t = self.tiles
         if t['provider'] == 'carto':
             return f'https://basemaps.cartocdn.com/rastertiles/{t.get("style") or "voyager"}/{{z}}/{{x}}/{{y}}{{r}}.png?key={t["key"]}'
+        if t['provider'] == 'site':
+            return ''  # the site gives the address with each ticket
         return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 
     def validate(self):
@@ -1621,7 +1627,7 @@ class Page:
                 s['cats'] = place_cats.get(s['id'], [])
             days.append(dict(n=i + 1, label=f'{self.L["day"]} {i + 1} · {d["when"]}', title=d['title'], iso=d.get('iso') or '',
                              weather=d.get('weather') or '', stops=stops, legs=legs))
-        ui = {k: self.L[k] for k in ('fly', 'fly_stop', 'short_walk', 'optional', 'map_fallback', 'wx_from', 'wx_error', 'wx_past', 'wx_none',
+        ui = {k: self.L[k] for k in ('fly', 'fly_stop', 'short_walk', 'optional', 'map_fallback', 'tiles_notice', 'wx_from', 'wx_error', 'wx_past', 'wx_none',
                                      'wx_frame', 'wx_credit', 'wx_licence', 'wx_rain', 'wx_gust', 'wx_wind', 'wx_uv', 'wx_suggests', 'wx_fits',
                                      'wx_no_plan', 'wx_max_min', 'plans_rules', 'lens_fits', 'lens_check', 'lens_unknown', 'lens_for', 'rail_start', 'to',
                                      'cd_to_go', 'cd_one', 'cd_today', 'cd_during', 'local_time', 'lg_lit', 'lg_none', 'tour_pause', 'tour_play',
@@ -1830,8 +1836,12 @@ def check_html(html, name='page'):
                 tiles = (json.loads(n.text()) or {}).get('tiles') or {}
             except ValueError:
                 tiles = {}
-            if any(m.attrs.get('id') == 'leaflet' for m in nodes) and tiles.get('provider') != 'carto':
-                problems.append(('map blocked in the family site', "map tiles come from OpenStreetMap's servers, which refuse pages in the site's locked frame; set map.tiles to carto with the family's key"))
+            if not any(m.attrs.get('id') == 'leaflet' for m in nodes):
+                continue
+            if tiles.get('provider') not in ('site', 'carto'):
+                problems.append(('map blocked in the family site', "map tiles come straight from OpenStreetMap's servers, which refuse pages in the site's locked frame; leave map.tiles out (the site relays the tiles) or use carto with the family's key"))
+            elif tiles.get('provider') == 'site' and not any(m.tag == 'script' and 'hj:tiles-want' in m.text() for m in nodes):
+                problems.append(('map blocked in the family site', "map.tiles is site, but the page's script never asks the site for a tile ticket (hj:tiles-want)"))
     # 5. official links: social accounts on the platform itself, addresses on Google Maps
     for n in nodes:
         kind = n.attrs.get('data-kind')

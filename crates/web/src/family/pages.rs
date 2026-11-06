@@ -474,6 +474,7 @@ pub fn privacy(owner: &str, journal_days: i32, location_days: i32) -> String {
 </tbody></table></div>
 <p>Choosing a profile name does not prove who signed in, and an open tab does not prove anyone was reading. Precise GPS is never requested.</p>
 <p>Trip pages can show a weather forecast. The server then asks Open-Meteo for the trip's places, sending only their coordinates, rounded to about 1 km, and the dates. Your device, network address and documents are not sent. Weather data by <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0).</p>
+<p>Trip-page maps show map pictures that the server fetches from OpenStreetMap for the area on screen and keeps for at least a week. Your device, network address and documents are not sent. Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.</p>
 <p>Questions or corrections: ask {owner}.</p>
 <p class="small"><a href="/">Back</a></p>"#,
             owner = escape(owner)
