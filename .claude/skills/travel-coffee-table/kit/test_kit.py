@@ -292,6 +292,26 @@ class KitTest(unittest.TestCase):
         refused(lambda d: d['audience'].update(mode='crowd'))
         refused(lambda d: d['stops']['beach'].update(suits={'step_free': 'maybe'}))
 
+    def test_map_tiles(self):
+        # The family site's locked frame sends no Referer, which OpenStreetMap's tile servers require;
+        # pages for the site use CARTO with the family's key, and --check flags OpenStreetMap tiles.
+        data = json.loads(re.search(r'<script type="application/json" id="trip-data">(.*?)</script>', self.html, re.S).group(1))
+        self.assertEqual(data['tiles'], {'provider': 'carto', 'url': 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=example-key'})
+        self.assertIn('carto.com/attributions', self.html)
+        def refused(tiles):
+            d = copy.deepcopy(self.data)
+            d['map']['tiles'] = tiles
+            with self.assertRaises(build.KitError):
+                build.build(d)
+        refused({'provider': 'carto'})
+        refused({'provider': 'carto', 'key': 'a"><script>'})
+        refused({'provider': 'carto', 'key': 'abcd', 'style': 'neon'})
+        refused({'provider': 'mapbox', 'key': 'abcd'})
+        osm = copy.deepcopy(self.data)
+        osm['map'].pop('tiles')
+        problems = build.check_html(build.build(osm))
+        self.assertIn('map blocked in the family site', [rule for rule, _ in problems])
+
     def test_days_without_alternatives(self):
         d = copy.deepcopy(self.data)
         for day in d['days']:

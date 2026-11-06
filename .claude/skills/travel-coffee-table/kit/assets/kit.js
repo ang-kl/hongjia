@@ -186,8 +186,12 @@ function initMap(){
   var box=$('#leaflet');
   if(!window.L){ clear(box); box.appendChild(el('p','map-fallback',t('map_fallback','The route map could not load here.'))); if(flyBtn){flyBtn.disabled=true;} return; }
   map=L.map(box,{scrollWheelZoom:false,zoomControl:true,attributionControl:true});
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,referrerPolicy:'strict-origin-when-cross-origin',
-    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'}).addTo(map);
+  // Tiles: CARTO with the trip's key inside the family site (OpenStreetMap's servers refuse its
+  // locked frame); the credits are fixed here, never taken from the data.
+  var T=D.tiles||{}, carto=T.provider==='carto'&&/^https:\/\/basemaps\.cartocdn\.com\/rastertiles\/[a-z_]+\/\{z\}\/\{x\}\/\{y\}\{r\}\.png\?key=[A-Za-z0-9._-]+$/.test(T.url||'');
+  var osmCredit='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+  L.tileLayer(carto?T.url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:carto?20:19,referrerPolicy:'strict-origin-when-cross-origin',
+    attribution:carto?osmCredit+' &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>':osmCredit}).addTo(map);
   routeLayer=L.layerGroup().addTo(map); safetyLayer=L.layerGroup().addTo(map);
   map.on('focus',function(){map.scrollWheelZoom.enable();}); map.on('blur',function(){map.scrollWheelZoom.disable();});
   selectDay(0);
