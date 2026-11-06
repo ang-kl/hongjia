@@ -85,6 +85,31 @@ pinned; the page may fetch only from those CDNs; pictures must be https or `data
 Google Maps and Instagram and TikTok embeds. No `innerHTML` with data. Keep a typical trip page
 under 1.5 MB (the globe's land data is the 1:110m version).
 
+## The route map's tiles
+
+OpenStreetMap's tile servers refuse requests that carry no Referer, and a page in the site's locked
+frame (an opaque origin) never sends one. So the family site relays OpenStreetMap tiles itself,
+and the page asks it for a short-lived ticket. This is the default (`map.tiles` left out, or
+`{"provider": "site"}`). No key is needed and the page never contacts a tile server on its own.
+
+- Once on load, and only when it is inside a frame (`window.parent !== window`), the page sends
+  `parent.postMessage({type: 'hj:tiles-want'}, '*')`.
+- It accepts only messages where `event.source === window.parent`:
+  `{type: 'hj:tiles', ok: true, base, ticket, expires}` or `{type: 'hj:tiles', ok: false}`.
+  `base` is the site's origin plus `/tiles` (https; `http://127.0.0.1:<port>/tiles` or
+  `http://localhost:<port>/tiles` only for local tests), and `ticket` is digits, a dot and 32
+  lowercase hex digits. Anything else is ignored.
+- Tiles then load from `base + '/{z}/{x}/{y}.png?t=' + ticket` (zoom up to 19).
+- Until a good answer, after `ok: false`, after 8 seconds without an answer, or when the page is
+  opened on its own, the map keeps its routes and pins on a plain background. It also shows a small
+  notice, "Map pictures load inside the family site.", and no tile server is contacted.
+- Any page showing relayed tiles must show OpenStreetMap's credit, "© OpenStreetMap
+  contributors" linked to https://www.openstreetmap.org/copyright, clearly on the map (bottom
+  right) and never hidden. OpenStreetMap's licence and tile policy require it, and the kit adds it
+  itself.
+- `"carto"` with the family's free, revocable key still works. `"osm"` (OpenStreetMap directly) is
+  accepted, but `--check` reports "map blocked in the family site".
+
 ## Plan A, B and C
 
 - **Plan A** is the day as written. Every day has one.
@@ -127,8 +152,7 @@ This folder is in a public repository.
 - Data files and rendered pages for real trips live outside the repository and reach the family
   only as uploads to the private site.
 - The example in `kit/example/` is fictional; keep any new example fictional too.
-- The route map's tiles come from CARTO with the family's key (`map.tiles` in the trip file, never
-  in this folder). OpenStreetMap's own tile servers refuse pages in the site's locked frame, which
-  sends no Referer.
+- The route map's tiles come through the family site's relay by default, so no map key is needed.
+  A CARTO key, if one is ever used, goes only in the private trip file, never in this folder.
 - Health notes stay general ("ask their clinician about heat and medicines"); the page is a
   planning document, not medical advice.

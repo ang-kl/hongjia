@@ -69,6 +69,68 @@ const { chromium } = require('playwright');
 })().catch(e => { console.error(e); process.exit(1); });
 '''
 
+TILES_JS = r'''
+const { chromium } = require('playwright');
+const fs = require('fs'), path = require('path');
+const page = process.argv[2], dir = path.dirname(page), name = path.basename(page);
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/6X8nX0AAAAASUVORK5CYII=', 'base64');
+const TICKET = '1730880000.' + '0123456789abcdef'.repeat(2);
+const good = { type: 'hj:tiles', ok: true, base: 'http://127.0.0.1:9/tiles', ticket: TICKET, expires: 1730883600 };
+const scenarios = {
+  good: [good, 50], refused: [{ type: 'hj:tiles', ok: false }, 50], silent: [null, 0], late: [good, 9000],
+  badBase: [Object.assign({}, good, { base: 'http://hongjia.example/tiles' }), 50],
+  badTicket: [Object.assign({}, good, { ticket: TICKET + '&x=1' }), 50], stranger: ['stranger', 50],
+};
+function parentHtml(answer, delay) {
+  const stranger = answer === 'stranger'
+    ? `<iframe srcdoc="<script>setTimeout(function(){ parent.frames[0].postMessage(${JSON.stringify(good).replace(/"/g, '&quot;')}, '*'); }, 1500);<\/script>"></iframe>` : '';
+  const reply = answer && answer !== 'stranger'
+    ? `setTimeout(function(){ e.source.postMessage(${JSON.stringify(answer)}, '*'); }, ${delay});` : '';
+  return `<!doctype html><meta charset="utf-8"><body style="margin:0"><iframe src="${name}" style="border:0;width:390px;height:844px"></iframe>${stranger}
+<script>window.WANTS=0; window.addEventListener('message', function(e){ if (e.data && e.data.type === 'hj:tiles-want') { window.WANTS++; ${reply} } });</script>`;
+}
+(async () => {
+  const browser = await chromium.launch();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const reqs = {};
+  await ctx.route(/^https?:/, r => {
+    const u = r.request().url();
+    if (u.startsWith('https://unpkg.com/leaflet@')) return r.continue();
+    if (u.startsWith('http://127.0.0.1:9/tiles/')) return r.fulfill({ status: 200, contentType: 'image/png', body: PNG });
+    return r.abort();
+  });
+  const run = async (key, url) => {
+    const p = await ctx.newPage();
+    const res = { errors: [], tiles: [] };
+    p.on('pageerror', e => res.errors.push(e.message));
+    p.on('request', q => { const u = q.url(); if (/\/tiles\/|tile\.openstreetmap|cartocdn/.test(u)) res.tiles.push(u); });
+    await p.goto(url, { waitUntil: 'load' });
+    await p.waitForTimeout(key === 'late' ? 10500 : 3500);
+    const f = key === 'alone' ? p.mainFrame() : p.frames().find(x => x.url().endsWith('/' + name));
+    Object.assign(res, await f.evaluate(() => {
+      const n = document.querySelector('.tiles-notice'), a = document.querySelector('.leaflet-control-attribution'), m = document.getElementById('leaflet');
+      const shown = e => !!e && e.getClientRects().length > 0 && getComputedStyle(e).visibility === 'visible';
+      const mb = m.getBoundingClientRect(), ab = a ? a.getBoundingClientRect() : null;
+      return { leaflet: !!window.L, notice: shown(n) ? n.textContent : '', plain: m.classList.contains('no-tiles'),
+        credit: shown(a) ? a.textContent : '', creditHref: a && a.querySelector('a[href="https://www.openstreetmap.org/copyright"]') ? 'ok' : '',
+        creditOnMap: !!ab && ab.left >= mb.left && ab.right <= mb.right + 1 && ab.top >= mb.top && ab.bottom <= mb.bottom + 1 };
+    }));
+    if (key !== 'alone') res.wants = await p.evaluate(() => window.WANTS);
+    await p.close();
+    return [key, res];
+  };
+  const jobs = [run('alone', 'file://' + page)];
+  for (const [k, [ans, delay]] of Object.entries(scenarios)) {
+    const f = path.join(dir, `parent-${k}.html`);
+    fs.writeFileSync(f, parentHtml(ans, delay));
+    jobs.push(run(k, 'file://' + f));
+  }
+  const out = Object.fromEntries(await Promise.all(jobs));
+  await browser.close();
+  process.stdout.write(JSON.stringify(out));
+})().catch(e => { console.error(e); process.exit(1); });
+'''
+
 
 def example():
     return build.load(EXAMPLE)
@@ -340,11 +402,30 @@ class KitTest(unittest.TestCase):
         refused(lambda d: d['stops']['beach'].update(suits={'step_free': 'maybe'}))
 
     def test_map_tiles(self):
-        # The family site's locked frame sends no Referer, which OpenStreetMap's tile servers require;
-        # pages for the site use CARTO with the family's key, and --check flags OpenStreetMap tiles.
-        data = json.loads(re.search(r'<script type="application/json" id="trip-data">(.*?)</script>', self.html, re.S).group(1))
-        self.assertEqual(data['tiles'], {'provider': 'carto', 'url': 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=example-key'})
-        self.assertIn('carto.com/attributions', self.html)
+        # The family site's locked frame sends no Referer, which OpenStreetMap's tile servers require, so
+        # by default the site relays the tiles with a ticket; CARTO with a key still works; tiles straight
+        # from OpenStreetMap are accepted but --check reports them.
+        self.assertEqual(self.trip['tiles'], {'provider': 'site', 'url': ''})
+        self.assertEqual(self.trip['ui']['tiles_notice'], 'Map pictures load inside the family site.')
+        self.assertEqual(build.check_html(self.html), [], '--check passes "site"')
+
+        def trip_tiles(d):
+            html = build.build(d)
+            return json.loads(find(build.parse_html(html), 'script', id='trip-data')[0].text())['tiles'], html
+        d = copy.deepcopy(self.data)
+        d['map'].pop('tiles')
+        self.assertEqual(trip_tiles(d)[0]['provider'], 'site', 'the default')
+        d['map']['tiles'] = {'provider': 'carto', 'style': 'voyager', 'key': 'example-key'}
+        tiles, html = trip_tiles(d)
+        self.assertEqual(tiles, {'provider': 'carto', 'url': 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=example-key'})
+        self.assertEqual(build.check_html(html), [])
+        d['map']['tiles'] = {'provider': 'osm'}
+        tiles, html = trip_tiles(d)
+        self.assertEqual(tiles['provider'], 'osm')
+        self.assertIn('map blocked in the family site', [rule for rule, _ in build.check_html(html)])
+        broken = self.html.replace('hj:tiles-want', 'hj:nothing')
+        self.assertIn('map blocked in the family site', [rule for rule, _ in build.check_html(broken)], 'site tiles need the ticket request')
+
         def refused(tiles):
             d = copy.deepcopy(self.data)
             d['map']['tiles'] = tiles
@@ -354,10 +435,75 @@ class KitTest(unittest.TestCase):
         refused({'provider': 'carto', 'key': 'a"><script>'})
         refused({'provider': 'carto', 'key': 'abcd', 'style': 'neon'})
         refused({'provider': 'mapbox', 'key': 'abcd'})
-        osm = copy.deepcopy(self.data)
-        osm['map'].pop('tiles')
-        problems = build.check_html(build.build(osm))
-        self.assertIn('map blocked in the family site', [rule for rule, _ in problems])
+        refused('site')
+
+    def test_tile_relay_protocol(self):
+        js = open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read()
+        compact = re.sub(r'\s+', '', js)
+        relay = compact[compact.index('functionsiteTiles('):compact.index('fillSelectors();initMap();')]
+        for part in ("framed=window.parent!==window;", "if(!framed){return;}",
+                     "window.parent.postMessage({type:'hj:tiles-want'},'*');",
+                     "if(event.source!==window.parent){return;}", "a.type!=='hj:tiles'", "a.ok===true",
+                     "TILES_BASE.test(a.base)&&TILES_TICKET.test(a.ticket)", "setTimeout(function(){closed=true;},8000)",
+                     "if(closed&&!layer){return;}", "L.tileLayer(url,{maxZoom:19,attribution:credit})",
+                     "varurl=a.base+'/{z}/{x}/{y}.png?t='+a.ticket;", "box.classList.add('no-tiles');",
+                     "t('tiles_notice','Mappicturesloadinsidethefamilysite.')"):
+            self.assertIn(part, relay)
+        self.assertEqual(relay.count("postMessage({type:'hj:tiles-want'}"), 1, 'asked once')
+        self.assertIn('https://www.openstreetmap.org/copyright', compact)
+        self.assertIn('&copy;OpenStreetMapcontributors', compact)
+
+        def js_regex(name):
+            src = re.search(r'var ' + name + r'=/(.+?)/;', js).group(1)
+            return re.compile(src[:-1] + r'\Z' if src.endswith('$') else src)
+        base, ticket = js_regex('TILES_BASE'), js_regex('TILES_TICKET')
+        for ok in ('https://hongjia.org/tiles', 'https://family.example.net:8443/tiles', 'http://127.0.0.1:8080/tiles', 'http://localhost:3000/tiles'):
+            self.assertTrue(base.match(ok), ok)
+        for bad in ('http://hongjia.org/tiles', 'https://hongjia.org/tiles/', 'https://hongjia.org/x/tiles', 'https://hongjia.org/tiles?x=1',
+                    'https://HONGJIA.org/tiles', 'https://a.org:123456/tiles', 'http://10.0.0.1:80/tiles', 'http://localhost/tiles',
+                    'https://user@hongjia.org/tiles', 'javascript:alert(1)//tiles', 'https://hongjia.org/tiles\n', '//hongjia.org/tiles'):
+            self.assertFalse(base.match(bad), bad)
+        for ok in ('1730880000.0123456789abcdef0123456789abcdef', '1.ffffffffffffffffffffffffffffffff'):
+            self.assertTrue(ticket.match(ok), ok)
+        for bad in ('1730880000.0123456789ABCDEF0123456789abcdef', '1730880000.0123456789abcdef0123456789abcde', '1234567890123.0123456789abcdef0123456789abcdef',
+                    '0123456789abcdef0123456789abcdef', '1.0123456789abcdef0123456789abcdef&x=1', '1.0123456789abcdef0123456789abcdef\n', ''):
+            self.assertFalse(ticket.match(bad), bad)
+        css = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read())
+        self.assertIn('.leaflet-control-attribution{display:block!important;visibility:visible!important', css, 'the credit is never hidden')
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_tile_relay_in_a_browser(self):
+        # alone, and in a frame whose parent answers well, refuses, stays silent, answers late, sends a
+        # bad base or ticket, or lets another frame answer instead
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            script = os.path.join(tmp, 'tiles.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(TILES_JS)
+            out = subprocess.run([NODE, script, page], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        if not res['alone']['leaflet']:
+            self.skipTest('Leaflet could not be fetched from unpkg.com')
+        notice = 'Map pictures load inside the family site.'
+        for k, r in res.items():
+            self.assertEqual(r['errors'], [], k)
+        good = res.pop('good')
+        ticket = '1730880000.' + '0123456789abcdef' * 2
+        self.assertTrue(good['tiles'])
+        for u in good['tiles']:
+            self.assertRegex(u, r'^http://127\.0\.0\.1:9/tiles/\d+/\d+/\d+\.png\?t=' + re.escape(ticket) + '$')
+        self.assertEqual((good['wants'], good['notice'], good['plain']), (1, '', False))
+        self.assertIn('© OpenStreetMap contributors', good['credit'])
+        self.assertEqual((good['creditHref'], good['creditOnMap']), ('ok', True), 'the credit links to the copyright page, on the map')
+        for k, r in res.items():
+            self.assertEqual(r['tiles'], [], f'{k}: no tile server is contacted')
+            self.assertEqual((r['notice'], r['plain']), (notice, True), k)
+            if k != 'alone':
+                self.assertEqual(r['wants'], 1, f'{k}: asked once')
 
     def test_days_without_alternatives(self):
         d = copy.deepcopy(self.data)

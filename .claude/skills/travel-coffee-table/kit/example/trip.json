@@ -227,9 +227,7 @@
    "route": "Sample route lines drawn for this example [[src:ex_routes]]; the places are invented and sit in open sea. Not live navigation."
   },
   "tiles": {
-   "provider": "carto",
-   "style": "voyager",
-   "key": "example-key"
+   "provider": "site"
   }
  },
  "days_section": {

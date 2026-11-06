@@ -301,13 +301,20 @@ are no groups.
 
 - `map`: `kicker`, `safety_label`, `coordinates_source` (a source key shown on every pin note),
   `notes`: `{route, pin, dir}` (*rich*, under each map tab).
-- `map.tiles`: where the route map's tiles come from. `{"provider": "carto", "style": "voyager", "key": "…"}`
-  (style `voyager` or `light_all`) for every page that goes on the family site; without it the map
-  uses OpenStreetMap's tile servers, which refuse pages in the site's locked frame (it sends no
-  Referer), and `--check` reports "map blocked in the family site". The key is the family's free,
-  revocable CARTO key: it belongs in the private trip file only, it is visible to anyone who opens
-  the page, and it cannot be locked to the site. The credits ("© OpenStreetMap contributors
-  © CARTO") are added by the kit.
+- `map.tiles`: where the route map's tiles come from (see "The route map's tiles" in SKILL.md).
+  - `{"provider": "site"}`, the default when `map.tiles` is left out: OpenStreetMap tiles through
+    the family site's relay, with a ticket the site gives the page (`hj:tiles-want` / `hj:tiles`).
+    Opened anywhere else, the map keeps its routes and pins on a plain background with the notice
+    "Map pictures load inside the family site." (label `tiles_notice`).
+  - `{"provider": "carto", "style": "voyager", "key": "…"}` (style `voyager` or `light_all`): the
+    family's free, revocable CARTO key. It belongs in the private trip file only, it is visible to
+    anyone who opens the page, and it cannot be locked to the site.
+  - `{"provider": "osm"}`: OpenStreetMap's own servers, which refuse pages in the site's locked
+    frame because it sends no Referer. It is accepted, but `--check` reports "map blocked in the
+    family site".
+
+  The kit adds the credits itself ("© OpenStreetMap contributors", linked to its copyright page,
+  plus "© CARTO" for CARTO) and keeps them visible on the map.
 - `days_section`, `credits`, `sources_page`: `kicker`, `title`, `intro`; `intro_style: "fine"`.
   `credits.library_note` is added to library-credited photos; `sources_page.carried_summary` names
   the carried-over list, and `sources_page.blocks` follow the lists.
@@ -357,8 +364,9 @@ A page fails when it has:
 3. **a fact without a source**: a fact (hours, prices, phone numbers, percentages, distances) with
    no source tag. Kit pages mark their facts; for other pages every paragraph, list item and cell
    is read;
-4. **a map blocked in the family site**: a route map on OpenStreetMap's own tile servers (set
-   `map.tiles` to CARTO with the family's key);
+4. **a map blocked in the family site**: a route map on OpenStreetMap's own tile servers (leave
+   `map.tiles` out so the site relays the tiles, or use CARTO with the family's key), or a `site`
+   map whose script never asks the site for a ticket;
 5. **an official link off its platform**: an Instagram, Facebook, TikTok or YouTube link that is not
    https on that platform, or an address that does not link to Google Maps;
 6. **an http link**: any `http://` link, picture, frame or stylesheet (`data:` pictures and
