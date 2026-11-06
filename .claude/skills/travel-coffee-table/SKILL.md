@@ -47,8 +47,10 @@ generic and stay in this folder:
    (so each shows photos and official links), the four info boxes, Plan B and Plan C, nearby
    extras, its forecast place. Each stop: its legend categories (`cat`), 2 to 4 credited photos,
    the official links (website, Instagram, Facebook, TikTok, YouTube, address, phone, hours) and
-   "if it's closed or crowded" alternatives nearby, with places of worship near each base.
-   Concierge panels per area. Prose sections: overview, holidays and weather, stays, transport,
+   "if it's closed or crowded" alternatives nearby, with places of worship near each base. Chips
+   carry a short label only (notes go in their title); write distances as one plain line ("About
+   3 min walk") with the method in `distance_note`; a place with no confirmed spot may leave out
+   `lat`/`lng` (it shows without a pin). Concierge panels per area. Prose sections: overview, holidays and weather, stays, transport,
    backups, checklist. Upgrades per area. The data file for a real trip is private: keep it outside
    the repository (see Privacy).
 5. **Render**: `python3 kit/build.py trip.json -o trip.html`.

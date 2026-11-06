@@ -133,10 +133,12 @@ CAT_KEYS = [c[0] for c in CATS]
 CAT_ALIASES = {'dining': 'food'}  # the first legend had one Dining category
 # Official social links must point at the platform itself.
 SOCIAL_HOSTS = {'ig': 'instagram.com', 'fb': 'facebook.com', 'tt': 'tiktok.com', 'yt': 'youtube.com'}
+PHONE_TEXT = re.compile(r'\+?[\d(][\d\s().-]{4,}')  # a phone number as people write it
 TZ_NAME = re.compile(r'^[A-Za-z]+(?:/[A-Za-z0-9_+-]+){1,2}$|^UTC$')
 EMOJI.update({'ig': '📷', 'addr': '📍', 'hours': '⏰'})
 LINK_LABELS.update({'addr': 'Address', 'hours': 'Hours'})
 LABELS.update({
+    'call': 'Call', 'hours': 'Hours',
     'op_play': 'Play the trip', 'op_read': 'Start reading', 'op_tldr': 'The trip at a glance', 'op_stays': "Where you'll stay",
     'op_highlights': "Can't-miss", 'op_alerts': 'Good to know', 'op_globe': 'Globe: the way there, and the bases',
     'op_globe_hint': 'Drag to turn the globe.', 'op_time': 'Local time', 'website': 'Website',
@@ -441,12 +443,15 @@ class Page:
                 norm_cats(u.get('cat'), f'upgrades.groups[{gi}].items[{ii}].cat')
 
     def check_alt(self, x, where, default=None):
-        """A nearby alternative (or a place of worship): name, category and pin are required; hours are a
-        fact, so they need a source."""
-        for k in ('name', 'lat', 'lng'):
-            if x.get(k) in (None, ''):
-                raise KitError(f'{where}.{k} is required')
-        if not all(isinstance(x[k], (int, float)) and not isinstance(x[k], bool) for k in ('lat', 'lng')) or not (-90 <= x['lat'] <= 90 and -180 <= x['lng'] <= 180):
+        """A nearby alternative (or a place of worship): name and category are required; the pin is optional
+        (without one the card shows, with no map pin); hours are a fact, so they need a source."""
+        if not x.get('name'):
+            raise KitError(f'{where}.name is required')
+        has = [x.get(k) is not None for k in ('lat', 'lng')]
+        if any(has) and not all(has):
+            raise KitError(f'{where}: give both lat and lng, or neither')
+        if all(has) and (not all(isinstance(x[k], (int, float)) and not isinstance(x[k], bool) for k in ('lat', 'lng'))
+                         or not (-90 <= x['lat'] <= 90 and -180 <= x['lng'] <= 180)):
             raise KitError(f'{where}: coordinates out of range')
         if not norm_cats(x.get('cat') or default, f'{where}.cat'):
             raise KitError(f'{where}.cat is required')
@@ -718,33 +723,61 @@ class Page:
                 raise KitError(f'{where}: a {LINK_LABELS[kind]} link must be https on {SOCIAL_HOSTS[kind]} ({url[:80]})')
         return kind, url, label
 
+    def chip(self, kind, url, label, title='', ext=True, narrow=None, emoji=None):
+        """One small single-line link chip; any note goes in its title, never inside it."""
+        t = f' title="{E(title)}"' if title else ''
+        tgt = ' target="_blank" rel="noopener"' if ext else ''
+        lab = f'<span class="l l-wide">{E(label)}</span><span class="l l-narrow">{E(narrow)}</span>' if narrow else f'<span class="l">{E(label)}</span>'
+        dk = f' data-kind="{kind}"' if kind else ''
+        cls = ' web' if kind == 'web' else ' lk-tel' if kind == 'tel' else ''
+        return f'<li><a class="lk{cls}"{dk} href="{E(url)}"{tgt}{t}><span class="e" aria-hidden="true">{emoji or EMOJI[kind]}</span>{lab}</a></li>'
+
     def link_row(self, items, place, tag=None, tq=None, where='links', extras=True):
-        out = []
-        has_addr = False
+        """The official links: a wrapping row of small chips (website, socials, call), then the address as
+        a line of text linking to Google Maps, then the hours (a line, or a small disclosure when long)."""
+        chips, addrs, hours = [], [], []
         for i, it in enumerate(items or []):
             kind, url, label = self.official_link(it, f'{where}[{i}]')
-            has_addr = has_addr or kind == 'addr'
-            cls = {'web': ' web', 'addr': ' addr', 'hours': ' hours'}.get(kind, '')
-            small = f' <small>{E(it["note"])}</small>' if it.get('note') else ''
-            ext = '' if kind in ('tel', 'mail') else ' target="_blank" rel="noopener"'
-            fact = ' data-fact' if kind == 'hours' else ''
-            src = ' data-source' if kind == 'hours' else ''
-            out.append(f'<li{fact}><a class="lk{cls}" data-kind="{kind}" href="{E(url)}"{ext}{src}><span class="e" aria-hidden="true">{EMOJI[kind]}</span>'
-                       f'<span class="l">{E(label)}</span>{small}</a></li>')
+            note = it.get('note') or ''
+            if kind == 'addr':
+                who = f'<b>{E(note)}:</b> ' if note else ''
+                addrs.append(f'<p class="lk-addr"><a data-kind="addr" href="{E(url)}" target="_blank" rel="noopener"><span aria-hidden="true">{EMOJI["addr"]}</span> {who}<span class="a">{E(label)}</span></a></p>')
+            elif kind == 'hours':
+                src = f'<a class="src" data-source data-kind="hours" href="{E(url)}" target="_blank" rel="noopener">{E(host_of(url).removeprefix("www."))}</a>'
+                lab = E(self.L['hours']) + (f' · {E(note)}' if note else '')
+                if len(label) <= 60:
+                    hours.append(f'<p class="lk-hours" data-fact><span aria-hidden="true">{EMOJI["hours"]}</span> {lab}: <span class="h">{E(label)}</span> {src}</p>')
+                else:
+                    hours.append(f'<details class="lk-hours" data-fact><summary><span aria-hidden="true">{EMOJI["hours"]}</span> {lab}</summary>'
+                                 f'<p class="h">{E(label)}</p><p class="fine">{E(self.L["upg_source"])}: {src}</p></details>')
+            elif kind == 'tel':
+                # the number is the chip's text on wide screens ("Call" on phones); a name such as
+                # "Reception" goes in the title with the note
+                parts = [s for s in (it.get('label'), note) if s]
+                number = next((s for s in parts if PHONE_TEXT.fullmatch(s)), url.removeprefix('tel:'))
+                title = ' · '.join(s for s in parts if s not in (number, LINK_LABELS['tel'], self.L['call']))
+                short = (it.get('short') or '').strip()  # which venue, when a stop has two
+                if short and len(short) > 24:
+                    raise KitError(f'{where}[{i}]: short must be a short venue name (24 characters at most)')
+                wide, narrow = (f'{short} · {number}', f'{self.L["call"]} {short}') if short else (number, self.L['call'])
+                chips.append(self.chip('tel', url, wide, title, ext=False, narrow=narrow))
+            else:
+                chips.append(self.chip(kind, url, label, note, ext=kind != 'mail'))
         if place:
             gm = 'https://www.google.com/maps/search/?api=1&query=' + urllib.parse.quote(place['q'])
-            earth = f'https://earth.google.com/web/@{place["lat"]:.5f},{place["lng"]:.5f},40a,1100d,35y,0h,55t,0r'
-            if not has_addr:
-                out.append(f'<li><a class="lk" data-kind="map" href="{E(gm)}" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["map"]}</span><span class="l">{E(self.L["google_maps"])}</span></a></li>')
+            if not addrs:
+                chips.append(self.chip('map', gm, self.L['google_maps']))
             if extras:
-                out.append(f'<li><a class="lk" href="{E(earth)}" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["earth"]}</span><span class="l">{E(self.L["google_earth"])}</span> <small>{E(self.L["earth_3d"])}</small></a></li>')
+                earth = f'https://earth.google.com/web/@{place["lat"]:.5f},{place["lng"]:.5f},40a,1100d,35y,0h,55t,0r'
+                chips.append(self.chip('', earth, self.L['google_earth'], self.L['earth_3d'], emoji=EMOJI['earth']))
         if tag:
             if not re.match(r'^\w{1,60}$', tag):
                 raise KitError(f'{where}: Instagram tag must be letters and digits only ({tag!r})')
-            out.append(f'<li><a class="lk" href="https://www.instagram.com/explore/tags/{E(urllib.parse.quote(tag))}/" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["tag"]}</span><span class="l tag">#{E(tag)}</span> <small>{E(self.L["ig_photos"])}</small></a></li>')
+            chips.append(self.chip('', f'https://www.instagram.com/explore/tags/{urllib.parse.quote(tag)}/', f'#{tag}', self.L['ig_photos'], emoji=EMOJI['tag']))
         if tq:
-            out.append(f'<li><a class="lk" href="https://www.tiktok.com/search?q={E(urllib.parse.quote(tq))}" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["tts"]}</span><span class="l">{E(self.L["tiktok_videos"])}</span> <small>{E(self.L["tiktok_search"])}</small></a></li>')
-        return f'<ul class="links" aria-label="{E(self.L["links"])}">' + ''.join(out) + '</ul>'
+            chips.append(self.chip('', f'https://www.tiktok.com/search?q={urllib.parse.quote(tq)}', self.L['tiktok_videos'], self.L['tiktok_search'], emoji=EMOJI['tts']))
+        row = f'<ul class="links" aria-label="{E(self.L["links"])}">' + ''.join(chips) + '</ul>' if chips else ''
+        return f'<div class="offl">{row}{"".join(addrs)}{"".join(hours)}</div>' if (row or addrs or hours) else ''
 
     def clips(self, items):
         if not items:
@@ -889,16 +922,21 @@ class Page:
         elif x.get('source'):
             hours = '<p class="alt-src">' + (self.src_tag(x['source'], where=where) if x['source'] in self.sources else
                                             f'<a class="src" href="{E(x["source"])}" target="_blank" rel="noopener">{E(host_of(x["source"]).removeprefix("www."))}</a>') + '</p>'
-        gm = 'https://www.google.com/maps/search/?api=1&query=' + urllib.parse.quote(f'{x["name"]} {x["lat"]:.5f},{x["lng"]:.5f}')
+        pinned = x.get('lat') is not None and x.get('lng') is not None
+        q = x.get('q') or (f'{x["name"]} {x["lat"]:.5f},{x["lng"]:.5f}' if pinned else x['name'])
+        gm = 'https://www.google.com/maps/search/?api=1&query=' + urllib.parse.quote(q)
         links = []
         if x.get('website'):
             links.append(f'<a href="{E(x["website"])}" target="_blank" rel="noopener" data-kind="web">🌐 {E(self.L["website"])}</a>')
         links.append(f'<a href="{E(gm)}" target="_blank" rel="noopener" data-kind="map">📍 {E(self.L["google_maps"])}</a>')
-        links.append(f'<button type="button" class="linkish show-map" data-day="{max(0, n - 1)}" data-idx="-1" data-lat="{x["lat"]}" data-lng="{x["lng"]}" '
-                     f'data-name="{E(x["name"])}" data-note="{E(self.cat_labels[cats[0]])}">{E(self.L["alt_map"])}</button>')
-        dist = f' <small>{E(x["distance"])}</small>' if x.get('distance') else ''
+        if pinned:
+            links.append(f'<button type="button" class="linkish show-map" data-day="{max(0, n - 1)}" data-idx="-1" data-lat="{x["lat"]}" data-lng="{x["lng"]}" '
+                         f'data-name="{E(x["name"])}" data-note="{E(self.cat_labels[cats[0]])}">{E(self.L["alt_map"])}</button>')
+        # one plain distance line ("About 3 min drive"); how it was worked out goes in its title
+        tip = f' title="{E(x["distance_note"])}"' if x.get('distance_note') else ''
+        dist = f'<p class="alt-dist"{tip}>{E(x["distance"])}</p>' if x.get('distance') else ''
         faith = f'<p class="alt-faith">{E(x["faith"])}</p>' if x.get('faith') else ''
-        return (f'<article class="alt"{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{icon}</span> <b>{E(x["name"])}</b>{dist}</p>'
+        return (f'<article class="alt"{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{icon}</span> <b>{E(x["name"])}</b></p>{dist}'
                 f'{faith}' + (f'<p>{self.rich(x["why"], where + ".why")}</p>' if x.get('why') else '') + hours
                 + f'<p class="alt-links">{" · ".join(links)}</p></article>')
 
@@ -1307,9 +1345,13 @@ class Page:
             anchor = self.stop_anchor(sid)
             n = int(re.match(r'd(\d+)', anchor).group(1)) if anchor else 1
             for x in st.get('nearby') or []:
+                if x.get('lat') is None:
+                    continue
                 pins.append(dict(name=x['name'], cats=norm_cats(x.get('cat'), 'nearby.cat'), lat=x['lat'], lng=x['lng'], day=n - 1, near=st['name']))
         for g in self.d.get('worship') or []:
             for x in g.get('items') or []:
+                if x.get('lat') is None:
+                    continue
                 pins.append(dict(name=x['name'], cats=norm_cats(x.get('cat') or 'worship', 'worship.cat'), lat=x['lat'], lng=x['lng'], day=-1, near=''))
         for i, day in enumerate(self.days):
             for x in day.get('nearby') or []:

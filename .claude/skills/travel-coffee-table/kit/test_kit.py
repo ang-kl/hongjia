@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -22,6 +23,51 @@ SCRIPT_HOSTS = {'cdnjs.cloudflare.com', 'cdn.jsdelivr.net', 'unpkg.com', 'cdn.ta
 STYLE_HOSTS = {'fonts.googleapis.com', 'cdnjs.cloudflare.com', 'cdn.jsdelivr.net', 'unpkg.com'}
 FRAME_PREFIXES = ('https://maps.google.com/maps', 'https://www.google.com/maps/', 'https://www.instagram.com/', 'https://www.tiktok.com/embed/')
 HTML_SINKS = re.compile(r'\b(innerHTML|outerHTML|insertAdjacentHTML|document\.write)\b')
+
+
+def find_browser():
+    import shutil
+    node = shutil.which('node')
+    for base in (os.environ.get('PLAYWRIGHT_NODE_PATH'), '/opt/node-tools/node_modules', os.path.expanduser('~/node_modules')):
+        if node and base and os.path.isdir(os.path.join(base, 'playwright')):
+            return node, base
+    return None, None
+
+
+NODE, PLAYWRIGHT_PATH = find_browser()
+BROWSER = bool(NODE)
+MEASURE_JS = r'''
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const res = {};
+  for (const w of [1180, 390]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: w > 600 ? 820 : 844 } });
+    const page = await ctx.newPage();
+    await page.route(/^https?:/, r => r.abort());
+    await page.goto('file://' + process.argv[2], { waitUntil: 'load' });
+    await page.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; }));
+    await page.waitForTimeout(300);
+    res[w] = await page.evaluate(() => {
+      const tall = [], seen = (e) => e.getClientRects().length > 0;
+      const lh = (e) => { const cs = getComputedStyle(e); const v = parseFloat(cs.lineHeight); return isNaN(v) ? parseFloat(cs.fontSize) * 1.5 : v; };
+      const chips = [...document.querySelectorAll('.offl .lk')].filter(seen);
+      for (const e of chips) { const h = e.getBoundingClientRect().height; if (h > Math.max(48, 2 * lh(e) + 4) || h < 30) tall.push(['chip', e.textContent.trim(), h]); }
+      for (const e of [...document.querySelectorAll('.offl .lk-addr, .offl p.lk-hours, .offl details.lk-hours > summary')].filter(seen)) {
+        const h = e.getBoundingClientRect().height; if (innerWidth > 600 && h > Math.max(48, 2 * lh(e) + 4)) tall.push(['line', e.textContent.trim().slice(0, 60), h]);
+      }
+      const harbour = document.getElementById('d1-harbour');
+      const tel = [...harbour.querySelectorAll('.offl .lk[data-kind=tel] .l')].find(seen);
+      const addr = harbour.querySelector('.offl .lk-addr');
+      return { chips: chips.length, tall, tel: tel ? tel.textContent : null, addr: addr && seen(addr) ? addr.innerText : '',
+               hscroll: document.documentElement.scrollWidth > innerWidth };
+    });
+    await ctx.close();
+  }
+  await browser.close();
+  process.stdout.write(JSON.stringify(res));
+})().catch(e => { console.error(e); process.exit(1); });
+'''
 
 
 def example():
@@ -406,14 +452,16 @@ class KitTest(unittest.TestCase):
         for li in with_stop:
             self.assertTrue(find(li, 'a', 'lk'), 'and its official links')
         harbour = find(self.root, 'article', 'stop', id='d1-harbour')[0]
-        kinds = [a.attrs.get('data-kind') for a in find(harbour, 'a', 'lk') if a.attrs.get('data-kind')]
-        self.assertEqual(kinds[:8], ['web', 'ig', 'fb', 'tt', 'yt', 'addr', 'tel', 'hours'])
-        emoji = {a.attrs['data-kind']: find(a, 'span', 'e')[0].text() for a in find(harbour, 'a', 'lk') if a.attrs.get('data-kind')}
-        self.assertEqual([emoji[k] for k in ('web', 'ig', 'fb', 'tt', 'yt', 'addr', 'tel', 'hours')], ['🌐', '📷', '📘', '🎵', '▶️', '📍', '📞', '⏰'])
-        addr = [a for a in find(harbour, 'a', 'lk') if a.attrs.get('data-kind') == 'addr'][0]
+        chips = find(find(harbour, 'div', 'offl')[0], 'a', 'lk')
+        kinds = [a.attrs.get('data-kind') for a in chips if a.attrs.get('data-kind')]
+        self.assertEqual(kinds, ['web', 'ig', 'fb', 'tt', 'yt', 'tel'])
+        emoji = {a.attrs['data-kind']: find(a, 'span', 'e')[0].text() for a in chips if a.attrs.get('data-kind')}
+        self.assertEqual([emoji[k] for k in kinds], ['🌐', '📷', '📘', '🎵', '▶️', '📞'])
+        addr = find(find(harbour, 'p', 'lk-addr')[0], 'a', data_kind='addr')[0]
         self.assertTrue(addr.attrs['href'].startswith('https://www.google.com/maps/'))
-        hours = [a for a in find(harbour, 'a', 'lk') if a.attrs.get('data-kind') == 'hours'][0]
-        self.assertIn('data-fact', hours.parent.attrs)
+        hours = find(harbour, 'p', 'lk-hours')[0]
+        self.assertIn('data-fact', hours.attrs)
+        self.assertTrue(find(hours, 'a', 'src', data_source=True))
         drawer = find(harbour, 'details', 'ig-drawer')
         self.assertFalse(drawer, 'the harbour already embeds that Instagram account')
         hotel = find(self.root, 'article', 'stop', id='d1-hotel')[0]
@@ -421,6 +469,67 @@ class KitTest(unittest.TestCase):
         frame = find(ig, 'iframe')[0]
         self.assertEqual(frame.attrs['data-src'], 'https://www.instagram.com/instagram/embed/')
         self.assertNotIn('src', frame.attrs, 'loaded only when the drawer opens')
+
+    def test_official_links_row(self):
+        # one row of small single-line chips, then the address as a line of text, then the hours
+        for offl in find(self.root, 'div', 'offl'):
+            kids = [k.tag + '.' + ' '.join(sorted(k.classes())) for k in offl.children if hasattr(k, 'tag')]
+            order = [k.split('.')[0] + '.' + ('links' if 'links' in k else 'lk-addr' if 'lk-addr' in k else 'lk-hours') for k in kids]
+            self.assertEqual(order, sorted(order, key=lambda k: ('ul.links', 'p.lk-addr', 'p.lk-hours', 'details.lk-hours').index(k)), kids)
+            for a in find(offl, 'a', 'lk'):
+                self.assertEqual([k.tag for k in a.children if hasattr(k, 'tag')][:1], ['span'])
+                self.assertFalse(find(a, 'small') or find(a, 'br') or find(a, 'b'), 'no notes inside a chip')
+                self.assertNotEqual(a.attrs.get('data-kind'), 'addr', 'the address is a line, not a chip')
+        harbour = find(self.root, 'article', 'stop', id='d1-harbour')[0]
+        tel = find(harbour, 'a', 'lk', data_kind='tel')[0]
+        self.assertEqual(find(tel, 'span', 'l-wide')[0].text(), '+000 100 0400', 'the number on wide screens')
+        self.assertEqual(find(tel, 'span', 'l-narrow')[0].text(), 'Call', 'and Call on phones')
+        self.assertEqual(tel.attrs.get('title'), 'Harbour office', 'a name goes in the title')
+        d = copy.deepcopy(self.data)
+        [x for x in d['stops']['harbour']['links'] if x['kind'] == 'tel'][0]['short'] = 'Office'
+        two = find(find(build.parse_html(build.build(d)), 'article', 'stop', id='d1-harbour')[0], 'a', 'lk', data_kind='tel')[0]
+        self.assertEqual((find(two, 'span', 'l-wide')[0].text(), find(two, 'span', 'l-narrow')[0].text()),
+                         ('Office · +000 100 0400', 'Call Office'), 'two venues on one stop: say which')
+        ig = find(harbour, 'a', 'lk', data_kind='ig')[0]
+        self.assertEqual((find(ig, 'span', 'l')[0].text(), ig.attrs.get('title')), ('Instagram', 'placeholder account'))
+        self.assertEqual(find(find(harbour, 'p', 'lk-addr')[0], 'span', 'a')[0].text(), '1 Harbour Row, Example Bay')
+        hotel = find(self.root, 'article', 'stop', id='d1-hotel')[0]
+        tel = find(hotel, 'a', 'lk', data_kind='tel')[0]
+        self.assertEqual((find(tel, 'span', 'l-wide')[0].text(), tel.attrs.get('title')), ('+000 100 0200', 'Hotel reception'))
+        long_hours = find(hotel, 'details', 'lk-hours')[0]
+        self.assertIn('data-fact', long_hours.attrs)
+        self.assertIn('Hours', find(long_hours, 'summary')[0].text())
+        self.assertIn('"open 24 hours"', find(long_hours, 'p', 'h')[0].text())
+        self.assertTrue(find(long_hours, 'a', 'src', data_source=True), 'long hours keep their source')
+        self.assertFalse(find(hotel, 'p', 'lk-hours'))
+        css = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read())
+        self.assertNotIn('.timelineli{', css, 'schedule rows never style the chips nested in them')
+        self.assertIn('.timeline>li{display:grid', css)
+        chip = css[css.index('.lk{display:inline-flex'):]
+        self.assertIn('white-space:nowrap', chip[:chip.index('}')])
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_links_row_layout_in_a_browser(self):
+        # rendered at iPad landscape and phone width: chips stay one line, the address and number show
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            script = os.path.join(tmp, 'measure.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(MEASURE_JS)
+            out = subprocess.run([NODE, script, page], capture_output=True, text=True, timeout=120,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        wide, phone = res['1180'], res['390']
+        self.assertGreater(wide['chips'], 20)
+        self.assertEqual(wide['tall'], [], 'no link chip or line taller than about two lines at 1180 px (and no chip squashed)')
+        self.assertEqual(phone['tall'], [], 'and chips stay one line at 390 px')
+        self.assertIn('1 Harbour Row, Example Bay', wide['addr'])
+        self.assertEqual(wide['tel'], '+000 100 0400')
+        self.assertEqual(phone['tel'], 'Call')
+        self.assertFalse(wide['hscroll'] or phone['hscroll'], 'no sideways scroll')
 
     def test_official_link_rules(self):
         def refused(link):
@@ -459,6 +568,27 @@ class KitTest(unittest.TestCase):
         self.assertTrue(find(find(self.root, 'aside', id='map-centre')[0], 'div', 'legend-compact'), 'the legend lights pins on the map too')
         d = copy.deepcopy(self.data)
         d['stops']['harbour']['nearby'][0].pop('source')
+        with self.assertRaises(build.KitError):
+            build.build(d)
+
+    def test_alternatives_read_plainly(self):
+        for c in find(self.root, 'article', 'alt'):
+            dist = find(c, 'p', 'alt-dist')
+            if dist:
+                self.assertNotRegex(dist[0].text(), r'straight line|estimate|\(', 'one plain line; the method goes in the title')
+        harbour = find(self.root, 'article', 'stop', id='d1-harbour')[0]
+        d = find(find(harbour, 'section', 'alts')[0], 'p', 'alt-dist')[0]
+        self.assertRegex(d.text(), r'^About \d+ min (walk|drive)$')
+        self.assertIn('straight line', d.attrs.get('title', ''))
+        cart = [c for c in find(self.root, 'article', 'alt') if 'Lamp Room Tea Cart' in c.text()]
+        self.assertEqual(len(cart), 1, 'a place without coordinates is still shown')
+        self.assertFalse(find(cart[0], 'button', 'show-map'), 'but has no Show on map')
+        self.assertTrue(find(cart[0], 'p', 'alt-hours'))
+        gm = find(cart[0], 'a', data_kind='map')[0].attrs['href']
+        self.assertIn('Example%20Bay%20lighthouse', gm, 'its Google Maps link searches by name')
+        self.assertNotIn('Lamp Room Tea Cart', [p['name'] for p in self.trip['nearby']], 'and no pin')
+        d = copy.deepcopy(self.data)
+        d['stops']['lighthouse']['nearby'][0].pop('lng')
         with self.assertRaises(build.KitError):
             build.build(d)
 

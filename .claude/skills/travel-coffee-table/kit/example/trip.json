@@ -1692,15 +1692,20 @@
     },
     {
      "kind": "tel",
-     "label": "Call",
+     "label": "+000 100 0200",
      "url": "tel:+0001000200",
-     "note": "+000 100 0200"
+     "note": "Hotel reception"
     },
     {
      "kind": "ig",
      "label": "Instagram",
      "url": "https://www.instagram.com/instagram/",
      "note": "placeholder account"
+    },
+    {
+     "kind": "hours",
+     "label": "Reception \"open 24 hours\"; restaurant \"breakfast 7am to 10.30am, dinner 6pm to 9.30pm\", closed Mondays from June to August.",
+     "source": "ex_hotel"
     }
    ],
    "suits": {
@@ -1848,12 +1853,13 @@
      "name": "Quay Fish Bar",
      "cat": "food",
      "why": "Fish and chips at a window counter, with stools facing the boats.",
-     "distance": "150 m",
+     "distance": "About 2 min walk",
      "hours": "Daily 11am to 9pm",
      "website": "https://example.com/example-bay/quay-fish-bar",
      "lat": 0.0566,
      "lng": 0.1021,
-     "source": "ex_hours"
+     "source": "ex_hours",
+     "distance_note": "150 m in a straight line from the planned stop; walking time is a rough estimate."
     },
     {
      "name": "Gull Coffee Cart",
@@ -1862,22 +1868,24 @@
       "snacks"
      ],
      "why": "Espresso and cinnamon buns from a cart on the upper quay.",
-     "distance": "80 m",
+     "distance": "About 2 min walk",
      "hours": "Daily 7am to 2pm",
      "lat": 0.0558,
      "lng": 0.1004,
-     "source": "ex_hours"
+     "source": "ex_hours",
+     "distance_note": "80 m in a straight line from the planned stop; walking time is a rough estimate."
     },
     {
      "name": "Harbour Chapel",
      "cat": "worship",
      "why": "A small seafarers' chapel, open for quiet visits.",
-     "distance": "300 m",
+     "distance": "About 4 min walk",
      "hours": "Daily 9am to 5pm",
      "website": "https://example.com/example-bay/harbour-chapel",
      "lat": 0.0571,
      "lng": 0.0995,
-     "source": "ex_tourism"
+     "source": "ex_tourism",
+     "distance_note": "300 m in a straight line from the planned stop; walking time is a rough estimate."
     }
    ]
   },
@@ -1929,9 +1937,22 @@
      "name": "Point Kiosk",
      "cat": "snacks",
      "why": "Ice cream and cold drinks at the car park.",
-     "distance": "200 m",
+     "distance": "About 4 min walk",
      "lat": 0.0702,
-     "lng": 0.1328
+     "lng": 0.1328,
+     "distance_note": "200 m in a straight line from the planned stop; walking time is a rough estimate."
+    },
+    {
+     "name": "Lamp Room Tea Cart",
+     "cat": [
+      "drinks",
+      "snacks"
+     ],
+     "distance": "Inside the lighthouse grounds",
+     "why": "Tea and shortbread from a cart by the tower door; no pin, as the cart moves around the grounds.",
+     "hours": "Weekends 10am to 3pm",
+     "source": "ex_hours",
+     "q": "Lamp Room Tea Cart, Example Bay lighthouse"
     }
    ]
   },
@@ -2168,20 +2189,22 @@
      "name": "Saltwind Books",
      "cat": "shopping",
      "why": "Maps, prints and local recipes, two doors from the square.",
-     "distance": "120 m",
+     "distance": "About 2 min walk",
      "hours": "Tuesday to Sunday, 10am to 5pm",
      "website": "https://example.com/lantern-point/saltwind-books",
      "lat": 0.1214,
      "lng": 0.3092,
-     "source": "ex_hours"
+     "source": "ex_hours",
+     "distance_note": "120 m in a straight line from the planned stop; walking time is a rough estimate."
     },
     {
      "name": "The Long Table",
      "cat": "food",
      "why": "A covered lunch hall if the market is crowded.",
-     "distance": "250 m",
+     "distance": "About 4 min walk",
      "lat": 0.1203,
-     "lng": 0.3071
+     "lng": 0.3071,
+     "distance_note": "250 m in a straight line from the planned stop; walking time is a rough estimate."
     }
    ]
   },
