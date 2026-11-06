@@ -84,6 +84,41 @@ fs.writeFileSync(path.join(dir, 'parent.html'), `<!doctype html><meta charset="u
 })().catch(e => { console.error(e); process.exit(1); });
 """
 
+GALLERY_JS = r"""
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const out = {};
+  for (const [name, w] of [['wide', 1180], ['phone', 390]]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 844 } });
+    const asked = [];
+    await ctx.route(/^https?:/, r => { asked.push(r.request().url()); return r.abort(); });
+    const p = await ctx.newPage();
+    const errors = []; p.on('pageerror', e => errors.push(e.message));
+    await p.goto('file://' + process.argv[2], { waitUntil: 'load' });
+    await p.waitForTimeout(300);
+    const before = asked.filter(u => /instagram\.com\/(p|reel)\/|tiktok\.com\/embed\/v2/.test(u)).length;
+    await p.click('.viewsw button[data-view="gallery"]');
+    await p.waitForTimeout(300);
+    const g = await p.evaluate(() => ({ view: document.documentElement.getAttribute('data-view'), shown: getComputedStyle(document.getElementById('gallery')).display,
+      overview: getComputedStyle(document.getElementById('overview')).display, frames: document.querySelectorAll('#gallery iframe').length,
+      wide: document.documentElement.scrollWidth > innerWidth + 1, pressed: document.querySelector('.viewsw [data-view="gallery"]').getAttribute('aria-pressed') }));
+    await p.click('.g-social[data-kind="tiktok"] .g-play');
+    await p.click('.g-social[data-kind="instagram"] .g-play');
+    await p.waitForTimeout(200);
+    const live = await p.evaluate(() => [...document.querySelectorAll('#gallery iframe')].map(f => f.getAttribute('src')));
+    const orig = await p.evaluate(() => [...document.querySelectorAll('#gallery .g-orig')].map(a => (a.closest('.g-live') ? 'live ' : 'idle ') + getComputedStyle(a).display));
+    await p.click('.viewsw button[data-view="read"]');
+    await p.waitForTimeout(200);
+    const back = await p.evaluate(() => ({ view: document.documentElement.getAttribute('data-view'), overview: getComputedStyle(document.getElementById('overview')).display }));
+    out[name] = Object.assign(g, { before, live, back, errors, orig });
+    await ctx.close();
+  }
+  await browser.close();
+  process.stdout.write(JSON.stringify(out));
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+
 
 def find_browser():
     import shutil
@@ -937,6 +972,8 @@ class KitTest(unittest.TestCase):
         self.assertIn('Arrive by the <em>sea</em>', self.html)
         page = build.Page(copy.deepcopy(self.data))
         self.assertEqual(page.accent('**not** an *accent* <b>'), '**not** an <em>accent</em> &lt;b&gt;')
+        self.assertEqual(self.trip['days'][0]['title'], 'Arrive by the sea', 'plain text never shows the accent markers')
+        self.assertNotIn('*sea*', self.html)
 
     def test_motion_only_through_the_web_animations_helper(self):
         js = open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read()
@@ -989,6 +1026,111 @@ class KitTest(unittest.TestCase):
         self.assertEqual((fr['share']['kind'], fr['share']['title']), ('place', "St Example's Church"))
         self.assertTrue(fr['share']['url'].startswith('https://'))
         self.assertEqual((fr['toast'], fr['day']), ('Link copied.', True))
+
+    # ------------------------------------------------------------ Taste & Shop, awards, the Gallery (7 November 2026)
+    def test_taste_and_shop(self):
+        day1 = find(self.root, 'article', id='day-1')[0]
+        ts = find(day1, 'section', 'tasteshop')[0]
+        self.assertEqual([c.attrs['class'].split()[1] for c in find(ts, 'div', 'ts-col')], ['ts-taste', 'ts-shop'])
+        self.assertTrue(find(ts, 'p', 'ts-hours'))
+        self.assertTrue(all(find(a, 'a', 'pl') for a in find(ts, 'article', 'alt')), 'every Taste & Shop place opens its panel')
+        sec = find(self.root, 'section', id='taste_shop')[0]
+        for label in ('Taste here', 'Sweet & snack stops', 'Markets on your day', 'Shopping', 'Bring home'):
+            self.assertIn(label, sec.text())
+        self.assertTrue(find(sec, 'article', 'taste'))
+        self.assertTrue(find(sec, 'table'), 'the trading-hours table')
+        self.assertIn('Taste &amp; Shop', self.html.split('class="topnav"', 1)[1].split('</nav>', 1)[0])
+        self.assertEqual({b.attrs['data-near-me'] for b in find(self.root, 'button', 'near-me') if b.attrs.get('data-near-me')}, {'food', 'shopping'})
+        d = copy.deepcopy(self.data)
+        d['taste_shop']['areas'][0]['signature'][0].pop('source')
+        with self.assertRaisesRegex(build.KitError, 'source'):
+            build.build(d)
+        d = copy.deepcopy(self.data)
+        d['taste_shop']['areas'][0]['area'] = 'nowhere'
+        with self.assertRaises(build.KitError):
+            build.build(d)
+
+    def test_awards(self):
+        lines = find(self.root, 'p', 'awards')
+        self.assertTrue(lines)
+        for line in lines:
+            self.assertTrue(find(line, 'span', 'award'))
+            self.assertTrue(find(line, 'a', 'src'), 'an award names the page that lists it')
+        harbour = self.trip['panels']['p-harbour']
+        self.assertEqual(harbour['awards'][0]['label'], 'Example Food Guide, one hat 2026')
+        for bad in ([{'award': 'Best café'}], [{'source': 'ex_tourism'}], [{'award': 'x', 'source': 'http://example.com/'}]):
+            d = copy.deepcopy(self.data)
+            d['stops']['harbour']['awards'] = bad
+            with self.assertRaises(build.KitError):
+                build.build(d)
+        self.assertNotIn('★', self.html, 'no star ratings: awards and guide listings only')
+
+    def test_gallery_markup(self):
+        g = find(self.root, 'section', id='gallery')[0]
+        self.assertTrue(find(self.root, 'span', 'viewsw', role='group'))
+        tiles = find(g, 'figure', 'g-tile')
+        self.assertGreater(len(tiles), 8)
+        shapes = {c for t in tiles for c in t.classes() if c in ('g-wide', 'g-port', 'g-sq', 'g-tall')}
+        self.assertTrue({'g-wide', 'g-port', 'g-tall'} <= shapes, 'the mix of shapes from the reference')
+        for t in tiles:
+            self.assertTrue(find(t, 'a', 'pl'), 'every tile names its place and opens its panel')
+            if find(t, 'img'):
+                self.assertTrue(find(t, 'span', 'credit'), 'every picture keeps its credit')
+        self.assertEqual(find(g, 'iframe'), [], 'no post loads until it is tapped')
+        embeds = {t.attrs.get('data-kind'): t.attrs.get('data-embed') for t in tiles if 'g-social' in t.classes()}
+        self.assertEqual(embeds['tiktok'], 'https://www.tiktok.com/embed/v2/7300000000000000001')
+        self.assertIn(embeds['instagram'], ('https://www.instagram.com/p/C0ExampleBay1/embed/captioned/', 'https://www.instagram.com/reel/C0ExampleReel/embed/captioned/'))
+        for t in tiles:
+            if t.attrs.get('data-kind') in ('instagram', 'tiktok'):
+                o = find(t, 'a', 'g-orig')
+                self.assertEqual(len(o), 1, 'a playing post keeps a way out to the post itself')
+                self.assertTrue(re.match(r'^https://www\.(instagram|tiktok)\.com/', o[0].attrs.get('href', '')))
+                self.assertEqual(o[0].attrs.get('target'), '_blank')
+        fb = [t for t in tiles if t.attrs.get('data-kind') == 'facebook'][0]
+        self.assertEqual(find(fb, 'a', 'g-play')[0].attrs.get('target'), '_blank', 'Facebook is a link only')
+        for bad in ({'kind': 'instagram', 'url': 'https://www.instagram.com/examplebay/', 'by': 'x'},
+                    {'kind': 'tiktok', 'url': 'https://www.tiktok.com/@x/photo/123456789', 'by': 'x'},
+                    {'kind': 'youtube', 'url': 'https://www.youtube.com/watch?v=x', 'by': 'x'},
+                    {'kind': 'instagram', 'url': 'https://www.instagram.com/p/C0ExampleBay1/', 'by': 'bad handle!'}):
+            d = copy.deepcopy(self.data)
+            d['stops']['lighthouse']['social'] = [bad]
+            with self.assertRaises(build.KitError):
+                build.build(d)
+        # a post curated for a weather-plan stop still reaches the Gallery, once, marked with its plan
+        d = copy.deepcopy(self.data)
+        d['stops']['tearoom']['social'] = [{'kind': 'tiktok', 'url': 'https://www.tiktok.com/@examplebay/video/7300000000000000009', 'by': 'examplebay'}]
+        r = build.parse_html(build.build(d))
+        pt = [t for t in find(find(r, 'section', id='gallery')[0], 'figure', 'g-tile') if 'tiktok.com/embed/v2/7300000000000000009' in t.attrs.get('data-embed', '')]
+        self.assertEqual(len(pt), 1, 'one tile though the stop is in Plan B and Plan C')
+        self.assertIn('Plan B', find(pt[0], 'span', 'g-k')[0].text())
+        js = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read())
+        self.assertIn(r"varEMBED_OK=/^https:\/\/www\.instagram\.com\/(p|reel)\/[A-Za-z0-9_-]{5,40}\/embed\/captioned\/$|^https:\/\/www\.tiktok\.com\/embed\/v2\/[0-9]{8,25}$/;", js)
+        css = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read())
+        self.assertIn('html[data-view=gallery]main.layout>:not(#gallery){display:none}', css)
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_gallery_in_a_browser(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            script = os.path.join(tmp, 'gallery.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(GALLERY_JS)
+            out = subprocess.run([NODE, script, page], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        for k, r in res.items():
+            self.assertEqual(r['errors'], [], k)
+            self.assertEqual((r['view'], r['shown'], r['overview'], r['frames'], r['wide'], r['pressed']), ('gallery', 'block', 'none', 0, False, 'true'), k)
+            self.assertEqual(r['before'], 0, f'{k}: no post is fetched before a tap')
+            self.assertEqual(len(r['live']), 2, k)
+            self.assertIn('https://www.tiktok.com/embed/v2/7300000000000000001', r['live'], k)
+            self.assertTrue(any(u in r['live'] for u in ('https://www.instagram.com/p/C0ExampleBay1/embed/captioned/',
+                                                          'https://www.instagram.com/reel/C0ExampleReel/embed/captioned/')), k)
+            self.assertEqual(r['back'], {'view': None, 'overview': 'block'}, k)
+            self.assertEqual(sorted(set(r['orig'])), ['idle none', 'live flex'] if len(r['orig']) > 2 else ['live flex'], k)
 
 
 if __name__ == '__main__':

@@ -53,10 +53,10 @@ CARTO_STYLES = ('voyager', 'light_all')
 TILE_KEY = re.compile(r'^[A-Za-z0-9._-]{4,200}$')
 
 
-SECTION_ORDER = ['overview', 'audience', 'plans', 'map', 'days', 'concierge', 'holidays', 'stays', 'transport',
+SECTION_ORDER = ['overview', 'audience', 'plans', 'map', 'days', 'taste_shop', 'concierge', 'holidays', 'stays', 'transport',
                  'backups', 'checklist', 'upgrades', 'credits', 'sources']
 PROSE = ('overview', 'holidays', 'stays', 'transport', 'backups', 'checklist')
-NAV_DEFAULT = {'overview': 'Overview', 'audience': 'Who', 'plans': 'Plans & weather', 'map': 'Map', 'days': 'Days',
+NAV_DEFAULT = {'overview': 'Overview', 'audience': 'Who', 'plans': 'Plans & weather', 'map': 'Map', 'days': 'Days', 'taste_shop': 'Taste & Shop',
                'concierge': 'Concierge', 'holidays': 'Holidays', 'stays': 'Stays', 'transport': 'Transport',
                'backups': 'Backups', 'checklist': 'Checklist', 'upgrades': 'Upgrades', 'credits': 'Credits',
                'sources': 'Sources'}
@@ -167,7 +167,21 @@ LABELS.update({
     'near_unavailable': 'Your device could not find a location just now.', 'near_unsupported': 'This browser cannot give a location.',
     'near_none': 'No places with a map pin yet.', 'about_km': 'about {km} km', 'new_tab': 'opens a new tab',
     'ig_posts': 'Latest posts from @{h} on Instagram', 'address': 'Address',
+    # Taste & Shop, awards, the Gallery (7 November 2026)
+    'taste_day': 'Taste of the day', 'shop_day': 'Shop the day', 'shop_hours': 'Shops today', 'awards': 'Awards',
+    'ts_signature': 'Taste here', 'ts_sweets': 'Sweet & snack stops', 'ts_markets': 'Markets on your day',
+    'ts_shopping': 'Shopping', 'ts_bring': 'Bring home', 'ts_where': 'Where', 'ts_season': 'Season',
+    'near_food': 'Hungry?', 'near_shops': 'Shop nearby', 'near_food_title': 'Food nearest to you', 'near_shop_title': 'Shops nearest to you',
+    'view_read': 'Read', 'view_gallery': 'Gallery', 'view_switch': 'Page view', 'gallery_title': 'The trip in pictures',
+    'gallery_intro': 'Photos with their credits, and posts from the official accounts. Posts load only when you tap them.',
+    'g_play_ig': 'Instagram', 'g_play_tt': 'TikTok', 'g_open_fb': 'Facebook', 'g_from': 'From the official accounts',
+    'g_open_post': 'Open the post on',
+    'g_embed_note': 'Instagram and TikTok see your device\'s internet address when a post loads.',
 })
+IG_POST = re.compile(r'^https://www\.instagram\.com/(p|reel)/([A-Za-z0-9_-]{5,40})/?$')
+TT_VIDEO = re.compile(r'^https://www\.tiktok\.com/@([A-Za-z0-9._]{1,40})/video/([0-9]{8,25})/?$')
+FB_URL = re.compile(r'^https://(?:www\.)?facebook\.com/[^\s"<>]{3,300}$')
+SOCIAL_BY = re.compile(r'^[A-Za-z0-9._]{1,40}$')
 MEALS = ('breakfast', 'brunch', 'lunch', 'dinner', 'snack')
 MEAL_ICONS = {'breakfast': '🍳', 'brunch': '🥐', 'lunch': '🍽️', 'dinner': '🌙', 'snack': '🍰'}
 IG_URL = re.compile(r'^https://(?:www\.)?instagram\.com/([A-Za-z0-9._]{1,30})/?$')
@@ -416,6 +430,8 @@ class Page:
             self.stop_cats[key] = norm_cats(st.get('cat'), f'stops.{key}.cat')
             if st.get('photo_spot'):
                 self.check_spot(st['photo_spot'], f'stops.{key}.photo_spot')
+            self.check_awards(st.get('awards'), f'stops.{key}.awards')
+            self.check_social(st.get('social'), f'stops.{key}.social')
             for i, x in enumerate(st.get('nearby') or []):
                 self.check_alt(x, f'stops.{key}.nearby[{i}]')
         for gi, g in enumerate(d.get('worship') or []):
@@ -469,6 +485,27 @@ class Page:
                             raise KitError(f'{w}.meals[{j}].choices[{c}]: unknown stop {x["stop"]!r}')
                     else:
                         self.check_alt(x, f'{w}.meals[{j}].choices[{c}]', default='food')
+            for kind, cat in (('taste', 'food'), ('shop', 'shopping')):
+                for c, x in enumerate((day.get(kind) or {}).get('items') or []):
+                    self.check_alt(x, f'{w}.{kind}.items[{c}]', default=cat)
+        ts = d.get('taste_shop') or {}
+        for ai, a in enumerate(ts.get('areas') or []):
+            w = f'taste_shop.areas[{ai}]'
+            if a.get('area') and a['area'] not in self.areas:
+                raise KitError(f'{w}.area: unknown area {a["area"]!r}')
+            for i, x in enumerate(a.get('signature') or []):
+                if not x.get('name') or not x.get('source'):
+                    raise KitError(f'{w}.signature[{i}]: name and source are required')
+                if x['source'] not in self.sources:
+                    check_url(x['source'], f'{w}.signature[{i}].source')
+            for group, cat in (('sweets', 'snacks'), ('markets', 'shopping'), ('shopping', 'shopping')):
+                for i, x in enumerate(a.get(group) or []):
+                    self.check_alt(x, f'{w}.{group}[{i}]', default=cat)
+            for i, x in enumerate(a.get('bring_home') or []):
+                if not x.get('what'):
+                    raise KitError(f'{w}.bring_home[{i}].what is required')
+                if x.get('source') and x['source'] not in self.sources:
+                    check_url(x['source'], f'{w}.bring_home[{i}].source')
         self.validate_weather()
         self.validate_plans()
         self.validate_audience()
@@ -508,6 +545,31 @@ class Page:
             self.check_spot(x['photo_spot'], f'{where}.photo_spot')
         if x.get('photo'):
             self.photo(x['photo'], f'{where}.photo')
+        self.check_awards(x.get('awards'), f'{where}.awards')
+
+    def check_awards(self, items, where):
+        """An award or guide listing names the award, its year and the page that lists it."""
+        for i, a in enumerate(items or []):
+            if not isinstance(a, dict) or not a.get('award') or not a.get('source'):
+                raise KitError(f'{where}[{i}]: an award needs "award" and its "source"')
+            if a['source'] not in self.sources:
+                check_url(a['source'], f'{where}[{i}].source')
+
+    def check_social(self, items, where):
+        """Posts for the Gallery: official accounts' Instagram posts or Reels, TikTok videos, or Facebook links."""
+        for i, x in enumerate(items or []):
+            w = f'{where}[{i}]'
+            kind, url = x.get('kind'), x.get('url') or ''
+            if kind == 'instagram' and not IG_POST.match(url):
+                raise KitError(f'{w}: an Instagram post is https://www.instagram.com/p/<code>/ or /reel/<code>/')
+            if kind == 'tiktok' and not TT_VIDEO.match(url):
+                raise KitError(f'{w}: a TikTok video is https://www.tiktok.com/@<handle>/video/<id>')
+            if kind == 'facebook' and not FB_URL.match(url):
+                raise KitError(f'{w}: a Facebook link must be https on facebook.com')
+            if kind not in ('instagram', 'tiktok', 'facebook'):
+                raise KitError(f'{w}.kind must be instagram, tiktok or facebook')
+            if not SOCIAL_BY.match(x.get('by') or ''):
+                raise KitError(f'{w}.by: the official account that posted it (its handle)')
 
     def check_spot(self, sp, where):
         """A photo spot names the spot and the official source that names it (a source key or an https page)."""
@@ -655,6 +717,11 @@ class Page:
         out = self.TOKEN.sub(tok, out)
         return re.sub(r'\s+', ' ', out).strip()
 
+    @staticmethod
+    def unaccent(s):
+        """A title without its accent markers, for plain text (the day picker, tool tips, the tour)."""
+        return re.sub(r'(?<!\*)\*(?!\*)([^*]+?)\*(?!\*)', r'\1', str(s))
+
     def accent(self, s):
         """A title, escaped, with *one word* set in the accent italic."""
         return re.sub(r'(?<!\*)\*(?!\*)([^*]+?)\*(?!\*)', r'<em>\1</em>', E(s))
@@ -713,6 +780,8 @@ class Page:
                     panel['ig'] = handle
                 if st.get('photo_spot'):
                     panel['spot'] = self.panel_spot(st['photo_spot'], f'stops.{sid}.photo_spot')
+                if st.get('awards'):
+                    panel['awards'] = self.award_items(st['awards'])
             for n, day in enumerate(self.days):
                 if key in day['route']:
                     panel['day'], panel['idx'] = n, day['route'].index(key)
@@ -752,8 +821,31 @@ class Page:
             panel['photo'] = self.panel_photo(x['photo'], where + '.photo')
         if x.get('photo_spot'):
             panel['spot'] = self.panel_spot(x['photo_spot'], where + '.photo_spot')
+        if x.get('awards'):
+            panel['awards'] = self.award_items(x['awards'])
         self.panels[pid] = panel
         return pid, True
+
+    def award_items(self, items):
+        out = []
+        for a in items or []:
+            src = self.sources.get(a['source'])
+            url = (src or {}).get('url') or ('' if src else a['source'])
+            label = ' '.join(t for t in (a['award'], str(a.get('year') or '')) if t)
+            out.append(dict(label=label, body=a.get('body') or '', src=(src or {}).get('label') or host_of(url).removeprefix('www.'), src_url=url))
+        return out
+
+    def awards_line(self, items, where):
+        if not items:
+            return ''
+        parts = []
+        for a in items:
+            src = self.src_tag(a['source'], where=where) if a['source'] in self.sources else \
+                f'<a class="src" href="{E(a["source"])}" target="_blank" rel="noopener">{E(host_of(a["source"]).removeprefix("www."))}</a>'
+            label = ' '.join(t for t in (a['award'], str(a.get('year') or '')) if t)
+            tip = f' title="{E(a["body"])}"' if a.get('body') else ''
+            parts.append(f'<span class="award"{tip}>{E(label)}</span> {src}')
+        return f'<p class="awards" data-fact><span aria-hidden="true">🏆</span> <span class="sr">{E(self.L["awards"])}:</span> ' + ' · '.join(parts) + '</p>'
 
     def spot_line(self, sp, where):
         if not sp:
@@ -1084,6 +1176,7 @@ class Page:
                f'{self.clips(st.get("clips"))}'
                f'{self.posts(st.get("embeds"))}'
                f'{self.link_row(st.get("links"), pl, st.get("instagram_tag"), st.get("tiktok_search"), w + ".links")}'
+               f'{self.awards_line(st.get("awards"), w + ".awards")}'
                f'{self.spot_line(st.get("photo_spot"), w + ".photo_spot")}'
                f'<p class="links-note">{E(self.L["links_note"])}{(" " + E(self.L["details"]) + ": " + details) if details else ""}</p>'
                f'{self.alts(st.get("nearby"), st["name"], n, w + ".nearby")}')
@@ -1143,6 +1236,7 @@ class Page:
         return (f'<article class="alt"{aid}{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{icon}</span> '
                 f'<b>{self.pl_link(pid, E(x["name"]), self.panels[pid]["anchor"])}</b></p>{dist}'
                 f'{faith}' + (f'<p>{self.rich(x["why"], where + ".why")}</p>' if x.get('why') else '') + hours
+                + self.awards_line(x.get('awards'), where + '.awards')
                 + self.spot_line(x.get('photo_spot'), where + '.photo_spot')
                 + f'<p class="alt-links">{" · ".join(links)}</p></article>')
 
@@ -1268,8 +1362,74 @@ class Page:
                     + self.plan_head(p) + (f'<p class="plan-why">{self.rich(note, w + ".plan_notes")}</p>' if note else '')
                     + '<div class="stops">' + ''.join(self.stop_card(day, n, it, p) for it in day['plan_' + p]) + '</div></section>')
         out += self.meals_html(day, n)
+        out += self.tasteshop_html(day, n)
         out += self.nearby(day, n)
         return out + '</article>'
+
+    def near_buttons(self):
+        return (f'<span class="near-btns"><button type="button" class="btn-ghost near-me" data-near-me="food"><span aria-hidden="true">🍽️</span> {E(self.L["near_food"])}</button>'
+                f'<button type="button" class="btn-ghost near-me" data-near-me="shopping"><span aria-hidden="true">🛍️</span> {E(self.L["near_shops"])}</button></span>')
+
+    def tasteshop_html(self, day, n):
+        """The day's Taste of the day and Shop the day boxes, side by side."""
+        taste, shop = day.get('taste') or {}, day.get('shop') or {}
+        if not taste and not shop:
+            return ''
+        w = f'days[{n - 1}]'
+        cols = []
+        for kind, box, icon, cat in (('taste', taste, '🍽️', 'food'), ('shop', shop, '🛍️', 'shopping')):
+            if not box:
+                continue
+            cards = ''.join(self.alt_card(x, n, f'{w}.{kind}.items[{i}]', default=cat) for i, x in enumerate(box.get('items') or []))
+            hours = (f'<p class="ts-hours" data-fact><span aria-hidden="true">⏰</span> <b>{E(self.L["shop_hours"])}:</b> {self.rich(box["hours"], w + "." + kind + ".hours")}</p>'
+                     if box.get('hours') else '')
+            cols.append(f'<div class="ts-col ts-{kind}"><p class="mono kicker">{icon} {E(self.L[kind + "_day"])}</p>'
+                        + (f'<p class="ts-text">{self.rich(box["text"], w + "." + kind + ".text")}</p>' if box.get('text') else '')
+                        + hours + (f'<div class="alts-grid">{cards}</div>' if cards else '') + '</div>')
+        return f'<section class="tasteshop" aria-label="{E(self.L["taste_day"])} · {E(self.L["shop_day"])}">{"".join(cols)}</section>'
+
+    def taste_shop_section(self):
+        """Taste & Shop: by area, what to taste, sweet stops, markets on the family's day, shopping, and what to bring home."""
+        ts = self.d.get('taste_shop') or {}
+        out = f'<section id="taste_shop" class="sec ts-sec" data-cats="food snacks shopping">{self.head(ts, "taste_shop")}{self.near_buttons()}'
+        for ai, a in enumerate(ts.get('areas') or []):
+            w = f'taste_shop.areas[{ai}]'
+            title = a.get('title') or (self.areas.get(a.get('area')) or {}).get('name') or a.get('area') or ''
+            out += f'<div class="ts-area"><h3 class="h-rule">{self.accent(title)}</h3>'
+            if a.get('intro'):
+                out += f'<p class="ts-text">{self.rich(a["intro"], w + ".intro")}</p>'
+            sig = a.get('signature') or []
+            if sig:
+                cards = []
+                for i, x in enumerate(sig):
+                    src = self.src_tag(x['source'], where=w) if x['source'] in self.sources else \
+                        f'<a class="src" href="{E(x["source"])}" target="_blank" rel="noopener">{E(host_of(x["source"]).removeprefix("www."))}</a>'
+                    meta = ' · '.join(t for t in ((f'{E(self.L["ts_where"])}: {self.rich(x["where"], w)}' if x.get('where') else ''),
+                                                   (f'{E(self.L["ts_season"])}: {E(x["season"])}' if x.get('season') else '')) if t)
+                    cards.append(f'<article class="taste" data-cats="food"><h5>{E(x["name"])}</h5>'
+                                 + (f'<p>{self.rich(x["why"], w + ".signature")}</p>' if x.get('why') else '')
+                                 + f'<p class="fine" data-fact>{meta} {src}</p></article>')
+                out += f'<p class="mono kicker">🍽️ {E(self.L["ts_signature"])}</p><div class="taste-grid">{"".join(cards)}</div>'
+            for group, icon in (('sweets', '🍫'), ('markets', '🧺'), ('shopping', '🛍️')):
+                items = a.get(group) or []
+                if items:
+                    default = 'snacks' if group == 'sweets' else 'shopping'
+                    cards = ''.join(self.alt_card(x, 1, f'{w}.{group}[{i}]', default=default) for i, x in enumerate(items))
+                    out += f'<p class="mono kicker">{icon} {E(self.L["ts_" + group])}</p><div class="alts-grid">{cards}</div>'
+            bring = a.get('bring_home') or []
+            if bring:
+                lis = []
+                for x in bring:
+                    src = ''
+                    if x.get('source'):
+                        src = ' ' + (self.src_tag(x['source'], where=w) if x['source'] in self.sources else
+                                     f'<a class="src" href="{E(x["source"])}" target="_blank" rel="noopener">{E(host_of(x["source"]).removeprefix("www."))}</a>')
+                    lis.append(f'<li><b>{E(x["what"])}</b>' + (f'. {self.rich(x["where"], w)}' if x.get('where') else '')
+                               + (f' {self.rich(x["note"], w)}' if x.get('note') else '') + src + '</li>')
+                out += f'<p class="mono kicker">🎁 {E(self.L["ts_bring"])}</p><ul class="mini">{"".join(lis)}</ul>'
+            out += '</div>'
+        out += self.blocks(ts.get('blocks'), 'taste_shop.blocks')
+        return out + '</section>'
 
     def meals_html(self, day, n):
         """Each meal of the day with its choices (the planned place counts as one), all on the page."""
@@ -1558,7 +1718,7 @@ class Page:
                  f'Land: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>.</figcaption></figure>')
         stays = ''.join(self.ocard(s, 'opener.stays') for s in o.get('stays') or [])
         highs = ''.join(self.ocard(s, 'opener.highlights') for s in o.get('highlights') or [])
-        return (f'<section id="opener" class="opener" aria-label="{E(title)}">'
+        return (f'<section id="opener" class="opener" aria-label="{E(self.unaccent(title))}">'
                 f'<div class="hero"><div class="hero-slides">{"".join(slides)}</div><div class="hero-in">'
                 + (f'<p class="mono kicker hero-k">{E(o.get("kicker") or m.get("kicker"))}</p>' if (o.get('kicker') or m.get('kicker')) else '')
                 + f'<h1 class="hero-t">{self.accent(title)}</h1>'
@@ -1671,7 +1831,8 @@ class Page:
             elif it in present:
                 href = 'map-centre' if it == 'map' else it
                 out.append(f'<a href="#{href}">{E(labels.get(it, it))}</a>')
-        return f'<nav class="topnav" aria-label="{E(self.L["nav"])}">' + ''.join(out) + '</nav>'
+        switch = self.view_switch() if any((st.get('photos') or st.get('social')) for st in self.stops.values()) else ''
+        return f'<nav class="topnav" aria-label="{E(self.L["nav"])}">' + switch + ''.join(out) + '</nav>'
 
     def short(self, d):
         if d.get('short'):
@@ -1695,6 +1856,7 @@ class Page:
                 f'<div class="panel" id="panel-route" role="tabpanel" aria-labelledby="tab-route"><div class="mc-tools">'
                 f'<button type="button" id="fly" class="btn-gold">{E(self.L["fly"])}</button>'
                 f'<button type="button" class="btn-ghost near-me" data-near-me><span aria-hidden="true">📍</span> {E(self.L["near_me"])}</button>'
+                + self.near_buttons()
                 + (f'<label class="check"><input type="checkbox" id="mc-safety"> {E(m.get("safety_label") or self.L["safety"])}</label>' if self.d.get('safety') else '')
                 + (f'<label class="check"><input type="checkbox" id="mc-nearby"> {E(self.L["nearby_pins"])}</label>' if self.nearby_pins() else '')
                 + f'</div>' + (self.legend(compact=True) if self.opener_d else '') + f'<div id="leaflet" class="mapbox" role="region" aria-label="{E(self.L["route_map"])}"></div><ol id="mc-stops" class="mc-stops"></ol>'
@@ -1837,7 +1999,7 @@ class Page:
         marks = []
         for i, d in enumerate(self.days):
             n = i + 1
-            marks.append(f'<a class="rail-mark day" href="#day-{n}" data-day="{i}" data-tip="{E(self.L["day"])} {n} · {E(d["when"])} · {E(d["title"])}" aria-label="{E(self.L["day"])} {n}, {E(d["when"])}"><i></i><b>{E(self.short(d))}</b></a>')
+            marks.append(f'<a class="rail-mark day" href="#day-{n}" data-day="{i}" data-tip="{E(self.L["day"])} {n} · {E(d["when"])} · {E(self.unaccent(d["title"]))}" aria-label="{E(self.L["day"])} {n}, {E(d["when"])}"><i></i><b>{E(self.short(d))}</b></a>')
             for it in d['stops']:
                 nm = self.stops[it['stop']]['name']
                 marks.append(f'<a class="rail-mark" href="#d{n}-{E(it["stop"])}" data-tip="{E(self.L["day"])} {n} · {E(nm)}" aria-label="{E(self.L["day"])} {n}: {E(nm)}" tabindex="-1"><i></i></a>')
@@ -1850,6 +2012,104 @@ class Page:
                 f'<button type="button" class="lb-prev" aria-label="{E(self.L["lb_prev"])}">‹</button>'
                 f'<figure><img alt=""><figcaption><span class="lb-cap"></span><span class="lb-credit"></span></figcaption></figure>'
                 f'<button type="button" class="lb-next" aria-label="{E(self.L["lb_next"])}">›</button></div>')
+
+    # ------------------------------------------------------------------ the Gallery view
+    # One switch turns the page into a picture book (the owner, 7 November 2026): each day opens on its
+    # photo band, then a mosaic of three shapes, as in the owner's reference: wide photos, portrait
+    # cards for Instagram posts and tall ones for Reels and TikTok videos. Every card carries the
+    # place's name and the page's own line about it; posts load only when tapped.
+    def social_embed(self, x):
+        m = IG_POST.match(x['url']) if x['kind'] == 'instagram' else None
+        if m:
+            return f'https://www.instagram.com/{m.group(1)}/{m.group(2)}/embed/captioned/', ('g-tall' if m.group(1) == 'reel' else 'g-port')
+        m = TT_VIDEO.match(x['url']) if x['kind'] == 'tiktok' else None
+        if m:
+            return f'https://www.tiktok.com/embed/v2/{m.group(2)}', 'g-tall'
+        return '', 'g-sq'
+
+    def gallery_tile(self, shape, img, sid, line, credit_html, social=None, plan=None):
+        st = self.stops[sid]
+        pid = self.place_pid[st['place']]
+        cats = self.stop_cats.get(sid) or []
+        kick = ' · '.join(self.cat_labels[c] for c in cats[:2])
+        if plan:  # a post from a weather plan says so, so it never reads as the main plan
+            kick = f'{self.L["plan"].format(p=plan[-1].upper())} · {self.L[plan]}'
+        cap = (f'<figcaption><span class="g-k">{E(kick)}</span>'
+               f'<span class="g-name">{self.pl_link(pid, E(st["name"]), self.panels[pid]["anchor"])}</span>'
+               + (f'<span class="g-line">{E(line)}</span>' if line else '')
+               + (f'<span class="credit">{credit_html}</span>' if credit_html else '') + '</figcaption>')
+        pic = (f'<img src="{E(img["src"])}" alt="{E(img["alt"])}" loading="lazy" decoding="async" referrerpolicy="no-referrer">' if img else '')
+        if not social:
+            return f'<figure class="g-tile {shape}"{self.cats_attr(cats)}>{pic}{cap}</figure>'
+        embed, _ = self.social_embed(social)
+        if social['kind'] == 'facebook':
+            btn = (f'<a class="g-play g-fb" href="{E(social["url"])}" target="_blank" rel="noopener">'
+                   f'<span aria-hidden="true">📘</span> {E(self.L["g_open_fb"])}<span class="g-by"> · {E(social["by"])}</span> ↗</a>')
+            return f'<figure class="g-tile {shape} g-social" data-kind="facebook"{self.cats_attr(cats)}>{pic}{btn}{cap}</figure>'
+        label = self.L['g_play_ig'] if social['kind'] == 'instagram' else self.L['g_play_tt']
+        btn = (f'<button type="button" class="g-play" aria-label="{E(label)}: @{E(social["by"])}, {E(st["name"])}">'
+               f'<span aria-hidden="true">▶</span> {E(label)}<span class="g-by"> · @{E(social["by"])}</span></button>')
+        # once a post is playing, a way out to the post itself, in case the service shows an error or a limit instead
+        orig = (f'<a class="g-orig" href="{E(social["url"])}" target="_blank" rel="noopener" aria-label="{E(self.L["g_open_post"])} {E(label)}">'
+                f'{E(label)} ↗</a>')
+        return (f'<figure class="g-tile {shape} g-social" data-kind="{E(social["kind"])}" data-embed="{E(embed)}" data-by="{E(social["by"])}"'
+                f'{self.cats_attr(cats)}>{pic}{btn}{orig}{cap}</figure>')
+
+    def gallery_section(self):
+        days = []
+        total = 0
+        for i, day in enumerate(self.days):
+            n = i + 1
+            tiles, band, seen = [], None, set()
+            for j, it in enumerate(day['stops']):
+                sid = it['stop']
+                st = self.stops[sid]
+                line = st.get('line') or it.get('role') or self.first_role(sid)
+                allp = [self.photo(x, f'stops.{sid}.photos') for x in (st.get('photos') or [])]
+                photos = allp[:2]
+                if photos and band is None:
+                    band = photos[0]
+                for k, ph in enumerate(photos):
+                    shape = ('g-wide' if j % 2 == 0 else 'g-port') if k == 0 else 'g-sq'
+                    tiles.append(self.gallery_tile(shape, ph, sid, line if k == 0 else '', self.credit(ph, original=False)))
+                for q, x in enumerate(st.get('social') or []):
+                    if x['url'] in seen:
+                        continue
+                    seen.add(x['url'])
+                    _, shape = self.social_embed(x)
+                    spare = allp[2:] or allp
+                    poster = spare[q % len(spare)] if spare else None
+                    tiles.append(self.gallery_tile(shape, poster, sid, line, self.credit(poster, original=False) if poster else '', social=x))
+            # posts curated for a Plan B or Plan C stop are shown too, after the main plan and marked with their plan
+            for plan in ('plan_b', 'plan_c'):
+                for it in day.get(plan) or []:
+                    sid = it['stop']
+                    st = self.stops[sid]
+                    allp = [self.photo(x, f'stops.{sid}.photos') for x in (st.get('photos') or [])]
+                    for q, x in enumerate(st.get('social') or []):
+                        if x['url'] in seen:
+                            continue
+                        seen.add(x['url'])
+                        _, shape = self.social_embed(x)
+                        poster = allp[q % len(allp)] if allp else None
+                        tiles.append(self.gallery_tile(shape, poster, sid, it.get('role') or '', self.credit(poster, original=False) if poster else '',
+                                                       social=x, plan=plan))
+            if not tiles:
+                continue
+            total += len(tiles)
+            head = (f'<header class="g-day-h"><p class="mono kicker">{E(self.L["day"])} {n:02d} · {E(day["when"])}</p>'
+                    f'<h3>{self.accent(day["title"])}</h3></header>')
+            days.append(f'<div class="g-day" id="g-day-{n}">{head}<div class="g-grid">{"".join(tiles)}</div></div>')
+        if not total:
+            return ''
+        return (f'<section id="gallery" class="gallery" aria-label="{E(self.L["gallery_title"])}">'
+                f'<p class="mono kicker">{E(self.L["view_gallery"])}</p><h2>{E(self.L["gallery_title"])}</h2>'
+                f'<p class="fine">{E(self.L["gallery_intro"])} {E(self.L["g_embed_note"])}</p>{"".join(days)}</section>')
+
+    def view_switch(self):
+        return (f'<span class="viewsw" role="group" aria-label="{E(self.L["view_switch"])}">'
+                f'<button type="button" data-view="read" aria-pressed="true">{E(self.L["view_read"])}</button>'
+                f'<button type="button" data-view="gallery" aria-pressed="false">{E(self.L["view_gallery"])}</button></span>')
 
     def sheet_html(self):
         """The place panel: from the bottom on a phone, from the side on a wider screen. Its contents are
@@ -1885,7 +2145,7 @@ class Page:
                 place_cats[self.stops[it['stop']]['place']] += [c for c in self.stop_cats.get(it['stop']) or [] if c not in place_cats[self.stops[it['stop']]['place']]]
             for s in stops:
                 s['cats'] = place_cats.get(s['id'], [])
-            days.append(dict(n=i + 1, label=f'{self.L["day"]} {i + 1} · {d["when"]}', title=d['title'], iso=d.get('iso') or '',
+            days.append(dict(n=i + 1, label=f'{self.L["day"]} {i + 1} · {d["when"]}', title=self.unaccent(d['title']), iso=d.get('iso') or '',
                              weather=d.get('weather') or '', stops=stops, legs=legs))
         ui = {k: self.L[k] for k in ('fly', 'fly_stop', 'short_walk', 'optional', 'map_fallback', 'tiles_notice', 'wx_from', 'wx_error', 'wx_past', 'wx_none',
                                      'wx_frame', 'wx_credit', 'wx_licence', 'wx_rain', 'wx_gust', 'wx_wind', 'wx_uv', 'wx_suggests', 'wx_fits',
@@ -1929,9 +2189,11 @@ class Page:
         present = self.present()
         css = read_asset('kit.css').replace('/*MAP-ROWS*/12', str(max(12, len(present) + 1)))
         js = read_asset('kit.js')
-        parts = {'map': self.map_section, 'days': self.days_section, 'concierge': self.concierge, 'audience': self.audience_section,
+        parts = {'map': self.map_section, 'days': self.days_section, 'taste_shop': self.taste_shop_section, 'concierge': self.concierge, 'audience': self.audience_section,
                  'plans': self.plans_section, 'upgrades': self.upgrades_section, 'credits': self.credits_section, 'sources': self.sources_section}
         body = ''.join(parts[s]() if s in parts else self.prose(s) for s in present)
+        gallery = self.gallery_section()
+        body += gallery
         templates = ''.join(f'<template id="cc-{E(a)}">{self.area_compact(a)}</template>' for a in self.areas)
         # Atelier type (6 November 2026): Fraunces for display, with its italic for the accent words, and
         # Inter for text and the letter-spaced labels. Both are SIL Open Font Licence fonts on Google Fonts.

@@ -808,6 +808,8 @@ function placeOpen(pid,from){
   if(p.spot&&p.spot.spot){ var sp=el('span',null,p.spot.spot+(p.spot.tip?'. '+p.spot.tip:'')+' ');
     if(/^https:/.test(p.spot.src_url||'')){ var sl=link(p.spot.src_url,p.spot.src||hostOf(p.spot.src_url)); sl.className='src'; sp.appendChild(sl); }
     row('📸 '+t('photo_spot','Photo spot'),sp); }
+  (p.awards||[]).forEach(function(a){ var aw=el('span',null,a.label+(a.body?' ('+a.body+')':'')+' ');
+    if(/^https:/.test(a.src_url||'')){ var al=link(a.src_url,a.src||hostOf(a.src_url)); al.className='src'; aw.appendChild(al); } row('🏆 '+t('awards','Awards'),aw); });
   if(facts.firstChild){ b.appendChild(facts); }
   var acts=el('div','sh-acts');
   if(typeof p.lat==='number'&&typeof p.lng==='number'){ var sm=el('button','btn-gold','📍 '+t('alt_map','Show on map')); sm.type='button';
@@ -835,14 +837,16 @@ function placeOpen(pid,from){
 }
 /* -- Near me: on the family site the site's own page asks the person and the device, and sends back
    only the nearest places' keys and rough distances; opened elsewhere, the page asks the browser. -- */
-function nearPlaces(){ var out=[]; Object.keys(P).forEach(function(k){ var p=P[k];
+var NEAR_CATS={food:['food','snacks','drinks'],shopping:['shopping']};
+function nearPlaces(filter){ var want=NEAR_CATS[filter]||null, out=[]; Object.keys(P).forEach(function(k){ var p=P[k];
+  if(want&&!(p.cats||[]).some(function(c){ return want.indexOf(c)>=0; })){ return; }
   if(typeof p.lat==='number'&&typeof p.lng==='number'&&/^[a-z0-9][a-z0-9-]{0,29}$/.test(k)){ out.push({key:k,lat:p.lat,lon:p.lng}); } }); return out.slice(0,200); }
 function distKm(a,b){ var r=function(d){ return d*Math.PI/180; }, dLat=r(b.lat-a.lat), dLon=r(b.lon-a.lon);
   var h=Math.pow(Math.sin(dLat/2),2)+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.pow(Math.sin(dLon/2),2); return 2*6371*Math.asin(Math.min(1,Math.sqrt(h))); }
 function nearestTo(here,places){ return places.map(function(p){ return {key:p.key,d:distKm(here,p)}; }).sort(function(a,b){ return a.d-b.d; }).slice(0,20)
   .map(function(p){ return {key:p.key,km:Math.max(0.5,Math.round(p.d*2)/2)}; }); }
 function nearShow(a){
-  if(!sheet||sheet.hidden||sheet.getAttribute('data-view')!=='near'){ return; }
+  if(!sheet||sheet.hidden||sheet.getAttribute('data-view')!=='near'){ return; }  // the reader moved on
   clear(sheetBody);
   if(!a.ok){ var why={declined:'near_declined',denied:'near_denied',timeout:'near_unavailable',unavailable:'near_unavailable',unsupported:'near_unsupported'}[a.reason]||'near_unavailable';
     sheetBody.appendChild(el('p','sh-what',t(why,''))); return; }
@@ -853,9 +857,10 @@ function nearShow(a){
     motion(li,[{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:420,delay:i*50,easing:'ease-out'}); });
   sheetBody.appendChild(ol); sheetBody.appendChild(el('p','fine',t('near_note','')));
 }
-function nearMe(from){
-  var places=nearPlaces();
-  sheetOpen('📍 '+t('near_me','Near me'),t('near_title','Nearest to you'),from); sheet.setAttribute('data-view','near');
+function nearMe(from,filter){
+  var places=nearPlaces(filter);
+  var title=filter==='food'?t('near_food_title','Food nearest to you'):filter==='shopping'?t('near_shop_title','Shops nearest to you'):t('near_title','Nearest to you');
+  sheetOpen('📍 '+(filter==='food'?t('near_food','Hungry?'):filter==='shopping'?t('near_shops','Shop nearby'):t('near_me','Near me')),title,from); sheet.setAttribute('data-view','near');
   if(!places.length){ sheetBody.appendChild(el('p','sh-what',t('near_none',''))); return; }
   sheetBody.appendChild(el('p','sh-what',t('near_wait','')));
   if(inFrame){ nearWaiting=true; try{ window.parent.postMessage({type:'hj:near-want',places:places},'*'); }catch(e){} return; }
@@ -868,7 +873,7 @@ if(sheet){
   document.addEventListener('click',function(e){
     var a=e.target.closest&&e.target.closest('[data-place]');
     if(a&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&P[a.getAttribute('data-place')]){ e.preventDefault(); sheet.removeAttribute('data-view'); placeOpen(a.getAttribute('data-place'),sheet.contains(a)?sheetReturn:a); return; }
-    var nm=e.target.closest&&e.target.closest('[data-near-me]'); if(nm){ e.preventDefault(); nearMe(nm); return; }
+    var nm=e.target.closest&&e.target.closest('[data-near-me]'); if(nm){ e.preventDefault(); nearMe(nm,nm.getAttribute('data-near-me')||''); return; }
     var sd=e.target.closest&&e.target.closest('[data-share-day]'); if(sd){ shareDay(+sd.getAttribute('data-share-day')); }
   });
   sheet.addEventListener('click',function(e){ if(e.target.closest('[data-sheet-close]')){ sheetClose(); } });
@@ -898,5 +903,39 @@ if(sheet){
       if(a.how==='share'){ toast(t('shared','Shared.')); } else if(a.how==='copy'){ toast(t('copied','Link copied.')); }
     }
   }); }
+}
+
+/* ==== the Gallery view (the owner, 7 November 2026): one switch between reading and a picture book.
+   Posts are official accounts' Instagram posts and Reels and TikTok videos; each loads only when
+   tapped, and only from the two embed addresses below. ==== */
+var gallery=$('#gallery'), readScroll=0;
+var EMBED_OK=/^https:\/\/www\.instagram\.com\/(p|reel)\/[A-Za-z0-9_-]{5,40}\/embed\/captioned\/$|^https:\/\/www\.tiktok\.com\/embed\/v2\/[0-9]{8,25}$/;
+function setView(v,from){
+  if(!gallery){ return; }
+  var g=v==='gallery';
+  if(g===(root.getAttribute('data-view')==='gallery')){ return; }
+  if(g){ readScroll=window.scrollY; root.setAttribute('data-view','gallery'); window.scrollTo(0,0); }
+  else { root.removeAttribute('data-view'); window.scrollTo(0,readScroll); }
+  $$('button[data-view]').forEach(function(b){ b.setAttribute('aria-pressed',String(b.getAttribute('data-view')===(g?'gallery':'read'))); });
+  if(g){ $$('.g-tile',gallery).slice(0,12).forEach(function(t2,i){ motion(t2,[{opacity:0,transform:'translateY(18px)'},{opacity:1,transform:'none'}],{duration:700,delay:i*60,easing:'cubic-bezier(.2,.7,.2,1)'}); }); }
+  if(from&&from.focus){ from.focus({preventScroll:true}); }
+}
+function playTile(tile){
+  var src=tile.getAttribute('data-embed')||'';
+  if(!EMBED_OK.test(src)||tile.querySelector('iframe')){ return; }
+  var fr=document.createElement('iframe'); fr.src=src; fr.loading='lazy'; fr.referrerPolicy='strict-origin-when-cross-origin';
+  fr.title=(tile.getAttribute('data-kind')==='tiktok'?'TikTok':'Instagram')+' @'+(tile.getAttribute('data-by')||'');
+  fr.setAttribute('allow','encrypted-media; picture-in-picture');
+  var btn=tile.querySelector('.g-play'), img=tile.querySelector('img');
+  if(btn&&btn.parentNode){ btn.parentNode.removeChild(btn); }
+  if(img&&img.parentNode){ img.parentNode.removeChild(img); }
+  tile.classList.add('g-live'); tile.insertBefore(fr,tile.firstChild);
+  motion(fr,[{opacity:0},{opacity:1}],{duration:400});
+}
+if(gallery){
+  document.addEventListener('click',function(e){
+    var vb=e.target.closest&&e.target.closest('button[data-view]'); if(vb){ setView(vb.getAttribute('data-view'),vb); return; }
+    var pb=e.target.closest&&e.target.closest('.g-tile button.g-play'); if(pb){ playTile(pb.closest('.g-tile')); }
+  });
 }
 })();

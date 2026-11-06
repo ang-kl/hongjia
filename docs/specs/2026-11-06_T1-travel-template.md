@@ -182,3 +182,36 @@ The skill and kit live in `.claude/skills/travel-coffee-table/`, so a Claude ses
     - the message protocol;
     - a browser test of the panel with and without reduced motion, and of Near me and Share inside a frame.
   - The release browser check covers sharing a place and the document's link through the site's bar, and Near me answering with keys and rough distances only.
+
+## Follow-up T4: Taste & Shop, awards and the Gallery view (7 November 2026)
+
+- **Owner requests and decisions:**
+  - "food/eatery/snack, shopping is important to me. research how to incorporate them."
+  - A coffee-table "one switch" view of Instagram, Facebook and TikTok posts, in the mix of picture shapes of the owner's reference site.
+  - Decisions: "1 yes, 2 awards, 3 yes, 4 later". gia's live Google picks (best food rated 4 or more, hidden gems with few reviews): "Later".
+- **Research (6 November 2026):**
+  - Shop trading: the state's retail trading rules (shops closed on some public holidays, towns with their own hours, cafés, restaurants and day markets outside the rules) come from the state's consumer protection and public holiday pages, and go into the trip's trading-hours table.
+  - Google Places: ratings must be fetched live with "Google Maps" attribution and may not be stored or shown with a non-Google map. So the page shows awards and guide listings instead.
+  - Meta and TikTok:
+    - Official embeds work without a key.
+    - Popularity for Instagram needs the owner's Business Discovery setup (later).
+    - TikTok popularity for other accounts is not available.
+    - Facebook embeds did not run in the locked frame, so Facebook is links only.
+- **Kit:**
+  - Day `taste` and `shop` boxes.
+  - The `taste_shop` section, by area, with the trading-hours table.
+  - "Hungry?" and "Shop nearby": Near me filtered by category.
+  - `awards` chips, also shown in the panel.
+  - The Gallery view: a Read / Gallery switch, a mosaic of wide, portrait and tall tiles with credits and place links, and posts loaded only on a tap from two checked embed addresses.
+    - Posts on Plan B and Plan C stops are shown after the main plan, marked with their plan, once each.
+    - A playing post keeps a link to the post itself. In a local check, TikTok answered "ratelimit triggered" in place of a video; the link is the way out.
+- **Site:** the privacy page now covers TikTok and the Gallery.
+- **Checks:**
+  - Kit tests (45):
+    - Taste & Shop rendering and rules;
+    - awards rules, and no stars in the page;
+    - the Gallery's markup and shapes, Plan B posts and the link to each post;
+    - credits on every picture;
+    - no post loading before a tap;
+    - a browser test of the switch and tap-to-load at desktop and phone widths.
+  - The database test covers the privacy line.
