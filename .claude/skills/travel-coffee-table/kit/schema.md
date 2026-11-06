@@ -46,6 +46,8 @@ makes sense). Pictures may also be `data:image/…` URIs. Plain `http://` is ref
 | `audience` | | Who the page is for: one party, or lenses. |
 | `plans`, `weather` | | Plan A/B/C rules and live forecast places. |
 | `upgrades` | | Optional luxury upgrades. |
+| `opener` | | The first screen: hero photos, countdown, TL;DR, alerts, stay and highlight cards, the globe and the legend. |
+| `worship` | | Places of worship near each base, shown in the stays section and on the map. |
 | `map`, `days_section`, `credits`, `sources_page`, `footer` | | Texts for the fixed sections. |
 | `page`, `nav`, `labels` | | Section order, navigation and any kit wording to override. |
 
@@ -74,7 +76,31 @@ booking status).
   page order with the day numbers after the first one.
 - `nav.labels`: `{section: label}`; a section's own `nav` field also sets its label.
 - `labels`: any kit wording to replace, by key (see `LABELS` in `build.py`), for example a page in
-  another language. `labels.marks` relabels suitability values: `{"walking": {"long": "Long walk"}}`.
+  another language. `labels.marks` relabels suitability values: `{"walking": {"long": "Long walk"}}`;
+  `labels.cats` relabels legend categories: `{"fun": "Fun & games"}`.
+
+### Legend categories (`cat`)
+
+Stops, nearby places, alternatives, places of worship, upgrades and prose sections may carry `cat`: one
+category or a list of them (a winery restaurant is `["food", "drinks"]`; a chocolate maker is
+`["snacks", "shopping"]`). The legend, in this order, lights every element that carries the
+category, on the page and on the map:
+
+| Key | Legend | For |
+|---|---|---|
+| `stays` | 🏨 Stays | hotels, apartments, resorts |
+| `transport` | 🚗 Transport | airports, stations, piers, car hire, drivers |
+| `weather` | 🌦️ Weather | lit automatically: each day's forecast bar and the holidays and weather section |
+| `food` | 🍽️ Food | meals: restaurants, lunch and dinner places |
+| `drinks` | ☕ Drinks | cafes, coffee, bars, breweries, wineries, cellar doors |
+| `snacks` | 🍫 Snacks | bakeries, chocolate, ice cream, market food stalls, quick bites |
+| `shopping` | 🛍️ Shopping | shops, malls, markets, boutiques |
+| `fun` | 🎡 Fun | beaches, cruises, attractions, spas, play |
+| `sights` | 🏛️ Sights | lookouts, museums, galleries, heritage, nature |
+| `worship` | ⛪ Worship | churches, mosques, temples, synagogues, chapels |
+
+`"dining"` (the first legend's single category) is still read, as `food`. The stays, transport
+and holidays sections carry `stays`, `transport` and `weather` unless their own `cat` says otherwise.
 
 ## Registries
 
@@ -135,7 +161,10 @@ Shown on the map when the reader ticks the safety box.
 | `area` | | An `areas` id: adds the concierge drawer. |
 | `photos` | | Up to four `photos` ids, shown as the bento; the first is the large one. |
 | `prompts` | | Photo prompts (three is the house style). |
-| `links` | | Link row: `{kind, url, label, note}`; `kind` is `web`, `tel`, `mail`, `book`, `ig`, `fb`, `tt`, `yt` or `x`. Google Maps and Google Earth are added from the place. |
+| `links` | | The official links, shown without opening anything: `{kind, url, label, note}`. Kinds: 🌐 `web`, 📷 `ig` (Instagram), 📘 `fb` (Facebook), 🎵 `tt` (TikTok), ▶️ `yt` (YouTube), 📍 `addr` (the address as `label`; it links to a Google Maps search, or to `url` if that is on google.com/maps), 📞 `tel`, ⏰ `hours` (the hours as `label`, with their `source` key or `url`: hours are a fact), and `mail`, `book`, `x`. Social links must be https on instagram.com, facebook.com, tiktok.com or youtube.com. Google Maps (unless an address is given) and Google Earth are added from the place. With an Instagram link, the card also gets a drawer with the venue's own profile embed, loaded only when opened. **Layout**: one wrapping row of small single-line chips (website, socials, call, maps; text never wraps), then the address as a line of text linking to Google Maps (`note` names whose address it is), then the hours: one line when the text is 60 characters or less, otherwise a small "⏰ Hours ▸" disclosure with the quoted hours and their source. A `tel` chip shows the number on wide screens and "Call" on phones: put the number as written in `label` (or `note`) and a name such as "Reception" in the other; the name goes in the chip's title; when a stop has two venues, `short` (a short venue name, up to 24 characters) makes it "Café · 0000 000" and "Call Café". Notes never appear inside a chip: they become its title (hover text), so anything that matters belongs in the sources. When one stop has two venues, give each chip a short `label` that says which ("Café website", "Café Instagram"). |
+| `cat` | | Legend category, or a list (see Legend categories). |
+| `line` | | One plain line for the opener's cards and the trip tour (default: the stop's first role). |
+| `nearby` | | "If it's closed or crowded": small cards under the stop, and pins on the map's Nearby options layer. Each `{name, cat, why, distance, distance_note, hours, website, lat, lng, q, source}`: `name` and `cat` required; `why` is *rich*; `hours` needs `source` (a source key or an https URL). `distance` is one plain line people read at a glance ("About 3 min walk", "About 5 min drive", "In the same park"); how it was worked out goes in `distance_note`, shown as its title. `lat` and `lng` go together: without them the card still shows, with a Google Maps link that searches `q` (default: the name) but no pin and no Show on map, for a place that has no fixed spot or no confirmed one. Places of worship come the same way, with `cat` `worship` and an optional `faith`. |
 | `instagram_tag` | | Adds `#tag` (Instagram photos), letters and digits only. |
 | `tiktok_search` | | Adds a TikTok search. |
 | `details` | | `{text, source}` or `{text, url}`: the "Details" links under the link row. |
@@ -168,14 +197,14 @@ Suitability marks:
 | `iso` | with `weather` | The date, `YYYY-MM-DD`. |
 | `route_label`, `sub`, `base`, `badge` | | Kicker route, dek line and the two pills. |
 | `walk` | | `"a>b"` legs that are short walks (dashed on the map, no leg needed). |
-| `timeline` | | `{time, title, text}`; `text` is *rich*. |
+| `timeline` | | `{time, title, text, stop, photos, links}`; `text` is *rich*. With `stop` (a stop id), the item links to its card and shows the stop's photos (up to three: a swipeable strip on phones, tap to enlarge, credited) and its official links; `photos` and `links` override or stand alone. |
 | `info` | | Boxes under the timeline: `{title, text}`, *rich* (house style: Getting around, Meals, Style & photo moments, Make it easier). |
 | `links` | | `{text, source}` or `{text, url}` under the boxes. |
 | `plan_b` | | Plan B (rain): `{stop, role, replaces}` items. |
 | `plan_c` | | Plan C (heat, wind or storm): `{stop, role, replaces}` items. |
 | `plan_notes` | | `{"b": rich, "c": rich}`: one line under each plan's heading. |
 | `weather` | | A `weather.places` key: the day's forecast strip. |
-| `nearby` | | Optional extras: `{id, name, kind, why, hours, hours_sources, lat, lng, q, links, photo}`; `id`, `name`, `why`, `lat`, `lng`, `q` required; `hours` is a fact, so give `hours_sources` (source keys or https URLs); `photo` is a `photos` id or a photo object. |
+| `nearby` | | Optional extras: `{id, name, kind, why, hours, hours_sources, lat, lng, q, links, photo}`; `id`, `name`, `why`, `lat`, `lng`, `q` required; `hours` is a fact, so give `hours_sources` (source keys or https URLs); `photo` is a `photos` id or a photo object; `cat` puts it in the legend and on the map's Nearby options layer. |
 
 ## Plans and weather
 
@@ -265,7 +294,7 @@ House style for the sections: `overview` (alert, bases, principles, travel ancho
 
 `upgrades`: `{kicker, title, intro, note, groups}`. Each group is `{area | title, items}`; each item
 has `name`, `line`, `price`, `book_ahead`, `source` **(all required)**, and `photo`, `place`,
-`links`. The section is labelled optional and never replaces the plan; it is left out when there
+`links`, `cat`. The section is labelled optional and never replaces the plan; it is left out when there
 are no groups.
 
 ## Fixed sections
@@ -284,6 +313,40 @@ are no groups.
   the carried-over list, and `sources_page.blocks` follow the lists.
 - `footer`: `kicker`, `text`, `fine`.
 
+## Opener
+
+`opener` makes the page start with a full-screen hero, before the masthead. Without it the page starts
+with the masthead as before.
+
+| Field | Required | What |
+|---|---|---|
+| `hero` | **yes** | 1 to 8 photo ids: they cross-fade and zoom slowly (still under reduced motion). |
+| `title`, `kicker` | | Default: the masthead's. The hero title is the page's only `h1`. |
+| `dates` | | The dates as shown, for example "Saturday 12 to Sunday 13 June 2027". |
+| `start`, `end` | | `YYYY-MM-DD` for the countdown ("134 days to go", "Day 3 of 8" during, hidden after); default: the first and last day's `iso`. |
+| `tz`, `tz_place` | | The destination's IANA time zone (`Europe/Lisbon`) and the place named with its local time. |
+| `tldr` | | Three lines (*rich*): the trip at a glance. |
+| `alerts` | | Chips: `{text, href, icon}`; `href` is an in-page `#anchor` (`#day-7`). A holiday warning goes here, not in a box. |
+| `stays` | | Stop ids: "Where you'll stay" photo cards, each linking to the stop's card, with its website as a small second link. |
+| `highlights` | | Stop ids: "Can't-miss" photo cards (6 to 8 is the house style). A swipeable row on phones. |
+| `home` | | `{name, lat, lng}`: where the travellers start; the globe draws a gold great-circle arc from it. |
+| `destination` | | `{name, lat, lng}`; default: the first stay's place. The arc continues to the bases (the stays' places). |
+
+The globe is drawn by the kit's own orthographic projection over Natural Earth 1:110m land (the
+world-atlas TopoJSON in `assets/land-110m.json`, decoded at build time and inlined, so the page fetches
+nothing). It spins slowly to the destination when it comes into view, turns when dragged sideways or
+with the arrow keys, and stands still under reduced motion. The credits section names Natural Earth.
+
+"Play the trip" opens a guided tour: the globe flies from home to the destination, then the route map
+goes day by day, stop by stop, with each stop's photo and `line` in a caption card. It pauses, steps
+with Back and Next, closes with Esc, and under reduced motion does not play by itself.
+
+## Worship
+
+`worship`: `[{base, title, items}]`, where `base` is an area id (its name heads the group) or `title`
+names it, and `items` are like a stop's `nearby` (`cat` defaults to `worship`; add `faith`). They show
+in the stays section and on the map's Nearby options layer.
+
 ## The check (`--check`)
 
 A page fails when it has:
@@ -294,5 +357,9 @@ A page fails when it has:
 3. **a fact without a source**: a fact (hours, prices, phone numbers, percentages, distances) with
    no source tag. Kit pages mark their facts; for other pages every paragraph, list item and cell
    is read;
-4. **an http link**: any `http://` link, picture, frame or stylesheet (`data:` pictures and
+4. **a map blocked in the family site**: a route map on OpenStreetMap's own tile servers (set
+   `map.tiles` to CARTO with the family's key);
+5. **an official link off its platform**: an Instagram, Facebook, TikTok or YouTube link that is not
+   https on that platform, or an address that does not link to Google Maps;
+6. **an http link**: any `http://` link, picture, frame or stylesheet (`data:` pictures and
    namespaces such as `xmlns` are not links).

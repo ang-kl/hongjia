@@ -10,7 +10,10 @@
   "tz": "UTC+0"
  },
  "nav": {
-  "days_label": "Jun"
+  "days_label": "Jun",
+  "labels": {
+   "audience": "Who"
+  }
  },
  "masthead": {
   "kicker": "Travel coffee-table kit · a fictional sample",
@@ -38,10 +41,6 @@
   "edition": "Kit sample · every name, number and link is invented · all times local"
  },
  "overview": {
-  "alert": {
-   "title": "Lantern Day changes the plan.",
-   "text": "Saturday 12 June is the (fictional) Lantern Day holiday: shops close at 1pm [[src:ex_holiday]]."
-  },
   "kicker": "The shape of the trip",
   "title": "One base. Two gentle days.",
   "intro": "One night at Hotel Tidewater, arriving and leaving by train. **Nothing is booked.**",
@@ -223,10 +222,14 @@
   ]
  },
  "map": {
-  "tiles": {"provider": "carto", "style": "voyager", "key": "example-key"},
   "coordinates_source": "ex_places",
   "notes": {
    "route": "Sample route lines drawn for this example [[src:ex_routes]]; the places are invented and sit in open sea. Not live navigation."
+  },
+  "tiles": {
+   "provider": "carto",
+   "style": "voyager",
+   "key": "example-key"
   }
  },
  "days_section": {
@@ -304,22 +307,29 @@
     {
      "time": "10:05",
      "title": "Arrive at Example Bay station",
-     "text": "Fictional train times for the sample [[src:ex_transport]]."
+     "text": "Fictional train times for the sample [[src:ex_transport]].",
+     "stop": "station",
+     "photos": [
+      "station-1"
+     ]
     },
     {
      "time": "10:30 to 12:00",
      "title": "Harbour Steps",
-     "text": "Slow photos on the quay; seats on the upper level."
+     "text": "Slow photos on the quay; seats on the upper level.",
+     "stop": "harbour"
     },
     {
      "time": "13:00 to 14:30",
      "title": "Lantern Point",
-     "text": "Lighthouse grounds; the tower climb is optional [[src:ex_hours]]."
+     "text": "Lighthouse grounds; the tower climb is optional [[src:ex_hours]].",
+     "stop": "lighthouse"
     },
     {
      "time": "From 16:00",
      "title": "Lantern Beach, then rest",
-     "text": "Back at the hotel before dusk."
+     "text": "Back at the hotel before dusk.",
+     "stop": "beach"
     }
    ],
    "info": [
@@ -370,7 +380,8 @@
        "label": "Website",
        "url": "https://example.com/example-bay/tide-pools"
       }
-     ]
+     ],
+     "cat": "fun"
     },
     {
      "id": "sail-loft",
@@ -391,6 +402,10 @@
        "label": "Website",
        "url": "https://example.com/example-bay/sail-loft"
       }
+     ],
+     "cat": [
+      "sights",
+      "shopping"
      ]
     }
    ]
@@ -445,22 +460,29 @@
     {
      "time": "09:30",
      "title": "Drive to the cliffs",
-     "text": "About 30 minutes by taxi [[src:ex_routes]]."
+     "text": "About 30 minutes by taxi [[src:ex_routes]].",
+     "photos": [
+      "hotel-1",
+      "hotel-2"
+     ]
     },
     {
      "time": "10:00 to 11:00",
      "title": "Ochre Cliffs lookout",
-     "text": "The lookout is level; the lower path is optional."
+     "text": "The lookout is level; the lower path is optional.",
+     "stop": "cliffs"
     },
     {
      "time": "11:30 to 13:00",
      "title": "Gull Market",
-     "text": "Sunday market [[src:ex_hours]]."
+     "text": "Sunday market [[src:ex_hours]].",
+     "stop": "market"
     },
     {
      "time": "15:10",
      "title": "Train home",
-     "text": "Fictional times [[src:ex_transport]]."
+     "text": "Fictional times [[src:ex_transport]].",
+     "stop": "station"
     }
    ],
    "info": [
@@ -511,7 +533,8 @@
        "label": "Website",
        "url": "https://example.com/lantern-point/chapel"
       }
-     ]
+     ],
+     "cat": "worship"
     }
    ]
   }
@@ -600,7 +623,8 @@
      ]
     ]
    }
-  ]
+  ],
+  "cat": "weather"
  },
  "stays": {
   "kicker": "Accommodation",
@@ -820,7 +844,8 @@
         "label": "Operator",
         "url": "https://example.net/lantern-sailing"
        }
-      ]
+      ],
+      "cat": "fun"
      },
      {
       "name": "Chef's table at the Tidewater",
@@ -828,7 +853,11 @@
       "price": "EB$140 a person",
       "book_ahead": "1 month",
       "source": "ex_chef",
-      "photo": "chef-1"
+      "photo": "chef-1",
+      "cat": [
+       "food",
+       "drinks"
+      ]
      }
     ]
    },
@@ -840,14 +869,16 @@
       "line": "A car and driver for the cliffs and the market, door to door.",
       "price": "EB$60 an hour, 3 hours minimum",
       "book_ahead": "1 week",
-      "source": "ex_car"
+      "source": "ex_car",
+      "cat": "transport"
      },
      {
       "name": "Saltglass spa ritual",
       "line": "A ninety-minute treatment under the glass roof.",
       "price": "EB$180",
       "book_ahead": "10 days",
-      "source": "ex_spa"
+      "source": "ex_spa",
+      "cat": "fun"
      }
     ]
    }
@@ -1633,7 +1664,8 @@
     }
    ],
    "instagram_tag": "examplebay",
-   "tiktok_search": "Example Bay station"
+   "tiktok_search": "Example Bay station",
+   "cat": "transport"
   },
   "hotel": {
    "name": "Hotel Tidewater",
@@ -1655,16 +1687,25 @@
      "url": "https://example.net/hotel-tidewater"
     },
     {
+     "kind": "addr",
+     "label": "3 Quay Parade, Example Bay"
+    },
+    {
      "kind": "tel",
-     "label": "Call",
+     "label": "+000 100 0200",
      "url": "tel:+0001000200",
-     "note": "+000 100 0200"
+     "note": "Hotel reception"
     },
     {
      "kind": "ig",
      "label": "Instagram",
      "url": "https://www.instagram.com/instagram/",
      "note": "placeholder account"
+    },
+    {
+     "kind": "hours",
+     "label": "Reception \"open 24 hours\"; restaurant \"breakfast 7am to 10.30am, dinner 6pm to 9.30pm\", closed Mondays from June to August.",
+     "source": "ex_hotel"
     }
    ],
    "suits": {
@@ -1686,7 +1727,12 @@
     }
    ],
    "instagram_tag": "hoteltidewater",
-   "tiktok_search": "Hotel Tidewater"
+   "tiktok_search": "Hotel Tidewater",
+   "cat": [
+    "stays",
+    "food"
+   ],
+   "line": "Sea-view rooms above the old quay."
   },
   "harbour": {
    "name": "Harbour Steps & the old quay",
@@ -1715,10 +1761,37 @@
      "note": "placeholder account"
     },
     {
+     "kind": "fb",
+     "label": "Facebook",
+     "url": "https://www.facebook.com/facebook",
+     "note": "placeholder page"
+    },
+    {
      "kind": "tt",
      "label": "TikTok",
      "url": "https://www.tiktok.com/@tiktok",
      "note": "placeholder account"
+    },
+    {
+     "kind": "yt",
+     "label": "YouTube",
+     "url": "https://www.youtube.com/@YouTube",
+     "note": "placeholder channel"
+    },
+    {
+     "kind": "addr",
+     "label": "1 Harbour Row, Example Bay"
+    },
+    {
+     "kind": "tel",
+     "label": "Harbour office",
+     "url": "tel:+0001000400",
+     "note": "+000 100 0400"
+    },
+    {
+     "kind": "hours",
+     "label": "Quay open daily, 6am to 10pm",
+     "source": "ex_hours"
     }
    ],
    "clips": [
@@ -1769,7 +1842,52 @@
     }
    ],
    "instagram_tag": "examplebay",
-   "tiktok_search": "Example Bay harbour"
+   "tiktok_search": "Example Bay harbour",
+   "cat": [
+    "sights",
+    "fun"
+   ],
+   "line": "Stone steps, bright boats, the best light at nine.",
+   "nearby": [
+    {
+     "name": "Quay Fish Bar",
+     "cat": "food",
+     "why": "Fish and chips at a window counter, with stools facing the boats.",
+     "distance": "About 2 min walk",
+     "hours": "Daily 11am to 9pm",
+     "website": "https://example.com/example-bay/quay-fish-bar",
+     "lat": 0.0566,
+     "lng": 0.1021,
+     "source": "ex_hours",
+     "distance_note": "150 m in a straight line from the planned stop; walking time is a rough estimate."
+    },
+    {
+     "name": "Gull Coffee Cart",
+     "cat": [
+      "drinks",
+      "snacks"
+     ],
+     "why": "Espresso and cinnamon buns from a cart on the upper quay.",
+     "distance": "About 2 min walk",
+     "hours": "Daily 7am to 2pm",
+     "lat": 0.0558,
+     "lng": 0.1004,
+     "source": "ex_hours",
+     "distance_note": "80 m in a straight line from the planned stop; walking time is a rough estimate."
+    },
+    {
+     "name": "Harbour Chapel",
+     "cat": "worship",
+     "why": "A small seafarers' chapel, open for quiet visits.",
+     "distance": "About 4 min walk",
+     "hours": "Daily 9am to 5pm",
+     "website": "https://example.com/example-bay/harbour-chapel",
+     "lat": 0.0571,
+     "lng": 0.0995,
+     "source": "ex_tourism",
+     "distance_note": "300 m in a straight line from the planned stop; walking time is a rough estimate."
+    }
+   ]
   },
   "lighthouse": {
    "name": "Lantern Point lighthouse",
@@ -1811,7 +1929,32 @@
     }
    ],
    "instagram_tag": "lanternpoint",
-   "tiktok_search": "Lantern Point lighthouse"
+   "tiktok_search": "Lantern Point lighthouse",
+   "cat": "sights",
+   "line": "A striped tower at the end of the point.",
+   "nearby": [
+    {
+     "name": "Point Kiosk",
+     "cat": "snacks",
+     "why": "Ice cream and cold drinks at the car park.",
+     "distance": "About 4 min walk",
+     "lat": 0.0702,
+     "lng": 0.1328,
+     "distance_note": "200 m in a straight line from the planned stop; walking time is a rough estimate."
+    },
+    {
+     "name": "Lamp Room Tea Cart",
+     "cat": [
+      "drinks",
+      "snacks"
+     ],
+     "distance": "Inside the lighthouse grounds",
+     "why": "Tea and shortbread from a cart by the tower door; no pin, as the cart moves around the grounds.",
+     "hours": "Weekends 10am to 3pm",
+     "source": "ex_hours",
+     "q": "Lamp Room Tea Cart, Example Bay lighthouse"
+    }
+   ]
   },
   "beach": {
    "name": "Lantern Beach",
@@ -1847,7 +1990,9 @@
      "source": "ex_tourism"
     }
    ],
-   "instagram_tag": "lanternbeach"
+   "instagram_tag": "lanternbeach",
+   "cat": "fun",
+   "line": "A sheltered cove for the late afternoon."
   },
   "glass": {
    "name": "Saltglass Conservatory",
@@ -1889,7 +2034,11 @@
      "source": "ex_hours"
     }
    ],
-   "instagram_tag": "saltglass"
+   "instagram_tag": "saltglass",
+   "cat": [
+    "sights",
+    "drinks"
+   ]
   },
   "cellar": {
    "name": "Old Cellar Rooms",
@@ -1927,6 +2076,10 @@
      "text": "Tasting times",
      "source": "ex_hours"
     }
+   ],
+   "cat": [
+    "drinks",
+    "food"
    ]
   },
   "cliffs": {
@@ -1947,6 +2100,12 @@
      "kind": "web",
      "label": "Website",
      "url": "https://example.com/lantern-point/cliffs"
+    },
+    {
+     "kind": "yt",
+     "label": "YouTube",
+     "url": "https://www.youtube.com/@YouTube",
+     "note": "placeholder channel"
     }
    ],
    "suits": {
@@ -1965,7 +2124,9 @@
     }
    ],
    "instagram_tag": "ochrecliffs",
-   "tiktok_search": "Ochre Cliffs lookout"
+   "tiktok_search": "Ochre Cliffs lookout",
+   "cat": "sights",
+   "line": "Ochre cliffs and a level lookout."
   },
   "market": {
    "name": "Gull Market",
@@ -1990,6 +2151,15 @@
      "label": "Facebook",
      "url": "https://www.facebook.com/facebook",
      "note": "placeholder page"
+    },
+    {
+     "kind": "addr",
+     "label": "Market Square, Lantern Point"
+    },
+    {
+     "kind": "hours",
+     "label": "Sundays 8am to 1pm",
+     "source": "ex_hours"
     }
    ],
    "suits": {
@@ -2007,7 +2177,36 @@
      "source": "ex_hours"
     }
    ],
-   "instagram_tag": "gullmarket"
+   "instagram_tag": "gullmarket",
+   "cat": [
+    "shopping",
+    "snacks",
+    "food"
+   ],
+   "line": "Striped awnings, oysters and warm bread.",
+   "nearby": [
+    {
+     "name": "Saltwind Books",
+     "cat": "shopping",
+     "why": "Maps, prints and local recipes, two doors from the square.",
+     "distance": "About 2 min walk",
+     "hours": "Tuesday to Sunday, 10am to 5pm",
+     "website": "https://example.com/lantern-point/saltwind-books",
+     "lat": 0.1214,
+     "lng": 0.3092,
+     "source": "ex_hours",
+     "distance_note": "120 m in a straight line from the planned stop; walking time is a rough estimate."
+    },
+    {
+     "name": "The Long Table",
+     "cat": "food",
+     "why": "A covered lunch hall if the market is crowded.",
+     "distance": "About 4 min walk",
+     "lat": 0.1203,
+     "lng": 0.3071,
+     "distance_note": "250 m in a straight line from the planned stop; walking time is a rough estimate."
+    }
+   ]
   },
   "tearoom": {
    "name": "Tide Tea Pavilion",
@@ -2042,7 +2241,12 @@
      "text": "Pavilion hours",
      "source": "ex_hours"
     }
-   ]
+   ],
+   "cat": [
+    "drinks",
+    "snacks"
+   ],
+   "line": "Tea under glass, the sea on three sides."
   }
  },
  "areas": {
@@ -2234,5 +2438,96 @@
     }
    ]
   }
+ },
+ "worship": [
+  {
+   "base": "bay",
+   "items": [
+    {
+     "name": "St Example's Church",
+     "faith": "Christian (Anglican)",
+     "why": "Stone church on the hill above the hotel.",
+     "distance": "600 m from the hotel",
+     "hours": "Sunday service 10am",
+     "website": "https://example.com/example-bay/st-example",
+     "lat": 0.0491,
+     "lng": 0.0838,
+     "source": "ex_tourism"
+    },
+    {
+     "name": "Example Bay Mosque",
+     "faith": "Muslim",
+     "why": "Friday prayers; visitors welcome outside prayer times.",
+     "distance": "900 m from the hotel",
+     "hours": "Friday prayers 1pm",
+     "lat": 0.0469,
+     "lng": 0.0801,
+     "source": "ex_tourism"
+    },
+    {
+     "name": "Bayview Temple",
+     "faith": "Buddhist",
+     "why": "A quiet garden temple by the station.",
+     "distance": "1.2 km from the hotel",
+     "lat": 0.0428,
+     "lng": 0.0626
+    }
+   ]
+  }
+ ],
+ "opener": {
+  "kicker": "A fictional sample · two days by the sea",
+  "title": "Example Bay & the Lantern Coast",
+  "dates": "Saturday 12 to Sunday 13 June 2027",
+  "start": "2027-06-12",
+  "end": "2027-06-13",
+  "tz": "UTC",
+  "tz_place": "Example Bay",
+  "home": {
+   "name": "Sample City",
+   "lat": 6.0,
+   "lng": -18.0
+  },
+  "destination": {
+   "name": "Example Bay",
+   "lat": 0.05,
+   "lng": 0.09
+  },
+  "tldr": [
+   "One night at **Hotel Tidewater**, arriving and leaving by the coast line.",
+   "Day 1: the harbour steps, the lighthouse and Lantern Beach; Day 2: the Ochre Cliffs and the Sunday market.",
+   "Rain has Plan B under glass; heat or wind has Plan C in cool stone rooms [[src:ex_tourism]]."
+  ],
+  "alerts": [
+   {
+    "text": "Lantern Day, Saturday 12 June: shops close at 1pm",
+    "href": "#day-1",
+    "icon": "⚠️"
+   },
+   {
+    "text": "Nothing is booked yet",
+    "href": "#checklist",
+    "icon": "📝"
+   }
+  ],
+  "stays": [
+   "hotel"
+  ],
+  "highlights": [
+   "harbour",
+   "lighthouse",
+   "beach",
+   "cliffs",
+   "market",
+   "tearoom"
+  ],
+  "hero": [
+   "harbour-1",
+   "lighthouse-1",
+   "beach-1",
+   "cliffs-2",
+   "market-1",
+   "library-1"
+  ]
  }
 }
