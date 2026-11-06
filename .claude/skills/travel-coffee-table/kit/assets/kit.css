@@ -795,3 +795,5 @@ html[data-mode=print] .day-h.has-band h3,html[data-mode=print] .day-h.has-band .
   .day-h.has-band .day-num b{font-size:2.4rem}
   .hero-in{padding-left:20px;padding-right:calc(20px + var(--railw))}
 }
+/* long words and addresses never push a card wider than a phone */
+.alt,.near,.stop,.meals,.sheet-card,.info4 section{overflow-wrap:break-word;min-width:0}
