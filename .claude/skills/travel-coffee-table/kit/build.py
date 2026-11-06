@@ -175,6 +175,7 @@ LABELS.update({
     'view_read': 'Read', 'view_gallery': 'Gallery', 'view_switch': 'Page view', 'gallery_title': 'The trip in pictures',
     'gallery_intro': 'Photos with their credits, and posts from the official accounts. Posts load only when you tap them.',
     'g_play_ig': 'Instagram', 'g_play_tt': 'TikTok', 'g_open_fb': 'Facebook', 'g_from': 'From the official accounts',
+    'g_open_post': 'Open the post on',
     'g_embed_note': 'Instagram and TikTok see your device\'s internet address when a post loads.',
 })
 IG_POST = re.compile(r'^https://www\.instagram\.com/(p|reel)/([A-Za-z0-9_-]{5,40})/?$')
@@ -2026,11 +2027,13 @@ class Page:
             return f'https://www.tiktok.com/embed/v2/{m.group(2)}', 'g-tall'
         return '', 'g-sq'
 
-    def gallery_tile(self, shape, img, sid, line, credit_html, social=None):
+    def gallery_tile(self, shape, img, sid, line, credit_html, social=None, plan=None):
         st = self.stops[sid]
         pid = self.place_pid[st['place']]
         cats = self.stop_cats.get(sid) or []
         kick = ' · '.join(self.cat_labels[c] for c in cats[:2])
+        if plan:  # a post from a weather plan says so, so it never reads as the main plan
+            kick = f'{self.L["plan"].format(p=plan[-1].upper())} · {self.L[plan]}'
         cap = (f'<figcaption><span class="g-k">{E(kick)}</span>'
                f'<span class="g-name">{self.pl_link(pid, E(st["name"]), self.panels[pid]["anchor"])}</span>'
                + (f'<span class="g-line">{E(line)}</span>' if line else '')
@@ -2046,15 +2049,18 @@ class Page:
         label = self.L['g_play_ig'] if social['kind'] == 'instagram' else self.L['g_play_tt']
         btn = (f'<button type="button" class="g-play" aria-label="{E(label)}: @{E(social["by"])}, {E(st["name"])}">'
                f'<span aria-hidden="true">▶</span> {E(label)}<span class="g-by"> · @{E(social["by"])}</span></button>')
+        # once a post is playing, a way out to the post itself, in case the service shows an error or a limit instead
+        orig = (f'<a class="g-orig" href="{E(social["url"])}" target="_blank" rel="noopener" aria-label="{E(self.L["g_open_post"])} {E(label)}">'
+                f'{E(label)} ↗</a>')
         return (f'<figure class="g-tile {shape} g-social" data-kind="{E(social["kind"])}" data-embed="{E(embed)}" data-by="{E(social["by"])}"'
-                f'{self.cats_attr(cats)}>{pic}{btn}{cap}</figure>')
+                f'{self.cats_attr(cats)}>{pic}{btn}{orig}{cap}</figure>')
 
     def gallery_section(self):
         days = []
         total = 0
         for i, day in enumerate(self.days):
             n = i + 1
-            tiles, band = [], None
+            tiles, band, seen = [], None, set()
             for j, it in enumerate(day['stops']):
                 sid = it['stop']
                 st = self.stops[sid]
@@ -2067,10 +2073,27 @@ class Page:
                     shape = ('g-wide' if j % 2 == 0 else 'g-port') if k == 0 else 'g-sq'
                     tiles.append(self.gallery_tile(shape, ph, sid, line if k == 0 else '', self.credit(ph, original=False)))
                 for q, x in enumerate(st.get('social') or []):
+                    if x['url'] in seen:
+                        continue
+                    seen.add(x['url'])
                     _, shape = self.social_embed(x)
                     spare = allp[2:] or allp
                     poster = spare[q % len(spare)] if spare else None
                     tiles.append(self.gallery_tile(shape, poster, sid, line, self.credit(poster, original=False) if poster else '', social=x))
+            # posts curated for a Plan B or Plan C stop are shown too, after the main plan and marked with their plan
+            for plan in ('plan_b', 'plan_c'):
+                for it in day.get(plan) or []:
+                    sid = it['stop']
+                    st = self.stops[sid]
+                    allp = [self.photo(x, f'stops.{sid}.photos') for x in (st.get('photos') or [])]
+                    for q, x in enumerate(st.get('social') or []):
+                        if x['url'] in seen:
+                            continue
+                        seen.add(x['url'])
+                        _, shape = self.social_embed(x)
+                        poster = allp[q % len(allp)] if allp else None
+                        tiles.append(self.gallery_tile(shape, poster, sid, it.get('role') or '', self.credit(poster, original=False) if poster else '',
+                                                       social=x, plan=plan))
             if not tiles:
                 continue
             total += len(tiles)

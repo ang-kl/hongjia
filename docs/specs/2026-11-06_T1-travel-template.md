@@ -203,12 +203,14 @@ The skill and kit live in `.claude/skills/travel-coffee-table/`, so a Claude ses
   - "Hungry?" and "Shop nearby": Near me filtered by category.
   - `awards` chips, also shown in the panel.
   - The Gallery view: a Read / Gallery switch, a mosaic of wide, portrait and tall tiles with credits and place links, and posts loaded only on a tap from two checked embed addresses.
+    - Posts on Plan B and Plan C stops are shown after the main plan, marked with their plan, once each.
+    - A playing post keeps a link to the post itself. In a local check, TikTok answered "ratelimit triggered" in place of a video; the link is the way out.
 - **Site:** the privacy page now covers TikTok and the Gallery.
 - **Checks:**
   - Kit tests (45):
     - Taste & Shop rendering and rules;
     - awards rules, and no stars in the page;
-    - the Gallery's markup and shapes;
+    - the Gallery's markup and shapes, Plan B posts and the link to each post;
     - credits on every picture;
     - no post loading before a tap;
     - a browser test of the switch and tap-to-load at desktop and phone widths.

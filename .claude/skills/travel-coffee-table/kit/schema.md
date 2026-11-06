@@ -384,6 +384,9 @@ on its title, then a mosaic of three shapes: wide photos, portrait cards (Instag
 and the photo's credit. Posts come from `stops[].social` and load only when tapped, from the embed
 addresses `https://www.instagram.com/(p|reel)/<code>/embed/captioned/` and
 `https://www.tiktok.com/embed/v2/<id>`; Facebook posts open Facebook. Reading mode keeps every word.
+Posts on a Plan B or Plan C stop come after the day's main plan, marked with their plan ("Plan B · If it
+rains"), and a post shown twice in a day appears once. A playing post keeps a small link to the post itself,
+in case the service shows an error or a limit in place of the post.
 
 ## Place panels, Share and Near me
 

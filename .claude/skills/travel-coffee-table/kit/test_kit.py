@@ -107,10 +107,11 @@ const { chromium } = require('playwright');
     await p.click('.g-social[data-kind="instagram"] .g-play');
     await p.waitForTimeout(200);
     const live = await p.evaluate(() => [...document.querySelectorAll('#gallery iframe')].map(f => f.getAttribute('src')));
+    const orig = await p.evaluate(() => [...document.querySelectorAll('#gallery .g-orig')].map(a => (a.closest('.g-live') ? 'live ' : 'idle ') + getComputedStyle(a).display));
     await p.click('.viewsw button[data-view="read"]');
     await p.waitForTimeout(200);
     const back = await p.evaluate(() => ({ view: document.documentElement.getAttribute('data-view'), overview: getComputedStyle(document.getElementById('overview')).display }));
-    out[name] = Object.assign(g, { before, live, back, errors });
+    out[name] = Object.assign(g, { before, live, back, errors, orig });
     await ctx.close();
   }
   await browser.close();
@@ -1079,6 +1080,12 @@ class KitTest(unittest.TestCase):
         embeds = {t.attrs.get('data-kind'): t.attrs.get('data-embed') for t in tiles if 'g-social' in t.classes()}
         self.assertEqual(embeds['tiktok'], 'https://www.tiktok.com/embed/v2/7300000000000000001')
         self.assertIn(embeds['instagram'], ('https://www.instagram.com/p/C0ExampleBay1/embed/captioned/', 'https://www.instagram.com/reel/C0ExampleReel/embed/captioned/'))
+        for t in tiles:
+            if t.attrs.get('data-kind') in ('instagram', 'tiktok'):
+                o = find(t, 'a', 'g-orig')
+                self.assertEqual(len(o), 1, 'a playing post keeps a way out to the post itself')
+                self.assertTrue(re.match(r'^https://www\.(instagram|tiktok)\.com/', o[0].attrs.get('href', '')))
+                self.assertEqual(o[0].attrs.get('target'), '_blank')
         fb = [t for t in tiles if t.attrs.get('data-kind') == 'facebook'][0]
         self.assertEqual(find(fb, 'a', 'g-play')[0].attrs.get('target'), '_blank', 'Facebook is a link only')
         for bad in ({'kind': 'instagram', 'url': 'https://www.instagram.com/examplebay/', 'by': 'x'},
@@ -1089,6 +1096,13 @@ class KitTest(unittest.TestCase):
             d['stops']['lighthouse']['social'] = [bad]
             with self.assertRaises(build.KitError):
                 build.build(d)
+        # a post curated for a weather-plan stop still reaches the Gallery, once, marked with its plan
+        d = copy.deepcopy(self.data)
+        d['stops']['tearoom']['social'] = [{'kind': 'tiktok', 'url': 'https://www.tiktok.com/@examplebay/video/7300000000000000009', 'by': 'examplebay'}]
+        r = build.parse_html(build.build(d))
+        pt = [t for t in find(find(r, 'section', id='gallery')[0], 'figure', 'g-tile') if 'tiktok.com/embed/v2/7300000000000000009' in t.attrs.get('data-embed', '')]
+        self.assertEqual(len(pt), 1, 'one tile though the stop is in Plan B and Plan C')
+        self.assertIn('Plan B', find(pt[0], 'span', 'g-k')[0].text())
         js = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read())
         self.assertIn(r"varEMBED_OK=/^https:\/\/www\.instagram\.com\/(p|reel)\/[A-Za-z0-9_-]{5,40}\/embed\/captioned\/$|^https:\/\/www\.tiktok\.com\/embed\/v2\/[0-9]{8,25}$/;", js)
         css = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read())
@@ -1116,6 +1130,7 @@ class KitTest(unittest.TestCase):
             self.assertTrue(any(u in r['live'] for u in ('https://www.instagram.com/p/C0ExampleBay1/embed/captioned/',
                                                           'https://www.instagram.com/reel/C0ExampleReel/embed/captioned/')), k)
             self.assertEqual(r['back'], {'view': None, 'overview': 'block'}, k)
+            self.assertEqual(sorted(set(r['orig'])), ['idle none', 'live flex'] if len(r['orig']) > 2 else ['live flex'], k)
 
 
 if __name__ == '__main__':
