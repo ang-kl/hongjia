@@ -716,6 +716,11 @@ class Page:
         out = self.TOKEN.sub(tok, out)
         return re.sub(r'\s+', ' ', out).strip()
 
+    @staticmethod
+    def unaccent(s):
+        """A title without its accent markers, for plain text (the day picker, tool tips, the tour)."""
+        return re.sub(r'(?<!\*)\*(?!\*)([^*]+?)\*(?!\*)', r'\1', str(s))
+
     def accent(self, s):
         """A title, escaped, with *one word* set in the accent italic."""
         return re.sub(r'(?<!\*)\*(?!\*)([^*]+?)\*(?!\*)', r'<em>\1</em>', E(s))
@@ -1712,7 +1717,7 @@ class Page:
                  f'Land: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>.</figcaption></figure>')
         stays = ''.join(self.ocard(s, 'opener.stays') for s in o.get('stays') or [])
         highs = ''.join(self.ocard(s, 'opener.highlights') for s in o.get('highlights') or [])
-        return (f'<section id="opener" class="opener" aria-label="{E(title)}">'
+        return (f'<section id="opener" class="opener" aria-label="{E(self.unaccent(title))}">'
                 f'<div class="hero"><div class="hero-slides">{"".join(slides)}</div><div class="hero-in">'
                 + (f'<p class="mono kicker hero-k">{E(o.get("kicker") or m.get("kicker"))}</p>' if (o.get('kicker') or m.get('kicker')) else '')
                 + f'<h1 class="hero-t">{self.accent(title)}</h1>'
@@ -1993,7 +1998,7 @@ class Page:
         marks = []
         for i, d in enumerate(self.days):
             n = i + 1
-            marks.append(f'<a class="rail-mark day" href="#day-{n}" data-day="{i}" data-tip="{E(self.L["day"])} {n} · {E(d["when"])} · {E(d["title"])}" aria-label="{E(self.L["day"])} {n}, {E(d["when"])}"><i></i><b>{E(self.short(d))}</b></a>')
+            marks.append(f'<a class="rail-mark day" href="#day-{n}" data-day="{i}" data-tip="{E(self.L["day"])} {n} · {E(d["when"])} · {E(self.unaccent(d["title"]))}" aria-label="{E(self.L["day"])} {n}, {E(d["when"])}"><i></i><b>{E(self.short(d))}</b></a>')
             for it in d['stops']:
                 nm = self.stops[it['stop']]['name']
                 marks.append(f'<a class="rail-mark" href="#d{n}-{E(it["stop"])}" data-tip="{E(self.L["day"])} {n} · {E(nm)}" aria-label="{E(self.L["day"])} {n}: {E(nm)}" tabindex="-1"><i></i></a>')
@@ -2117,7 +2122,7 @@ class Page:
                 place_cats[self.stops[it['stop']]['place']] += [c for c in self.stop_cats.get(it['stop']) or [] if c not in place_cats[self.stops[it['stop']]['place']]]
             for s in stops:
                 s['cats'] = place_cats.get(s['id'], [])
-            days.append(dict(n=i + 1, label=f'{self.L["day"]} {i + 1} · {d["when"]}', title=d['title'], iso=d.get('iso') or '',
+            days.append(dict(n=i + 1, label=f'{self.L["day"]} {i + 1} · {d["when"]}', title=self.unaccent(d['title']), iso=d.get('iso') or '',
                              weather=d.get('weather') or '', stops=stops, legs=legs))
         ui = {k: self.L[k] for k in ('fly', 'fly_stop', 'short_walk', 'optional', 'map_fallback', 'tiles_notice', 'wx_from', 'wx_error', 'wx_past', 'wx_none',
                                      'wx_frame', 'wx_credit', 'wx_licence', 'wx_rain', 'wx_gust', 'wx_wind', 'wx_uv', 'wx_suggests', 'wx_fits',

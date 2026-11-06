@@ -971,6 +971,8 @@ class KitTest(unittest.TestCase):
         self.assertIn('Arrive by the <em>sea</em>', self.html)
         page = build.Page(copy.deepcopy(self.data))
         self.assertEqual(page.accent('**not** an *accent* <b>'), '**not** an <em>accent</em> &lt;b&gt;')
+        self.assertEqual(self.trip['days'][0]['title'], 'Arrive by the sea', 'plain text never shows the accent markers')
+        self.assertNotIn('*sea*', self.html)
 
     def test_motion_only_through_the_web_animations_helper(self):
         js = open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read()
