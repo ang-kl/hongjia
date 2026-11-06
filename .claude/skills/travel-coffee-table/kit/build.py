@@ -1,0 +1,1333 @@
+#!/usr/bin/env python3
+"""Travel coffee-table page kit.
+
+Turns one trip data file (JSON, described in schema.md) into one self-contained HTML page, and
+checks finished pages against the owner's rules.
+
+    python3 build.py trip.json -o trip.html        render one page
+    python3 build.py --check trip.html [more ...]  check pages (a .json is rendered, then checked)
+
+Python 3 standard library only. Every value from the data file is escaped when it is written into
+the page; inline markup in text fields is limited to the tokens listed in schema.md. The page's
+script builds its DOM with textContent and never uses innerHTML.
+"""
+import argparse
+import datetime
+import json
+import os
+import re
+import sys
+import urllib.parse
+from html import escape, unescape
+from html.parser import HTMLParser
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ASSETS = os.path.join(HERE, 'assets')
+
+LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+EMOJI = {'web': '🌐', 'tel': '📞', 'mail': '✉️', 'book': '🎟️', 'ig': '📸', 'fb': '📘', 'tt': '🎵', 'yt': '▶️',
+         'x': '✖️', 'map': '📍', 'earth': '🌏', 'tag': '#️⃣', 'tts': '🎬'}
+LINK_LABELS = {'web': 'Website', 'tel': 'Phone', 'mail': 'Email', 'book': 'Book', 'ig': 'Instagram', 'fb': 'Facebook',
+               'tt': 'TikTok', 'yt': 'YouTube', 'x': 'X'}
+SCRIPT_HOSTS = ('cdnjs.cloudflare.com', 'cdn.jsdelivr.net', 'unpkg.com', 'cdn.tailwindcss.com')
+PLACE_KEY = re.compile(r'^[a-z0-9][a-z0-9-]{0,29}$')
+ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
+HANDLE = re.compile(r'^[A-Za-z0-9._-]{1,60}$')
+DATE = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+MAX_WEATHER_PLACES = 12
+MAX_SPAN_DAYS = 60
+FORECAST_LEAD_DAYS = 15  # Open-Meteo forecasts 16 days, today included
+METRICS = ('code', 'tmax', 'tmin', 'rain_pct', 'rain_mm', 'wind_kmh', 'gust_kmh', 'uv')
+OPS = ('>=', '>', '<=', '<', 'in')
+PLANS = ('a', 'b', 'c')
+SECTION_ORDER = ['overview', 'audience', 'plans', 'map', 'days', 'concierge', 'holidays', 'stays', 'transport',
+                 'backups', 'checklist', 'upgrades', 'credits', 'sources']
+PROSE = ('overview', 'holidays', 'stays', 'transport', 'backups', 'checklist')
+NAV_DEFAULT = {'overview': 'Overview', 'audience': 'Who', 'plans': 'Plans & weather', 'map': 'Map', 'days': 'Days',
+               'concierge': 'Concierge', 'holidays': 'Holidays', 'stays': 'Stays', 'transport': 'Transport',
+               'backups': 'Backups', 'checklist': 'Checklist', 'upgrades': 'Upgrades', 'credits': 'Credits',
+               'sources': 'Sources'}
+
+# Suitability marks a stop can carry: mark -> (icon, {value: (level, label)}). Levels: good, mixed, poor.
+MARKS = {
+    'step_free': ('♿', {'yes': ('good', 'Step-free'), 'partial': ('mixed', 'Partly step-free'), 'no': ('poor', 'Not step-free')}),
+    'walking': ('🚶', {'short': ('good', 'Short walks'), 'moderate': ('mixed', 'Some walking'), 'long': ('poor', 'Long walks')}),
+    'shade': ('⛱️', {'yes': ('good', 'Shade'), 'some': ('mixed', 'Some shade'), 'no': ('poor', 'Little shade')}),
+    'seating': ('🪑', {'yes': ('good', 'Seating'), 'some': ('mixed', 'Some seating'), 'no': ('poor', 'Few seats')}),
+    'toilets': ('🚻', {'yes': ('good', 'Toilets'), 'nearby': ('mixed', 'Toilets nearby'), 'no': ('poor', 'No toilets')}),
+    'kids': ('🧒', {'yes': ('good', 'Good with children'), 'some': ('mixed', 'Some for children'), 'no': ('poor', 'Not for small children')}),
+    'seniors': ('🧓', {'yes': ('good', 'Easy for seniors'), 'some': ('mixed', 'Fine with care'), 'no': ('poor', 'Hard going for seniors')}),
+}
+MARK_NAMES = {'step_free': 'step-free', 'walking': 'walking', 'shade': 'shade', 'seating': 'seating', 'toilets': 'toilets',
+              'kids': 'children', 'seniors': 'seniors'}
+
+# WMO weather codes -> (icon, label), for the live forecast strip.
+WMO = {0: ('☀️', 'Clear'), 1: ('🌤️', 'Mainly clear'), 2: ('⛅', 'Partly cloudy'), 3: ('☁️', 'Overcast'), 45: ('🌫️', 'Fog'),
+       48: ('🌫️', 'Freezing fog'), 51: ('🌦️', 'Light drizzle'), 53: ('🌦️', 'Drizzle'), 55: ('🌧️', 'Heavy drizzle'),
+       56: ('🌧️', 'Freezing drizzle'), 57: ('🌧️', 'Freezing drizzle'), 61: ('🌦️', 'Light rain'), 63: ('🌧️', 'Rain'),
+       65: ('🌧️', 'Heavy rain'), 66: ('🌧️', 'Freezing rain'), 67: ('🌧️', 'Freezing rain'), 71: ('🌨️', 'Light snow'),
+       73: ('🌨️', 'Snow'), 75: ('❄️', 'Heavy snow'), 77: ('🌨️', 'Snow grains'), 80: ('🌦️', 'Showers'), 81: ('🌧️', 'Showers'),
+       82: ('⛈️', 'Violent showers'), 85: ('🌨️', 'Snow showers'), 86: ('🌨️', 'Snow showers'), 95: ('⛈️', 'Thunderstorm'),
+       96: ('⛈️', 'Thunderstorm with hail'), 99: ('⛈️', 'Thunderstorm with hail')}
+MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+# Every visible string the kit itself writes. A data file may override any of them in "labels".
+LABELS = {
+    'skip': 'Skip to the day plans', 'trip_facts': 'Trip facts', 'display_mode': 'Display mode', 'mode_light': 'Light',
+    'mode_print': 'Print', 'print_pdf': 'Print / save PDF', 'nav': 'Sections and days', 'nav_days': 'Days', 'day': 'Day',
+    'show_on_map': 'Show on map', 'stops_for_day': 'Stops for day {n}', 'links': 'Links', 'google_maps': 'Google Maps',
+    'google_earth': 'Google Earth', 'earth_3d': '3D', 'ig_photos': 'Instagram photos', 'tiktok_videos': 'TikTok videos',
+    'tiktok_search': 'search',
+    'links_note': "Accounts shown are the ones the venue or its tourism body links from its own website; #tags and searches show other people's posts.",
+    'details': 'Details', 'prompts3': 'Three photo prompts', 'prompts': 'Photo prompts', 'map_drawer': 'Map drawer: Google pin',
+    'pin_search': 'Pin search: "{q}". Coordinates {lat}, {lng} ({note})', 'concierge_drawer': 'Concierge: {name}',
+    'full_panel': 'Full {name} panel', 'latest_posts': 'Latest posts',
+    'embed_note': "Live from the official accounts; Instagram and TikTok see your device's internet address when this opens.",
+    'ig_latest': 'Latest Instagram posts from @{h}', 'tt_latest': 'Latest TikTok videos from @{h}',
+    'enlarge': 'Enlarge photo: {alt}', 'photo': 'Photo', 'original': 'original', 'image_url': 'Image URL', 'licensed': 'licensed',
+    'by': 'by', 'nearby_kicker': 'More nearby · optional extras, not in the timings', 'nearby_aria': 'More nearby, optional, day {n}',
+    'rail': 'Timeline: drag or tap to move through the trip', 'rail_start': 'Start of the guide', 'lightbox': 'Photo viewer',
+    'lb_close': 'Close photo viewer', 'lb_prev': 'Previous photo', 'lb_next': 'Next photo', 'emergency_numbers': 'Emergency numbers',
+    'areas': 'Areas', 'back_to_top': 'Back to top ↑', 'map_aria': 'Map command centre', 'map_kicker': 'Map command centre',
+    'day_label': 'Day', 'choose_day': 'Choose a day', 'map_views': 'Map views', 'tab_route': 'Route plotter', 'tab_pin': 'Google pin',
+    'tab_dir': 'Leg directions', 'fly': 'Fly route', 'fly_stop': 'Stop', 'safety': 'Hospitals & police', 'route_map': 'Route map',
+    'stop_label': 'Stop', 'choose_stop': 'Choose a stop', 'leg_label': 'Leg', 'choose_leg': 'Choose a leg',
+    'map_note_route': 'Lines follow the route data in this guide; dashed lines are short walks. Not live navigation.',
+    'map_note_pin': "Google Maps searches the stop's name and address. Check the returned pin before travelling.",
+    'map_note_dir': 'Google directions for one leg. A navigation aid, not proof of road time.',
+    'map_fallback': 'The route map could not load here. The Google pin and directions tabs still work.',
+    'short_walk': 'short walk', 'optional': 'optional', 'to': 'to',
+    'plan_a': 'As planned', 'plan_b': 'If it rains', 'plan_c': 'Heat, wind or storm', 'plan': 'Plan {p}',
+    'plans_for_day': 'Plans for day {n}', 'choose_plan': 'Choose a plan', 'chosen': 'Chosen', 'suggested': 'Forecast suggests',
+    'plans_missing': 'Plan B (rain) and Plan C (heat, wind or storm) are not listed for this day yet.',
+    'plans_rules': 'Rules', 'replaces': 'Replaces', 'plan_for_day': 'Plan {p} for day {n}: {label}',
+    'wx_from': 'Forecast from {date}', 'wx_error': 'No forecast just now: {error}', 'wx_past': 'This day is over; no forecast.',
+    'wx_none': 'No forecast for this day.', 'wx_frame': 'The live forecast shows when this page is opened on the family site.',
+    'wx_credit': 'Weather data by', 'wx_licence': 'CC BY 4.0', 'wx_rain': 'rain', 'wx_gust': 'gusts', 'wx_wind': 'wind', 'wx_uv': 'UV',
+    'wx_suggests': 'Suggests Plan {p}: {why}', 'wx_fits': 'Fits Plan A', 'wx_no_plan': 'Suggests Plan {p} ({why}); none is listed for this day yet.',
+    'wx_max_min': 'max {max}° / min {min}°',
+    'lens_all': 'All travellers', 'lens_choose': 'Choose a kind of traveller', 'lens_fits': 'fits', 'lens_check': 'check',
+    'lens_unknown': 'not checked', 'lens_for': 'For {label}', 'party_for': 'For this group', 'suits_aria': 'Suitability',
+    'lens_note': 'Choosing a kind of traveller only changes what this page highlights. Nothing is hidden and nothing is sent.',
+    'lens_looks_for': 'Looks for', 'party_needs': 'What matters most to this group',
+    'upg_tag': 'Optional upgrade', 'upg_price': 'Indicative price', 'upg_book': 'Book ahead', 'upg_source': 'Source',
+    'upg_note': 'Optional. Each upgrade sits beside the plan and never replaces it. Prices are indicative, not quotes.',
+    'carried_summary': 'Links carried over from the earlier version',
+}
+
+
+class KitError(Exception):
+    pass
+
+
+def E(s):
+    return escape('' if s is None else str(s), quote=True)
+
+
+def host_of(url):
+    try:
+        return urllib.parse.urlsplit(url).hostname or ''
+    except ValueError:
+        return ''
+
+
+def check_url(url, where, allow=('https',)):
+    """Links must be https (or tel:, mailto:, an in-page #anchor where allowed). Raises KitError."""
+    if not isinstance(url, str) or not url:
+        raise KitError(f'{where}: missing link')
+    if url.startswith('#') and '#' in allow:
+        return url
+    scheme = url.split(':', 1)[0].lower() if ':' in url else ''
+    if scheme not in allow:
+        raise KitError(f'{where}: link must be {" or ".join(a + ":" if a != "#" else "#anchor" for a in allow)} ({url[:80]})')
+    if scheme == 'https' and not host_of(url):
+        raise KitError(f'{where}: link has no host ({url[:80]})')
+    return url
+
+
+def check_image(src, where):
+    if isinstance(src, str) and src.startswith('data:image/'):
+        return src
+    return check_url(src, where)
+
+
+def parse_date(s, where):
+    if not isinstance(s, str) or not DATE.match(s):
+        raise KitError(f'{where}: date must be YYYY-MM-DD ({s!r})')
+    try:
+        return datetime.date.fromisoformat(s)
+    except ValueError:
+        raise KitError(f'{where}: not a real date ({s})')
+
+
+def human_date(d):
+    return f'{d.day} {MONTHS[d.month - 1]} {d.year}'
+
+
+def as_list(v):
+    if v is None:
+        return []
+    return v if isinstance(v, list) else [v]
+
+
+def safe_json(obj):
+    """JSON for a <script type="application/json"> block: no '<', '>' or '&' survive as raw characters."""
+    s = json.dumps(obj, separators=(',', ':'), ensure_ascii=False)
+    return s.replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026')
+
+
+class Page:
+    def __init__(self, data):
+        if not isinstance(data, dict):
+            raise KitError('the data file must hold one JSON object')
+        self.d = data
+        self.L = dict(LABELS)
+        self.L.update(data.get('labels') or {})
+        self.marks = {k: (v[0], dict(v[1])) for k, v in MARKS.items()}
+        for k, over in ((data.get('labels') or {}).get('marks') or {}).items():
+            if k in self.marks:
+                self.marks[k][1].update({v: (self.marks[k][1].get(v, ('mixed', ''))[0], lab) for v, lab in over.items()})
+        self.sources = data.get('sources') or {}
+        self.places = data.get('places') or {}
+        self.legs = data.get('legs') or {}
+        self.photos = data.get('photos') or {}
+        self.stops = data.get('stops') or {}
+        self.areas = data.get('areas') or {}
+        self.days = data.get('days') or []
+        self.plans = data.get('plans') or None
+        self.weather = data.get('weather') or None
+        self.audience = data.get('audience') or None
+        self.validate()
+
+    # ------------------------------------------------------------------ validation
+    def validate(self):
+        d = self.d
+        meta = d.get('meta') or {}
+        for k in ('title', 'lang'):
+            if not meta.get(k):
+                raise KitError(f'meta.{k} is required')
+        if not (d.get('masthead') or {}).get('title'):
+            raise KitError('masthead.title is required')
+        for key, s in self.sources.items():
+            if not s.get('label'):
+                raise KitError(f'sources.{key}: label is required')
+            if s.get('url'):
+                check_url(s['url'], f'sources.{key}')
+            if s.get('tier', 'checked') not in ('checked', 'carried'):
+                raise KitError(f'sources.{key}: tier must be "checked" or "carried"')
+        for key, p in self.places.items():
+            for k in ('name', 'lat', 'lng', 'q'):
+                if p.get(k) in (None, ''):
+                    raise KitError(f'places.{key}.{k} is required')
+            if not all(isinstance(p[k], (int, float)) and not isinstance(p[k], bool) for k in ('lat', 'lng')) or not (-90 <= p['lat'] <= 90 and -180 <= p['lng'] <= 180):
+                raise KitError(f'places.{key}: coordinates out of range')
+        for key, p in self.photos.items():
+            self.check_photo(p, f'photos.{key}')
+        for key, st in self.stops.items():
+            if not st.get('name') or st.get('place') not in self.places:
+                raise KitError(f'stops.{key}: name and a known place are required')
+            for pid in st.get('photos') or []:
+                if pid not in self.photos:
+                    raise KitError(f'stops.{key}: unknown photo {pid}')
+            if st.get('area') and st['area'] not in self.areas:
+                raise KitError(f'stops.{key}: unknown area {st["area"]}')
+            for m, v in (st.get('suits') or {}).items():
+                if m not in self.marks or v not in self.marks[m][1]:
+                    raise KitError(f'stops.{key}.suits: {m}={v!r} is not a known mark (see schema.md)')
+            for e in st.get('embeds') or []:
+                if e.get('kind') not in ('instagram', 'tiktok') or not HANDLE.match(e.get('handle') or ''):
+                    raise KitError(f'stops.{key}.embeds: kind must be instagram or tiktok, with a plain handle')
+            for i, c in enumerate(st.get('clips') or []):
+                for k in ('poster', 'alt', 'cap', 'credit'):
+                    if not c.get(k):
+                        raise KitError(f'stops.{key}.clips[{i}].{k} is required')
+                check_image(c['poster'], f'stops.{key}.clips[{i}].poster')
+                if not c.get('sources'):
+                    raise KitError(f'stops.{key}.clips[{i}]: at least one video source is required')
+                for s in c['sources']:
+                    check_url(s.get('src'), f'stops.{key}.clips[{i}]')
+        if not self.days:
+            raise KitError('days: at least one day is required')
+        for i, day in enumerate(self.days):
+            w = f'days[{i}]'
+            for k in ('when', 'title'):
+                if not day.get(k):
+                    raise KitError(f'{w}.{k} is required')
+            route = day.get('route') or []
+            if not route or any(p not in self.places for p in route):
+                raise KitError(f'{w}.route: list the day\'s places (known place ids)')
+            if len(route) > len(LETTERS):
+                raise KitError(f'{w}.route: at most {len(LETTERS)} places')
+            walk = set(day.get('walk') or [])
+            for a, b in zip(route, route[1:]):
+                k = f'{a}>{b}'
+                if k not in walk and k not in self.legs:
+                    raise KitError(f'{w}: leg {k} is missing (add it to "legs", or list it in the day\'s "walk")')
+            if not day.get('stops'):
+                raise KitError(f'{w}.stops: Plan A needs at least one stop')
+            for plan in ('stops', 'plan_b', 'plan_c'):
+                for it in day.get(plan) or []:
+                    if it.get('stop') not in self.stops:
+                        raise KitError(f'{w}.{plan}: unknown stop {it.get("stop")!r}')
+            if day.get('iso'):
+                parse_date(day['iso'], f'{w}.iso')
+        self.validate_weather()
+        self.validate_plans()
+        self.validate_audience()
+        for gi, g in enumerate((d.get('upgrades') or {}).get('groups') or []):
+            for ii, u in enumerate(g.get('items') or []):
+                for k in ('name', 'line', 'price', 'book_ahead', 'source'):
+                    if not u.get(k):
+                        raise KitError(f'upgrades.groups[{gi}].items[{ii}].{k} is required')
+                for s in as_list(u['source']):
+                    if s not in self.sources:
+                        raise KitError(f'upgrades.groups[{gi}].items[{ii}]: unknown source {s}')
+
+    def check_photo(self, p, where):
+        for k in ('src', 'alt', 'cap', 'credit'):
+            if not p.get(k):
+                raise KitError(f'{where}.{k} is required (every photo needs a picture, a description, a caption and a credit)')
+        check_image(p['src'], where + '.src')
+        for k in ('credit_url', 'licence_url'):
+            if p.get(k):
+                check_url(p[k], f'{where}.{k}')
+
+    def validate_weather(self):
+        if not self.weather:
+            return
+        places = self.weather.get('places') or []
+        if len(places) > MAX_WEATHER_PLACES:
+            raise KitError(f'weather.places: at most {MAX_WEATHER_PLACES} places')
+        seen = set()
+        for i, p in enumerate(places):
+            w = f'weather.places[{i}]'
+            if not isinstance(p.get('key'), str) or not PLACE_KEY.match(p['key']) or p['key'] in seen:
+                raise KitError(f'{w}.key: lowercase letters, digits and -, up to 30 characters, no repeats')
+            seen.add(p['key'])
+            for k, lo, hi in (('lat', -90, 90), ('lon', -180, 180)):
+                v = p.get(k)
+                if not isinstance(v, (int, float)) or isinstance(v, bool) or not lo <= v <= hi:
+                    raise KitError(f'{w}.{k}: a number from {lo} to {hi}')
+            a, b = parse_date(p.get('start'), w + '.start'), parse_date(p.get('end'), w + '.end')
+            if b < a or (b - a).days >= MAX_SPAN_DAYS:
+                raise KitError(f'{w}: end must not be before start, and a place covers at most {MAX_SPAN_DAYS} days')
+        for i, day in enumerate(self.days):
+            k = day.get('weather')
+            if k:
+                if k not in seen:
+                    raise KitError(f'days[{i}].weather: unknown forecast place {k}')
+                if not day.get('iso'):
+                    raise KitError(f'days[{i}]: a day with a forecast place needs its iso date')
+
+    def validate_plans(self):
+        if not self.plans:
+            return
+        for i, r in enumerate(self.plans.get('rules') or []):
+            w = f'plans.rules[{i}]'
+            if r.get('plan') not in ('b', 'c') or r.get('metric') not in METRICS or r.get('op') not in OPS or not r.get('text'):
+                raise KitError(f'{w}: needs plan (b or c), metric ({", ".join(METRICS)}), op ({" ".join(OPS)}), value and text')
+            v = r.get('value')
+            if r['op'] == 'in':
+                if not isinstance(v, list) or not all(isinstance(x, (int, float)) for x in v):
+                    raise KitError(f'{w}.value: a list of numbers for "in"')
+            elif not isinstance(v, (int, float)) or isinstance(v, bool):
+                raise KitError(f'{w}.value: a number')
+
+    def validate_audience(self):
+        a = self.audience
+        if not a:
+            return
+        if a.get('mode') not in ('party', 'lenses'):
+            raise KitError('audience.mode must be "party" or "lenses"')
+        for m in a.get('needs') or []:
+            if m not in self.marks:
+                raise KitError(f'audience.needs: unknown mark {m}')
+        if a['mode'] == 'lenses':
+            lenses = a.get('lenses') or []
+            if not lenses:
+                raise KitError('audience.lenses: list at least one kind of traveller')
+            seen = set()
+            for i, l in enumerate(lenses):
+                if not isinstance(l.get('key'), str) or not PLACE_KEY.match(l['key']) or l['key'] in seen or not l.get('label'):
+                    raise KitError(f'audience.lenses[{i}]: key (lowercase, unique) and label are required')
+                seen.add(l['key'])
+                for m in l.get('needs') or []:
+                    if m not in self.marks:
+                        raise KitError(f'audience.lenses[{i}].needs: unknown mark {m}')
+
+    # ------------------------------------------------------------------ inline text
+    TOKEN = re.compile(r'\[\[(src|tel|link):([^\]|]*)(?:\|([^\]]*))?\]\]')
+
+    def rich(self, s, where='text'):
+        """Escape a text field, then expand the kit's inline tokens (schema.md, "Text fields")."""
+        if s is None:
+            return ''
+        if isinstance(s, list):
+            return ' '.join(self.rich(x, where) for x in s)
+        if not isinstance(s, str):
+            raise KitError(f'{where}: text expected')
+        out = E(s)
+        if out.count('[[added]]') != out.count('[[/added]]'):
+            raise KitError(f'{where}: [[added]] and [[/added]] must pair up')
+        out = out.replace('[[added]]', '<span class="added">').replace('[[/added]]', '</span>').replace('[[br]]', '<br>')
+        out = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', out)
+        out = self.TOKEN.sub(lambda m: self.token(m, where), out)
+        if '[[' in out:
+            raise KitError(f'{where}: unknown token near {out[out.index("[["):][:40]!r}')
+        return out
+
+    def token(self, m, where):
+        kind, a, b = m.group(1), unescape(m.group(2)), unescape(m.group(3)) if m.group(3) is not None else None
+        if kind == 'src':
+            return self.src_tag(a, b, where)
+        if kind == 'tel':
+            num = re.sub(r'[\s()-]', '', a)
+            if not re.match(r'^\+?[0-9]{2,16}$', num):
+                raise KitError(f'{where}: phone number {a!r}')
+            return f'<a class="tel" href="tel:{E(num)}">{E(b or a)}</a>'
+        url = check_url(a, where, ('https', 'mailto', 'tel', '#'))
+        ext = '' if url.startswith('#') else ' target="_blank" rel="noopener"'
+        return f'<a href="{E(url)}"{ext}>{E(b or url)}</a>'
+
+    def src_tag(self, key, label=None, where='text'):
+        s = self.sources.get(key)
+        if not s:
+            raise KitError(f'{where}: unknown source {key!r}')
+        cls = 'src src-o' if s.get('tier') == 'carried' else 'src'
+        tip = s.get('tooltip') or (f'{s.get("title", "")}, opened {s["opened"]}' if s.get('opened') else s.get('title', s['label']))
+        if s.get('url'):
+            return f'<a class="{cls}" href="{E(s["url"])}" target="_blank" rel="noopener" title="{E(tip)}">{E(label or s["label"])}</a>'
+        return f'<span class="{cls}" title="{E(tip)}">{E(label or s["label"])}</span>'
+
+    def url_or_source(self, item, where):
+        if item.get('source'):
+            s = self.sources.get(item['source'])
+            if not s or not s.get('url'):
+                raise KitError(f'{where}: source {item["source"]!r} has no link')
+            return s['url']
+        return check_url(item.get('url'), where)
+
+    def ext_link(self, url, text):
+        return f'<a href="{E(url)}" target="_blank" rel="noopener">{E(text)}</a>'
+
+    def fmt(self, key, **kw):
+        return self.L[key].format(**kw)
+
+    # ------------------------------------------------------------------ photos
+    def photo(self, ref, where):
+        if isinstance(ref, dict):
+            self.check_photo(ref, where)
+            return ref
+        if ref not in self.photos:
+            raise KitError(f'{where}: unknown photo {ref!r}')
+        return self.photos[ref]
+
+    def credit(self, p, original=True):
+        pre = E(p.get('credit_prefix') or self.L['photo'])
+        if p.get('host') and p.get('credit_url'):
+            out = f'{pre}: {E(p["credit"])} · {self.ext_link(p["credit_url"], p["host"])}'
+        elif p.get('credit_url'):
+            out = f'{pre}: {self.ext_link(p["credit_url"], p["credit"])}'
+        else:
+            out = f'{pre}: {E(p["credit"])}'
+        if p.get('licence_url'):
+            out += f' · {self.ext_link(p["licence_url"], p.get("licence") or "licence")}'
+        elif original and p['src'].startswith('https://'):
+            out += f' · {self.ext_link(p["src"], self.L["original"])}'
+        return out
+
+    def zoom_img(self, p):
+        return (f'<button type="button" class="zoom" data-zoom aria-label="{E(self.fmt("enlarge", alt=p["alt"]))}" data-cap="{E(p["cap"])}">'
+                f'<img src="{E(p["src"])}" alt="{E(p["alt"])}" loading="lazy" decoding="async" referrerpolicy="no-referrer"></button>')
+
+    def tile(self, p, slot):
+        return (f'<figure class="tile" data-slot="{slot}">{self.zoom_img(p)}'
+                f'<figcaption><span class="cap">{E(p["cap"])}</span> <span class="credit">{self.credit(p)}</span></figcaption></figure>')
+
+    def bento(self, ids, where):
+        real = [self.photo(x, where) for x in (ids or []) if x][:4]
+        if not real:
+            return ''
+        return f'<div class="bento" data-count="{len(real)}">' + ''.join(self.tile(p, i) for i, p in enumerate(real)) + '</div>'
+
+    def small_photo(self, ref, where, cls='near-photo'):
+        p = self.photo(ref, where)
+        return (f'<figure class="{cls}">{self.zoom_img(p)}<figcaption><span class="credit">{self.credit(p, original=False)}</span></figcaption></figure>')
+
+    # ------------------------------------------------------------------ links, clips, posts
+    def link_row(self, items, place, tag=None, tq=None, where='links'):
+        out = []
+        for i, it in enumerate(items or []):
+            kind = it.get('kind', 'web')
+            if kind not in LINK_LABELS:
+                raise KitError(f'{where}[{i}]: kind must be one of {", ".join(LINK_LABELS)}')
+            url = check_url(it.get('url'), f'{where}[{i}]', ('https', 'tel', 'mailto'))
+            cls = ' web' if kind == 'web' else ''
+            small = f' <small>{E(it["note"])}</small>' if it.get('note') else ''
+            label = it.get('label') or LINK_LABELS[kind]
+            ext = '' if kind in ('tel', 'mail') else ' target="_blank" rel="noopener"'
+            out.append(f'<li><a class="lk{cls}" href="{E(url)}"{ext}><span class="e" aria-hidden="true">{EMOJI[kind]}</span><span class="l">{E(label)}</span>{small}</a></li>')
+        if place:
+            gm = 'https://www.google.com/maps/search/?api=1&query=' + urllib.parse.quote(place['q'])
+            earth = f'https://earth.google.com/web/@{place["lat"]:.5f},{place["lng"]:.5f},40a,1100d,35y,0h,55t,0r'
+            out.append(f'<li><a class="lk" href="{E(gm)}" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["map"]}</span><span class="l">{E(self.L["google_maps"])}</span></a></li>')
+            out.append(f'<li><a class="lk" href="{E(earth)}" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["earth"]}</span><span class="l">{E(self.L["google_earth"])}</span> <small>{E(self.L["earth_3d"])}</small></a></li>')
+        if tag:
+            if not re.match(r'^\w{1,60}$', tag):
+                raise KitError(f'{where}: Instagram tag must be letters and digits only ({tag!r})')
+            out.append(f'<li><a class="lk" href="https://www.instagram.com/explore/tags/{E(urllib.parse.quote(tag))}/" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["tag"]}</span><span class="l tag">#{E(tag)}</span> <small>{E(self.L["ig_photos"])}</small></a></li>')
+        if tq:
+            out.append(f'<li><a class="lk" href="https://www.tiktok.com/search?q={E(urllib.parse.quote(tq))}" target="_blank" rel="noopener"><span class="e" aria-hidden="true">{EMOJI["tts"]}</span><span class="l">{E(self.L["tiktok_videos"])}</span> <small>{E(self.L["tiktok_search"])}</small></a></li>')
+        return f'<ul class="links" aria-label="{E(self.L["links"])}">' + ''.join(out) + '</ul>'
+
+    def clips(self, items):
+        if not items:
+            return ''
+        figs = []
+        for c in items:
+            srcs = ''.join(f'<source src="{E(s["src"])}" type="{E(s.get("type") or "video/webm")}">' for s in c['sources'])
+            cred = E(c['credit'])
+            if c.get('page'):
+                cred += ' · ' + self.ext_link(check_url(c['page'], 'clip page'), c.get('host') or self.L['original'])
+            if c.get('licence_url'):
+                cred += ' · ' + self.ext_link(check_url(c['licence_url'], 'clip licence'), c.get('licence') or 'licence')
+            figs.append(f'<figure class="clip"><video controls playsinline muted preload="none" poster="{E(c["poster"])}" aria-label="{E(c["alt"])}">{srcs}</video>'
+                        f'<figcaption>🎬 {E(c["cap"])} · <span class="credit">{cred}</span></figcaption></figure>')
+        return '<div class="clips">' + ''.join(figs) + '</div>'
+
+    def posts(self, items):
+        if not items:
+            return ''
+        names = ' · '.join(('Instagram' if e['kind'] == 'instagram' else 'TikTok') + f' @{e["handle"]}' for e in items)
+        frames = []
+        for e in items:
+            h = e['handle']
+            if e['kind'] == 'instagram':
+                src, title = f'https://www.instagram.com/{h}/embed/', self.fmt('ig_latest', h=h)
+            else:
+                src, title = f'https://www.tiktok.com/embed/@{h}', self.fmt('tt_latest', h=h)
+            frames.append(f'<iframe data-src="{E(src)}" title="{E(title)}" height="560" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>')
+        return (f'<details class="social" data-auto-open><summary><span aria-hidden="true">📸</span> {E(self.L["latest_posts"])} <small>{E(names)}</small></summary>'
+                f'<div class="social-grid">{"".join(frames)}</div><p class="fine">{E(self.L["embed_note"])}</p></details>')
+
+    # ------------------------------------------------------------------ suitability
+    def suits(self, st, sid):
+        marks = st.get('suits') or {}
+        notes = st.get('lens_notes') or {}
+        if not marks and not notes and not st.get('suits_note'):
+            return ''
+        chips = []
+        for m, v in marks.items():
+            icon, vals = self.marks[m]
+            level, label = vals[v]
+            chips.append(f'<li class="suit" data-mark="{E(m)}" data-level="{level}"><span aria-hidden="true">{icon}</span> {E(label)}</li>')
+        out = f'<div class="suits-box">'
+        if chips:
+            out += f'<ul class="suits" aria-label="{E(self.L["suits_aria"])}">' + ''.join(chips) + '</ul>'
+        a = self.audience or {}
+        if a.get('mode') == 'party' and a.get('needs'):
+            out += f'<p class="suits-sum">{self.party_summary(marks, a["needs"])}</p>'
+        elif a.get('mode') == 'lenses':
+            out += '<p class="suits-sum" hidden></p>'
+        if st.get('suits_note'):
+            out += f'<p class="lens-note">{self.rich(st["suits_note"], f"stops.{sid}.suits_note")}</p>'
+        lens_labels = {l['key']: l['label'] for l in (a.get('lenses') or [])}
+        for k, txt in notes.items():
+            lab = lens_labels.get(k, k)
+            out += f'<p class="lens-note" data-lens="{E(k)}"><b>{E(lab)}:</b> {self.rich(txt, f"stops.{sid}.lens_notes.{k}")}</p>'
+        return out + '</div>'
+
+    def party_summary(self, marks, needs):
+        fits, check, unknown = [], [], []
+        for m in needs:
+            if m not in marks:
+                unknown.append(MARK_NAMES[m])
+                continue
+            level, label = self.marks[m][1][marks[m]]
+            (fits if level == 'good' else check).append(label.lower() if level == 'good' else f'{MARK_NAMES[m]} ({label.lower()})')
+        parts = []
+        if fits:
+            parts.append(f'{E(self.L["lens_fits"])} · ' + E(', '.join(fits)))
+        if check:
+            parts.append(f'{E(self.L["lens_check"])} · ' + E(', '.join(check)))
+        if unknown:
+            parts.append(f'{E(self.L["lens_unknown"])} · ' + E(', '.join(unknown)))
+        return f'<b>{E(self.L["party_for"])}:</b> ' + '; '.join(parts)
+
+    # ------------------------------------------------------------------ stops and days
+    def stop_card(self, day, n, item, plan):
+        sid = item['stop']
+        st = self.stops[sid]
+        pl = self.places[st['place']]
+        w = f'stops.{sid}'
+        route = day['route']
+        idx = route.index(st['place']) if st['place'] in route else -1
+        letter = LETTERS[idx] if idx >= 0 else '+'
+        did = f'd{n}-{sid}' if plan == 'a' else f'd{n}{plan}-{sid}'
+        role = item.get('role') or ''
+        if item.get('replaces'):
+            role = (role + ' ' if role else '') + f'{self.L["replaces"]}: {item["replaces"]}.'
+        note = self.fmt('plan', p=plan.upper()) if plan != 'a' else self.L['optional']
+        details = ' · '.join(f'<a href="{E(self.url_or_source(x, w + ".details"))}" target="_blank" rel="noopener">{E(x["text"])} ↗</a>' for x in st.get('details') or [])
+        prompts = st.get('prompts') or []
+        ptitle = self.L['prompts3'] if len(prompts) == 3 else self.L['prompts']
+        area = self.areas.get(st.get('area')) if st.get('area') else None
+        coord_src = (self.d.get('map') or {}).get('coordinates_source')
+        pin = self.fmt('pin_search', q=pl['q'], lat=f'{pl["lat"]:.5f}', lng=f'{pl["lng"]:.5f}', note=pl.get('note') or '')
+        pin = E(pin).replace(' ()', '')
+        if coord_src:
+            pin += ' ' + self.src_tag(coord_src, where=w)
+        out = (f'<article class="stop" id="{E(did)}">'
+               f'<header class="stop-h"><span class="pin-letter" aria-hidden="true">{letter}</span>'
+               f'<div><h4>{E(st["name"])}</h4><p class="role">{E(role)}</p></div>'
+               f'<button type="button" class="btn-ghost show-map" data-day="{n - 1}" data-idx="{idx if plan == "a" else -1}" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" data-name="{E(st["name"])}" data-note="{E(note)}">{E(self.L["show_on_map"])}</button></header>'
+               f'{self.suits(st, sid)}'
+               f'{self.bento(st.get("photos"), w + ".photos")}'
+               f'{self.clips(st.get("clips"))}'
+               f'{self.posts(st.get("embeds"))}'
+               f'{self.link_row(st.get("links"), pl, st.get("instagram_tag"), st.get("tiktok_search"), w + ".links")}'
+               f'<p class="links-note">{E(self.L["links_note"])}{(" " + E(self.L["details"]) + ": " + details) if details else ""}</p>')
+        if prompts:
+            out += f'<div class="prompts"><h5>{E(ptitle)}</h5><ol>' + ''.join(f'<li>{E(x)}</li>' for x in prompts) + '</ol></div>'
+        out += (f'<details class="drawer" data-pin="{E(pl["q"])}" data-name="{E(st["name"])}"><summary>{E(self.L["map_drawer"])}</summary>'
+                f'<div class="drawer-map"></div><p class="fine">{pin}.</p></details>')
+        if area:
+            out += f'<details class="drawer" data-cc="{E(st["area"])}"><summary>{E(self.fmt("concierge_drawer", name=area["name"]))}</summary><div class="cc-slot"></div></details>'
+        return out + '</article>'
+
+    def plan_label(self, p):
+        return ((self.plans or {}).get('labels') or {}).get(p) or self.L['plan_' + p]
+
+    def rules_line(self):
+        rules = (self.plans or {}).get('rules') or []
+        if not rules:
+            return ''
+        return f'<p class="wx-rules"><b>{E(self.L["plans_rules"])}:</b> ' + ' · '.join(E(r.get('short') or r['text']) for r in rules) + '</p>'
+
+    def plans_bar(self, day, n, alts):
+        wx = ''
+        if day.get('weather') and self.weather:
+            iso = parse_date(day['iso'], 'iso')
+            frm = iso - datetime.timedelta(days=FORECAST_LEAD_DAYS)
+            wx = (f'<div class="wx" data-wx-place="{E(day["weather"])}" data-wx-date="{E(day["iso"])}" aria-live="polite">'
+                  f'<p class="wx-line"><span class="wx-ico" aria-hidden="true">🗓️</span> <span class="wx-msg">{E(self.fmt("wx_from", date=human_date(frm)))}</span></p>'
+                  f'{self.rules_line()}</div>')
+        if not self.plans and not wx and not alts:
+            return ''
+        out = f'<div class="plans-bar" role="group" aria-label="{E(self.fmt("plans_for_day", n=n))}">'
+        if self.plans or alts:
+            if alts:
+                btns = []
+                for p in ['a'] + alts:
+                    btns.append(f'<button type="button" class="plan-btn" data-plan="{p}" aria-pressed="{"true" if p == "a" else "false"}">'
+                                f'<b aria-hidden="true">{p.upper()}</b><span class="sr">{E(self.fmt("plan", p=p.upper()))}: </span>{E(self.plan_label(p))}'
+                                f'<span class="sugg-tag" hidden>{E(self.L["suggested"])}</span></button>')
+                out += f'<div class="plan-switch" role="group" aria-label="{E(self.L["choose_plan"])}">' + ''.join(btns) + '</div>'
+            else:
+                out += f'<p class="plan-missing">{E(self.L["plans_missing"])}</p>'
+            if not wx:
+                out += self.rules_line()
+        return out + wx + '</div>'
+
+    def plan_head(self, p):
+        return (f'<p class="plan-h"><span class="plan-tag">{E(self.fmt("plan", p=p.upper()))}</span> {E(self.plan_label(p))}'
+                f' <span class="chosen-tag">{E(self.L["chosen"])}</span><span class="sugg-tag" hidden>{E(self.L["suggested"])}</span></p>')
+
+    def day_html(self, day, i):
+        n = i + 1
+        w = f'days[{i}]'
+        pl = self.places
+        stops_strip = ' <span class="arr" aria-hidden="true">→</span> '.join(
+            f'<button type="button" class="chip-stop show-map" data-day="{n - 1}" data-idx="{j}" data-lat="{pl[p]["lat"]}" data-lng="{pl[p]["lng"]}" data-name="{E(pl[p]["name"])}"><b>{LETTERS[j]}</b> {E(pl[p]["name"])}</button>'
+            for j, p in enumerate(day['route']))
+        tl = ''.join(f'<li><span class="t">{E(x.get("time"))}</span><div><b>{E(x.get("title"))}</b><p>{self.rich(x.get("text"), w + ".timeline")}</p></div></li>'
+                     for x in day.get('timeline') or [])
+        info = ''.join(f'<section><h5>{E(x["title"])}</h5><p>{self.rich(x.get("text"), w + ".info")}</p></section>' for x in day.get('info') or [])
+        links = ' · '.join(f'<a href="{E(self.url_or_source(x, w + ".links"))}" target="_blank" rel="noopener">{E(x["text"])} ↗</a>' for x in day.get('links') or [])
+        cards = ''.join(self.stop_card(day, n, it, 'a') for it in day['stops'])
+        alts = [p for p in ('b', 'c') if day.get('plan_' + p)]
+        meta = ''.join(f'<span class="pill{" pill-line" if k == "badge" else ""}">{E(day[k])}</span>' for k in ('base', 'badge') if day.get(k))
+        kicker = E(day['when']) + (f' · {E(day["route_label"])}' if day.get('route_label') else '')
+        chosen = ' data-chosen="a"' if alts else ''
+        out = (f'<article class="day" id="day-{n}" data-day="{n - 1}"{chosen}>'
+               f'<header class="day-h"><div class="day-num"><span class="mono">{E(self.L["day"])}</span><b>{n:02d}</b></div>'
+               f'<div class="day-t"><p class="mono kicker">{kicker}</p><h3>{E(day["title"])}</h3>'
+               + (f'<p class="dek">{E(day["sub"])}</p>' if day.get('sub') else '')
+               + (f'<p class="day-meta">{meta}</p>' if meta else '') + '</div></header>'
+               + self.plans_bar(day, n, alts)
+               + f'<div class="plan plan-a{" on" if alts else ""}" data-plan="a">' + (self.plan_head('a') if alts else '')
+               + f'<div class="route-strip" aria-label="{E(self.fmt("stops_for_day", n=n))}">{stops_strip}</div>'
+               + (f'<ol class="timeline">{tl}</ol>' if tl else '')
+               + (f'<div class="info4">{info}</div>' if info else '')
+               + (f'<p class="day-links">{links}</p>' if links else '')
+               + f'<div class="stops">{cards}</div></div>')
+        for p in alts:
+            note = (day.get('plan_notes') or {}).get(p)
+            out += (f'<section class="plan plan-alt" data-plan="{p}" aria-label="{E(self.fmt("plan_for_day", p=p.upper(), n=n, label=self.plan_label(p)))}">'
+                    + self.plan_head(p) + (f'<p class="plan-why">{self.rich(note, w + ".plan_notes")}</p>' if note else '')
+                    + '<div class="stops">' + ''.join(self.stop_card(day, n, it, p) for it in day['plan_' + p]) + '</div></section>')
+        out += self.nearby(day, n)
+        return out + '</article>'
+
+    def nearby(self, day, n):
+        items = day.get('nearby') or []
+        if not items:
+            return ''
+        cards = []
+        for j, x in enumerate(items):
+            w = f'days[{n - 1}].nearby[{j}]'
+            for k in ('id', 'name', 'why', 'lat', 'lng', 'q'):
+                if x.get(k) in (None, ''):
+                    raise KitError(f'{w}.{k} is required')
+            ph = self.small_photo(x['photo'], w + '.photo') if x.get('photo') else ''
+            hours = ''
+            if x.get('hours'):
+                tags = []
+                for s in x.get('hours_sources') or []:
+                    if s in self.sources:
+                        tags.append(self.src_tag(s, where=w))
+                    else:
+                        u = check_url(s, w + '.hours_sources')
+                        tags.append(f'<a class="src" href="{E(u)}" target="_blank" rel="noopener" title="Source for these hours">{E(host_of(u).removeprefix("www."))}</a>')
+                hours = f'<p class="fine" data-fact>{self.rich(x["hours"], w + ".hours")}{(" " + " ".join(tags)) if tags else ""}</p>'
+            place = {'q': x['q'], 'lat': x['lat'], 'lng': x['lng']}
+            cards.append(f'<article class="near" id="x{n}-{E(x["id"])}">{ph}<div class="near-b"><p class="mono kicker">{E(x.get("kind"))}</p><h4>{E(x["name"])}</h4>'
+                         f'<p>{self.rich(x["why"], w + ".why")}</p>{hours}{self.link_row(x.get("links"), place, where=w + ".links")}</div></article>')
+        return (f'<section class="nearby" aria-label="{E(self.fmt("nearby_aria", n=n))}"><p class="mono kicker">{E(self.L["nearby_kicker"])}</p>'
+                f'<div class="nearby-grid">{"".join(cards)}</div></section>')
+
+    # ------------------------------------------------------------------ concierge
+    def emergency(self):
+        nums = self.d.get('emergency') or []
+        if not nums:
+            return ''
+        out = []
+        for e in nums:
+            num = re.sub(r'[\s()-]', '', e['tel'])
+            if not re.match(r'^\+?[0-9]{2,16}$', num):
+                raise KitError(f'emergency: phone number {e["tel"]!r}')
+            out.append(f'<a class="tel{" sos-main" if e.get("main") else ""}" href="tel:{E(num)}">{E(e.get("label") or e["tel"])}</a>')
+        return f'<div class="sos" role="group" aria-label="{E(self.L["emergency_numbers"])}">' + ''.join(out) + '</div>'
+
+    def area_items(self, items, compact, where):
+        out = []
+        for it in items:
+            if isinstance(it, str):
+                it = {'text': it}
+            lab = (it.get('short_label') if compact else None) or it.get('label')
+            head = f'<b>{E(lab)}:</b>' if lab else ''
+            if 'list' in it:
+                vals = [self.rich(x, where) for x in it['list']]
+                body = (' ' + ' '.join(vals)) if compact else ('<ul>' + ''.join(f'<li data-fact>{v}</li>' for v in vals) + '</ul>')
+                out.append(f'<li data-fact>{head}{body}</li>' if compact else f'<li>{head}{body}</li>')
+            else:
+                out.append(f'<li data-fact>{head}{" " if head else ""}{self.rich(it.get("text"), where)}</li>')
+        return ''.join(out)
+
+    def area_compact(self, aid):
+        a = self.areas[aid]
+        groups = ''.join(f'<div><dt>{E(g.get("short_title") or g["title"])}</dt><dd><ul>{self.area_items(g.get("items") or [], True, f"areas.{aid}")}</ul></dd></div>'
+                         for g in a.get('groups') or [])
+        return (f'<div class="cc">{self.emergency()}<dl class="cc-grid">{groups}</dl>'
+                f'<p class="cc-more"><a href="#pc-{E(aid)}">{E(self.fmt("full_panel", name=a["name"]))}</a></p></div>')
+
+    def area_full(self, aid):
+        a = self.areas[aid]
+        secs = ''.join(f'<section{" class=" + chr(34) + E(g["tone"]) + chr(34) if g.get("tone") else ""}><h4>{E(g["title"])}</h4><ul>{self.area_items(g.get("items") or [], False, f"areas.{aid}")}</ul></section>'
+                       for g in a.get('groups') or [])
+        return (f'<article class="pc" id="pc-{E(aid)}"><header><h3>{E(a["name"])}</h3>'
+                + (f'<p class="mono kicker">{E(a["used"])}</p>' if a.get('used') else '') + f'</header><div class="pc-grid">{secs}</div></article>')
+
+    def area_order(self):
+        order = (self.d.get('concierge') or {}).get('order') or list(self.areas)
+        for a in order:
+            if a not in self.areas:
+                raise KitError(f'concierge.order: unknown area {a}')
+        return order
+
+    # ------------------------------------------------------------------ prose blocks
+    def blocks(self, blocks, where):
+        return ''.join(self.block(b, f'{where}[{i}]') for i, b in enumerate(blocks or []))
+
+    def block(self, b, w):
+        t = b.get('type')
+        fact = ' data-fact' if b.get('facts') else ''
+        if t == 'p':
+            cls = {'fine': 'fine', 'quote': 'quote', 'offer': 'offer', 'lede': 'lede'}.get(b.get('style') or '', '')
+            return f'<p{" class=" + chr(34) + cls + chr(34) if cls else ""}{fact}>{self.rich(b.get("text"), w)}</p>'
+        if t == 'h3':
+            return f'<h3 class="h-rule">{E(b.get("text"))}</h3>'
+        if t == 'alert':
+            return f'<div class="alert" role="note"><b>{E(b.get("title"))}</b> {self.rich(b.get("text"), w)}</div>'
+        if t == 'list':
+            cls = 'principles' if b.get('style') == 'principles' else 'mini'
+            ul = f'<ul class="{cls}">' + ''.join(f'<li{fact}>{self.rich(x, w)}</li>' for x in b.get('items') or []) + '</ul>'
+            head = f'<h3 class="h-rule">{E(b["title"])}</h3>' if b.get('title') else ''
+            if b.get('box'):
+                return f'<div class="{E(b["box"])}">{head}{ul}</div>'
+            return head + ul
+        if t == 'bases':
+            return '<div class="bases">' + ''.join(
+                f'<div class="base"><span class="mono">{E(x.get("label"))}</span><h3>{E(x.get("name"))}</h3><p>{E(x.get("text"))}</p><b>{E(x.get("note"))}</b></div>'
+                for x in b.get('items') or []) + '</div>'
+        if t == 'anchors':
+            return '<div class="flights">' + ''.join(
+                f'<div class="flight"><span class="mono">{E(x.get("label"))}</span><b>{E(x.get("code"))}</b>' + ''.join(f'<p>{E(l)}</p>' for l in x.get('lines') or []) + '</div>'
+                for x in b.get('items') or []) + '</div>'
+        if t == 'details':
+            inner = ''.join(f'<p>{self.rich(x, w)}</p>' for x in b.get('paras') or [])
+            if b.get('items'):
+                inner += '<ul>' + ''.join(f'<li>{self.rich(x, w)}</li>' for x in b['items']) + '</ul>'
+            cls = ' class="howto"' if b.get('style') == 'howto' else ''
+            return f'<details{cls}><summary>{E(b.get("summary"))}</summary>{inner}</details>'
+        if t == 'cards':
+            layout = 'three' if b.get('layout') == 'three' else 'two'
+            cls = ' class="stay"' if b.get('style') == 'stay' else ''
+            arts = []
+            for x in b.get('items') or []:
+                k = f'<p class="mono kicker">{E(x["kicker"])}</p>' if x.get('kicker') else ''
+                arts.append(f'<article{cls}>{k}<h3>{E(x.get("title"))}</h3>' + ''.join(f'<p{fact}>{self.rich(p, w)}</p>' for p in as_list(x.get('paras'))) + '</article>')
+            return f'<div class="{layout}">' + ''.join(arts) + '</div>'
+        if t == 'columns':
+            return '<div class="two">' + ''.join(f'<div>{self.blocks(col, w + ".columns")}</div>' for col in b.get('columns') or []) + '</div>'
+        if t == 'table':
+            num = set(b.get('num') or [])
+            head = ''.join(f'<th scope="col">{E(h)}</th>' for h in b.get('head') or [])
+            rows = []
+            for r in b.get('rows') or []:
+                cells = []
+                for ci, c in enumerate(r):
+                    if isinstance(c, dict):
+                        html = self.rich(c.get('text'), w) + (f'<br><span class="mono">{E(c["sub"])}</span>' if c.get('sub') else '')
+                    else:
+                        html = self.rich(c, w)
+                    if ci == 0 and b.get('row_header'):
+                        cells.append(f'<th scope="row">{html}</th>')
+                    else:
+                        cells.append(f'<td{" class=" + chr(34) + "num" + chr(34) if ci in num else ""}>{html}</td>')
+                rows.append(f'<tr{fact}>' + ''.join(cells) + '</tr>')
+            cls = f' class="{E(b["style"])}"' if b.get('style') else ''
+            cap = f'<caption>{self.rich(b["caption"], w)}</caption>' if b.get('caption') else ''
+            return f'<div class="tablewrap"><table{cls}>{cap}<thead><tr>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
+        if t == 'checks':
+            items = []
+            for x in b.get('items') or []:
+                name = x.get('name') or ''
+                if name and not ID.match(name):
+                    raise KitError(f'{w}: checkbox name {name!r}')
+                items.append(f'<li><label><input type="checkbox" name="{E(name)}"> <span><b>{E(x.get("title"))}</b> {self.rich(x.get("text"), w)}</span></label></li>')
+            return '<ul class="checks">' + ''.join(items) + '</ul>'
+        if t == 'budget':
+            return '<div class="budget">' + ''.join(f'<div><span class="mono">{E(x.get("label"))}</span><p>{self.rich(x.get("text"), w)}</p></div>' for x in b.get('items') or []) + '</div>'
+        if t == 'emergency':
+            return self.emergency()
+        raise KitError(f'{w}: unknown block type {t!r}')
+
+    def head(self, s, w):
+        out = f'<p class="mono kicker">{E(s["kicker"])}</p>' if s.get('kicker') else ''
+        out += f'<h2>{E(s["title"])}</h2>' if s.get('title') else ''
+        cls = ' class="fine"' if s.get('intro_style') == 'fine' else ''
+        out += ''.join(f'<p{cls}>{self.rich(p, w + ".intro")}</p>' for p in as_list(s.get('intro')))
+        return out
+
+    def prose(self, sid):
+        s = self.d.get(sid)
+        if not s:
+            return ''
+        alert = self.block(dict(s['alert'], type='alert'), sid + '.alert') if s.get('alert') else ''
+        return f'<section id="{sid}" class="sec">{alert}{self.head(s, sid)}{self.blocks(s.get("blocks"), sid + ".blocks")}</section>'
+
+    # ------------------------------------------------------------------ fixed sections
+    def masthead(self):
+        m = self.d['masthead']
+        facts = ''.join(f'<li><span class="mono">{E(f.get("label"))}</span><b{" class=" + chr(34) + "status" + chr(34) if f.get("status") else ""}>{E(f.get("value"))}</b></li>'
+                        for f in m.get('facts') or [])
+        return (f'<header class="mast" id="top"><div class="mast-in">'
+                + (f'<p class="mono kicker">{E(m["kicker"])}</p>' if m.get('kicker') else '')
+                + f'<h1>{E(m["title"])}</h1>' + (f'<p class="lede">{E(m["lede"])}</p>' if m.get('lede') else '')
+                + (f'<ul class="facts" aria-label="{E(self.L["trip_facts"])}">{facts}</ul>' if facts else '')
+                + f'<div class="mast-bar"><p class="mono edition">{E(m.get("edition"))}</p>'
+                f'<div class="mode" role="group" aria-label="{E(self.L["display_mode"])}">'
+                f'<button type="button" data-set-mode="light" aria-pressed="true">{E(self.L["mode_light"])}</button>'
+                f'<button type="button" data-set-mode="print" aria-pressed="false">{E(self.L["mode_print"])}</button>'
+                f'<button type="button" id="print-btn" class="btn-ghost">{E(self.L["print_pdf"])}</button></div></div></div></header>')
+
+    def present(self):
+        order = (self.d.get('page') or {}).get('order') or SECTION_ORDER
+        out = []
+        for s in order:
+            if s not in SECTION_ORDER:
+                raise KitError(f'page.order: unknown section {s}')
+            if s in ('map', 'days', 'credits', 'sources') or self.d.get(s) or (s == 'concierge' and self.areas):
+                if s == 'upgrades' and not (self.d.get('upgrades') or {}).get('groups'):
+                    continue
+                out.append(s)
+        return out
+
+    def topnav(self, present):
+        nav = self.d.get('nav') or {}
+        items = nav.get('items') or (present[:1] + ['@days'] + present[1:])
+        labels = dict(NAV_DEFAULT)
+        labels.update(nav.get('labels') or {})
+        for s in present:
+            if isinstance(self.d.get(s), dict) and self.d[s].get('nav'):
+                labels[s] = self.d[s]['nav']
+        out = []
+        for it in items:
+            if it == '@days':
+                lab = f'<span class="tn-lab">{E(nav["days_label"])}</span>' if nav.get('days_label') else ''
+                out.append(f'<span class="tn-days" role="group" aria-label="{E(self.L["nav_days"])}">{lab}' + ''.join(
+                    f'<a class="tn-day" href="#day-{i + 1}" data-day="{i}" aria-label="{E(self.L["day"])} {i + 1}, {E(d["when"])}">{E(self.short(d))}</a>'
+                    for i, d in enumerate(self.days)) + '</span>')
+            elif it in present:
+                href = 'map-centre' if it == 'map' else it
+                out.append(f'<a href="#{href}">{E(labels.get(it, it))}</a>')
+        return f'<nav class="topnav" aria-label="{E(self.L["nav"])}">' + ''.join(out) + '</nav>'
+
+    def short(self, d):
+        if d.get('short'):
+            return str(d['short'])
+        if d.get('iso'):
+            return str(int(d['iso'][8:10]))
+        m = re.search(r'\d+', d['when'])
+        return m.group(0) if m else d['when'][:3]
+
+    def map_section(self):
+        m = self.d.get('map') or {}
+        notes = m.get('notes') or {}
+        note = lambda k: self.rich(notes[k], 'map.notes') if notes.get(k) else E(self.L['map_note_' + k])
+        return (f'<aside id="map-centre" class="mapc" aria-label="{E(self.L["map_aria"])}"><div class="mapc-in"><div class="mapc-head">'
+                f'<p class="mono kicker">{E(m.get("kicker") or self.L["map_kicker"])}</p><label class="sr" for="mc-day">{E(self.L["day_label"])}</label>'
+                f'<select id="mc-day" aria-label="{E(self.L["choose_day"])}"></select></div>'
+                f'<div class="tabs" role="tablist" aria-label="{E(self.L["map_views"])}">'
+                f'<button type="button" role="tab" id="tab-route" aria-controls="panel-route" aria-selected="true">{E(self.L["tab_route"])}</button>'
+                f'<button type="button" role="tab" id="tab-pin" aria-controls="panel-pin" aria-selected="false" tabindex="-1">{E(self.L["tab_pin"])}</button>'
+                f'<button type="button" role="tab" id="tab-dir" aria-controls="panel-dir" aria-selected="false" tabindex="-1">{E(self.L["tab_dir"])}</button></div>'
+                f'<div class="panel" id="panel-route" role="tabpanel" aria-labelledby="tab-route"><div class="mc-tools">'
+                f'<button type="button" id="fly" class="btn-gold">{E(self.L["fly"])}</button>'
+                + (f'<label class="check"><input type="checkbox" id="mc-safety"> {E(m.get("safety_label") or self.L["safety"])}</label>' if self.d.get('safety') else '')
+                + f'</div><div id="leaflet" class="mapbox" role="region" aria-label="{E(self.L["route_map"])}"></div><ol id="mc-stops" class="mc-stops"></ol>'
+                f'<p class="fine">{note("route")}</p></div>'
+                f'<div class="panel" id="panel-pin" role="tabpanel" aria-labelledby="tab-pin" hidden><label class="sr" for="mc-stop">{E(self.L["stop_label"])}</label>'
+                f'<select id="mc-stop" aria-label="{E(self.L["choose_stop"])}"></select><div class="mapbox gbox" id="pin-box"></div><p class="fine">{note("pin")}</p></div>'
+                f'<div class="panel" id="panel-dir" role="tabpanel" aria-labelledby="tab-dir" hidden><label class="sr" for="mc-leg">{E(self.L["leg_label"])}</label>'
+                f'<select id="mc-leg" aria-label="{E(self.L["choose_leg"])}"></select><div class="mapbox gbox" id="dir-box"></div><p class="fine">{note("dir")}</p></div>'
+                f'</div></aside>')
+
+    def days_section(self):
+        s = self.d.get('days_section') or {}
+        return f'<section id="days" class="sec">{self.head(s, "days_section")}' + ''.join(self.day_html(d, i) for i, d in enumerate(self.days)) + '</section>'
+
+    def concierge(self):
+        c = self.d.get('concierge') or {}
+        order = self.area_order()
+        notes = ''.join(f'<li>{self.rich(x, "concierge.notes")}</li>' for x in c.get('notes') or [])
+        chips = ''.join(f'<a class="chip" href="#pc-{E(a)}">{E(self.areas[a]["name"])}</a>' for a in order)
+        return (f'<section id="concierge" class="sec">{self.head(c, "concierge")}{self.emergency()}'
+                + (f'<ul class="mini">{notes}</ul>' if notes else '')
+                + f'<nav class="chips" aria-label="{E(self.L["areas"])}">{chips}</nav>' + ''.join(self.area_full(a) for a in order) + '</section>')
+
+    def audience_section(self):
+        a = self.audience
+        out = f'<section id="audience" class="sec" data-audience="{a["mode"]}">{self.head(a, "audience")}'
+        if a['mode'] == 'party':
+            out += '<div class="party">' + ''.join(
+                f'<article class="traveller"><span class="mono">{E(t.get("label"))}</span>' + (f'<h3>{E(t["name"])}</h3>' if t.get('name') else '')
+                + f'<p>{self.rich(t.get("detail"), "audience.travellers")}</p></article>' for t in a.get('travellers') or []) + '</div>'
+            if a.get('needs'):
+                out += (f'<p class="needs"><b>{E(self.L["party_needs"])}:</b> '
+                        + ' · '.join(f'<span class="suit need" data-mark="{m}"><span aria-hidden="true">{self.marks[m][0]}</span> {E(MARK_NAMES[m])}</span>' for m in a['needs']) + '</p>')
+        else:
+            btns = [f'<button type="button" class="lens-btn" data-lens="" aria-pressed="true">{E(self.L["lens_all"])}</button>']
+            cards = []
+            for l in a['lenses']:
+                icon = f'<span aria-hidden="true">{E(l["icon"])}</span> ' if l.get('icon') else ''
+                btns.append(f'<button type="button" class="lens-btn" data-lens="{E(l["key"])}" aria-pressed="false">{icon}{E(l["label"])}</button>')
+                needs = ', '.join(MARK_NAMES[m] for m in l.get('needs') or [])
+                cards.append(f'<article class="lens-card" data-lens-card="{E(l["key"])}"><h3>{icon}{E(l["label"])}</h3><p>{self.rich(l.get("intro"), "audience.lenses")}</p>'
+                             + (f'<p class="mono">{E(self.L["lens_looks_for"])}: {E(needs)}</p>' if needs else '') + '</article>')
+            out += (f'<div class="lens-switch" role="group" aria-label="{E(self.L["lens_choose"])}">' + ''.join(btns) + '</div>'
+                    f'<div class="lens-cards">{"".join(cards)}</div><p class="fine">{E(self.L["lens_note"])}</p>')
+        legend = ' · '.join(f'<span aria-hidden="true">{icon}</span> {E(MARK_NAMES[m])}' for m, (icon, _) in self.marks.items())
+        out += ''.join(f'<p>{self.rich(x, "audience.notes")}</p>' for x in a.get('notes') or [])
+        return out + f'<p class="fine marks-legend">{legend}</p></section>'
+
+    def plans_section(self):
+        p = self.plans
+        keys = ''.join(f'<article><p class="mono kicker">{E(self.fmt("plan", p=k.upper()))}</p><h3>{E(self.plan_label(k))}</h3><p>{self.rich((p.get("explain") or {}).get(k), "plans.explain")}</p></article>'
+                       for k in PLANS)
+        rules = ''.join(f'<li>{E(r["text"])}</li>' for r in p.get('rules') or [])
+        out = f'<section id="plans" class="sec">{self.head(p, "plans")}<div class="three plan-keys">{keys}</div>'
+        if rules:
+            out += f'<h3 class="h-rule">{E(p.get("rules_title") or self.L["plans_rules"])}</h3><ol class="mini rules">{rules}</ol>'
+        wx = self.weather
+        if wx:
+            out += f'<h3 class="h-rule">{E(wx.get("title") or "Live forecast")}</h3>' + ''.join(f'<p>{self.rich(x, "weather.intro")}</p>' for x in as_list(wx.get('intro')))
+            out += '<ul class="mini wx-places">' + ''.join(
+                f'<li><b>{E(pl.get("label") or pl["key"])}</b>: {E(human_date(parse_date(pl["start"], "s")))} {E(self.L["to"])} {E(human_date(parse_date(pl["end"], "e")))}</li>'
+                for pl in wx.get('places') or []) + '</ul>'
+            out += (f'<p class="fine wx-credit">{E(self.L["wx_credit"])} <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a>'
+                    f' · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">{E(self.L["wx_licence"])}</a></p>')
+        return out + '</section>'
+
+    def upgrades_section(self):
+        u = self.d['upgrades']
+        out = f'<section id="upgrades" class="sec">{self.head(u, "upgrades")}<p class="upg-note" role="note">{E(u.get("note") or self.L["upg_note"])}</p>'
+        for gi, g in enumerate(u.get('groups') or []):
+            title = g.get('title') or (self.areas.get(g.get('area')) or {}).get('name') or g.get('area') or ''
+            cards = []
+            for ii, x in enumerate(g.get('items') or []):
+                w = f'upgrades.groups[{gi}].items[{ii}]'
+                ph = self.small_photo(x['photo'], w + '.photo', 'near-photo') if x.get('photo') else ''
+                srcs = ' '.join(self.src_tag(s, where=w) for s in as_list(x['source']))
+                place = self.places.get(x.get('place')) if x.get('place') else None
+                links = self.link_row(x.get('links'), place, where=w + '.links') if (x.get('links') or place) else ''
+                cards.append(f'<article class="upg" data-fact>{ph}<div class="upg-b"><p class="mono kicker">{E(self.L["upg_tag"])}</p><h4>{E(x["name"])}</h4>'
+                             f'<p>{self.rich(x["line"], w + ".line")}</p><dl class="upg-dl"><div><dt>{E(self.L["upg_price"])}</dt><dd>{self.rich(x["price"], w)}</dd></div>'
+                             f'<div><dt>{E(self.L["upg_book"])}</dt><dd>{self.rich(x["book_ahead"], w)}</dd></div></dl>'
+                             f'<p class="upg-src">{E(self.L["upg_source"])}: {srcs}</p>{links}</div></article>')
+            out += (f'<h3 class="h-rule">{E(title)}</h3>' if title else '') + f'<div class="upg-grid">{"".join(cards)}</div>'
+        return out + '</section>'
+
+    def credits_section(self):
+        c = self.d.get('credits') or {}
+        rows = []
+        for pid, p in self.photos.items():
+            parts = [f'<b>{E(p["cap"])}</b>']
+            if p.get('file') and p.get('host') and p.get('credit_url'):
+                lic = self.ext_link(p['licence_url'], p.get('licence') or 'licence') if p.get('licence_url') else E(p.get('licence') or '')
+                parts.append(f'"{E(p["file"])}" {E(self.L["by"])} {E(p["credit"])}, {self.ext_link(p["credit_url"], p["host"])}, {E(self.L["licensed"])} {lic}.')
+                note = p.get('note') or c.get('library_note')
+            else:
+                who = self.ext_link(p['credit_url'], p['credit']) if p.get('credit_url') else E(p['credit'])
+                parts.append(f'{E(p.get("credit_prefix") or self.L["photo"])}: {who}.')
+                if p.get('licence_url'):
+                    parts.append(f'{E(self.L["licensed"]).capitalize()} {self.ext_link(p["licence_url"], p.get("licence") or "licence")}.')
+                elif p.get('licence'):
+                    parts.append(f'{E(p["licence"])}.')
+                if p['src'].startswith('https://') and not p.get('licence_url'):
+                    parts.append(self.ext_link(p['src'], self.L['image_url']) + '.')
+                note = p.get('note')
+            if note:
+                parts.append(E(note))
+            rows.append('<li>' + ' '.join(parts) + '</li>')
+        return f'<section id="credits" class="sec">{self.head(c, "credits")}<ul class="credits">{"".join(rows)}</ul></section>'
+
+    def sources_section(self):
+        s = self.d.get('sources_page') or {}
+        seen, rows, carried = {'checked': set(), 'carried': set()}, [], []
+        for key, x in self.sources.items():
+            u, tier = x.get('url'), x.get('tier') or 'checked'
+            if not u or u in seen[tier]:
+                continue
+            seen[tier].add(u)
+            if tier == 'carried':
+                carried.append(f'<li>{self.ext_link(u, u.split("//", 1)[-1][:70])}</li>')
+            else:
+                when = f' <span class="mono">opened {E(x["opened"])}</span>' if x.get('opened') else ''
+                rows.append(f'<li>{self.ext_link(u, x.get("title") or x["label"])}{when}</li>')
+        out = f'<section id="sources" class="sec">{self.head(s, "sources_page")}<ol class="srclist">{"".join(rows)}</ol>'
+        if carried:
+            out += f'<details><summary>{E(s.get("carried_summary") or self.L["carried_summary"])}</summary><ul class="srclist">{"".join(carried)}</ul></details>'
+        return out + self.blocks(s.get('blocks'), 'sources_page.blocks') + '</section>'
+
+    def footer(self):
+        f = self.d.get('footer') or {}
+        return (f'<footer class="foot sec">' + (f'<p class="mono kicker">{E(f["kicker"])}</p>' if f.get('kicker') else '')
+                + ''.join(f'<p>{self.rich(x, "footer.text")}</p>' for x in as_list(f.get('text')))
+                + f'<p class="fine">{self.rich(f.get("fine"), "footer.fine")} <a href="#top">{E(self.L["back_to_top"])}</a></p></footer>')
+
+    def rail(self):
+        marks = []
+        for i, d in enumerate(self.days):
+            n = i + 1
+            marks.append(f'<a class="rail-mark day" href="#day-{n}" data-day="{i}" data-tip="{E(self.L["day"])} {n} · {E(d["when"])} · {E(d["title"])}" aria-label="{E(self.L["day"])} {n}, {E(d["when"])}"><i></i><b>{E(self.short(d))}</b></a>')
+            for it in d['stops']:
+                nm = self.stops[it['stop']]['name']
+                marks.append(f'<a class="rail-mark" href="#d{n}-{E(it["stop"])}" data-tip="{E(self.L["day"])} {n} · {E(nm)}" aria-label="{E(self.L["day"])} {n}: {E(nm)}" tabindex="-1"><i></i></a>')
+        return (f'<nav class="rail" aria-label="{E(self.L["rail"])}"><div class="rail-track"><div class="rail-fill"></div></div>' + ''.join(marks)
+                + f'<div class="rail-thumb"><span class="rail-tip">{E(self.L["rail_start"])}</span></div></nav>')
+
+    def lightbox(self):
+        return (f'<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="{E(self.L["lightbox"])}" hidden>'
+                f'<button type="button" class="lb-close" aria-label="{E(self.L["lb_close"])}">×</button>'
+                f'<button type="button" class="lb-prev" aria-label="{E(self.L["lb_prev"])}">‹</button>'
+                f'<figure><img alt=""><figcaption><span class="lb-cap"></span><span class="lb-credit"></span></figcaption></figure>'
+                f'<button type="button" class="lb-next" aria-label="{E(self.L["lb_next"])}">›</button></div>')
+
+    # ------------------------------------------------------------------ data for the page's script
+    def trip_json(self):
+        meta = self.d['meta']
+        days = []
+        for i, d in enumerate(self.days):
+            stops = [dict(id=p, letter=LETTERS[j], name=self.places[p]['name'], lat=self.places[p]['lat'], lng=self.places[p]['lng'],
+                          q=self.places[p]['q'], note=self.places[p].get('note') or '') for j, p in enumerate(d['route'])]
+            legs = []
+            walk = set(d.get('walk') or [])
+            for a, b in zip(d['route'], d['route'][1:]):
+                k = f'{a}>{b}'
+                pa, pb = self.places[a], self.places[b]
+                if k in walk:
+                    legs.append(dict(a=a, b=b, walk=True, path=[[pa['lat'], pa['lng']], [pb['lat'], pb['lng']]]))
+                else:
+                    g = self.legs[k]
+                    legs.append(dict(a=a, b=b, walk=False, km=g.get('km'), min=g.get('min'), path=g.get('path') or [[pa['lat'], pa['lng']], [pb['lat'], pb['lng']]]))
+            days.append(dict(n=i + 1, label=f'{self.L["day"]} {i + 1} · {d["when"]}', title=d['title'], iso=d.get('iso') or '',
+                             weather=d.get('weather') or '', stops=stops, legs=legs))
+        ui = {k: self.L[k] for k in ('fly', 'fly_stop', 'short_walk', 'optional', 'map_fallback', 'wx_from', 'wx_error', 'wx_past', 'wx_none',
+                                     'wx_frame', 'wx_credit', 'wx_licence', 'wx_rain', 'wx_gust', 'wx_wind', 'wx_uv', 'wx_suggests', 'wx_fits',
+                                     'wx_no_plan', 'wx_max_min', 'plans_rules', 'lens_fits', 'lens_check', 'lens_unknown', 'lens_for', 'rail_start', 'to')}
+        ui['months'] = self.L.get('months') or MONTHS
+        ui['wmo'] = {str(k): list(v) for k, v in WMO.items()}
+        ui['marks'] = MARK_NAMES
+        out = dict(id=meta.get('id') or re.sub(r'[^a-z0-9]+', '-', meta['title'].lower()).strip('-')[:40], trip=meta.get('trip') or meta['title'],
+                   status=meta.get('status') or '', tz=meta.get('tz') or '', days=days, ui=ui,
+                   safety=[dict(kind=s['kind'], name=s['name'], lat=s['lat'], lng=s['lng']) for s in self.d.get('safety') or []])
+        if self.weather:
+            out['weather'] = dict(places=[dict(key=p['key'], lat=p['lat'], lon=p['lon'], start=p['start'], end=p['end']) for p in self.weather.get('places') or []])
+        if self.plans:
+            out['plans'] = dict(rules=[dict(plan=r['plan'], metric=r['metric'], op=r['op'], value=r['value'], text=r.get('short') or r['text'])
+                                       for r in self.plans.get('rules') or []],
+                                labels={p: self.plan_label(p) for p in PLANS})
+        if self.audience:
+            out['audience'] = dict(mode=self.audience['mode'], needs=self.audience.get('needs') or [],
+                                   lenses=[dict(key=l['key'], label=l['label'], needs=l.get('needs') or []) for l in self.audience.get('lenses') or []])
+        return out
+
+    # ------------------------------------------------------------------ the page
+    def render(self):
+        meta = self.d['meta']
+        present = self.present()
+        css = read_asset('kit.css').replace('/*MAP-ROWS*/12', str(max(12, len(present) + 1)))
+        js = read_asset('kit.js')
+        parts = {'map': self.map_section, 'days': self.days_section, 'concierge': self.concierge, 'audience': self.audience_section,
+                 'plans': self.plans_section, 'upgrades': self.upgrades_section, 'credits': self.credits_section, 'sources': self.sources_section}
+        body = ''.join(parts[s]() if s in parts else self.prose(s) for s in present)
+        templates = ''.join(f'<template id="cc-{E(a)}">{self.area_compact(a)}</template>' for a in self.areas)
+        fonts = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap'
+        return ('<!doctype html>\n'
+                f'<html lang="{E(meta["lang"])}" data-mode="light">\n<head>\n<meta charset="utf-8">\n'
+                '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<meta name="color-scheme" content="light">\n'
+                f'<title>{E(meta["title"])}</title>\n'
+                + (f'<meta name="description" content="{E(meta["description"])}">\n' if meta.get('description') else '')
+                + f'<meta name="generator" content="travel-coffee-table kit">\n<link rel="stylesheet" href="{E(fonts)}">\n'
+                '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">\n'
+                f'<style>{css}</style>\n</head>\n<body>\n<a class="skip" href="#days">{E(self.L["skip"])}</a>\n'
+                f'{self.masthead()}\n{self.topnav(present)}\n<main class="layout">\n{body}\n{self.footer()}\n</main>\n'
+                f'{self.rail()}\n{self.lightbox()}\n{templates}\n'
+                f'<script type="application/json" id="trip-data">{safe_json(self.trip_json())}</script>\n'
+                '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>\n'
+                f'<script>{js}</script>\n</body>\n</html>\n')
+
+
+def read_asset(name):
+    with open(os.path.join(ASSETS, name), encoding='utf-8') as f:
+        return f.read()
+
+
+def build(data):
+    return Page(data).render()
+
+
+def load(path):
+    with open(path, encoding='utf-8') as f:
+        return json.load(f)
+
+
+# ====================================================================== check mode
+class Node:
+    __slots__ = ('tag', 'attrs', 'children', 'parent', 'line')
+    GAPS = {'td', 'th', 'li', 'p', 'div', 'br', 'dt', 'dd', 'h1', 'h2', 'h3', 'h4', 'h5', 'section', 'article'}
+
+    def __init__(self, tag, attrs, parent, line=0):
+        self.tag, self.attrs, self.children, self.parent, self.line = tag, attrs, [], parent, line
+
+    def iter(self):
+        for c in self.children:
+            if isinstance(c, Node):
+                yield c
+                yield from c.iter()
+
+    def text(self):
+        out = []
+        for c in self.children:
+            if isinstance(c, str):
+                out.append(c)
+            elif c.tag not in ('script', 'style', 'template'):
+                out.append(c.text())
+                if c.tag in self.GAPS:
+                    out.append(' ')
+        return ''.join(out)
+
+    def classes(self):
+        return set((self.attrs.get('class') or '').split())
+
+    def up(self, pred):
+        n = self.parent
+        while n is not None:
+            if pred(n):
+                return n
+            n = n.parent
+        return None
+
+
+class Tree(HTMLParser):
+    VOID = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.root = Node('#root', {}, None)
+        self.cur = self.root
+
+    def handle_starttag(self, tag, attrs):
+        n = Node(tag, {k: (v if v is not None else '') for k, v in attrs}, self.cur, self.getpos()[0])
+        self.cur.children.append(n)
+        if tag not in self.VOID:
+            self.cur = n
+
+    def handle_startendtag(self, tag, attrs):
+        self.cur.children.append(Node(tag, {k: (v if v is not None else '') for k, v in attrs}, self.cur, self.getpos()[0]))
+
+    def handle_endtag(self, tag):
+        n = self.cur
+        while n is not self.root and n.tag != tag:
+            n = n.parent
+        if n is not self.root:
+            self.cur = n.parent
+
+    def handle_data(self, data):
+        self.cur.children.append(data)
+
+
+def parse_html(html):
+    t = Tree()
+    t.feed(html)
+    t.close()
+    return t.root
+
+
+URL_ATTRS = ('href', 'src', 'poster', 'data-src', 'action', 'formaction', 'cite', 'background', 'data', 'srcset', 'data-pin-url')
+BLANK = ('', '#', 'about:blank')
+CREDIT_WORDS = re.compile(r'(?i)(©|\bphoto\b|\bphotograph|\bimage\b|\bpicture\b|\billustration\b|\bcredit|\bcourtesy\b|\bvia\b|\bCC[ -]?(?:BY|0)\b|\bpublic domain\b|\bWikimedia\b)')
+# A checkable datum: a price, a phone number, a percentage, opening hours or a distance.
+DATUM = re.compile(r'(?ix)(?:[$€£¥]\s?\d|\b(?:AUD|USD|EUR|GBP|SGD|NZD)\s?\d|\d\s?(?:%|per\s?cent)|\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\b'
+                   r'|\b\d{1,2}:\d{2}\s?(?:to|-|–)\s?\d{1,2}:\d{2}\b|\b\d+(?:\.\d+)?\s?km\b|\(0\d\)\s?\d{4}|\+\d{2}\s?\d)')
+
+
+def check_html(html, name='page'):
+    """The owner's rules for a finished page. Returns a list of problems (empty when the page passes)."""
+    root = parse_html(html)
+    problems = []
+    nodes = list(root.iter())
+    in_lightbox = lambda n: n.up(lambda p: p.attrs.get('id') == 'lightbox' or p.tag == 'template') is not None
+    # 1. blank picture holders
+    for n in nodes:
+        if n.tag == 'img' and not in_lightbox(n):
+            src = (n.attrs.get('src') or '').strip()
+            if src.lower() in BLANK or src.lower().startswith('javascript:'):
+                problems.append(('blank picture holder', f'line {n.line}: <img> with no picture ({n.attrs.get("alt", "")[:60]!r})'))
+        cls = n.classes()
+        if n.tag == 'figure' and cls & {'tile', 'near-photo'} and not any(c.tag == 'img' for c in n.iter()):
+            problems.append(('blank picture holder', f'line {n.line}: empty photo frame'))
+        if cls & {'placeholder', 'photo-slot', 'img-placeholder', 'image-placeholder'} and not any(c.tag in ('img', 'video') for c in n.iter()):
+            problems.append(('blank picture holder', f'line {n.line}: placeholder with no picture'))
+        if 'bento' in cls:
+            tiles = [c for c in n.children if isinstance(c, Node) and 'tile' in c.classes()]
+            if not tiles or n.attrs.get('data-count') not in (None, str(len(tiles))):
+                problems.append(('blank picture holder', f'line {n.line}: photo grid expects {n.attrs.get("data-count")} photos, has {len(tiles)}'))
+        if n.tag == 'video' and not (n.attrs.get('src') or any(c.tag == 'source' and c.attrs.get('src') for c in n.iter())):
+            problems.append(('blank picture holder', f'line {n.line}: video with no source'))
+    # 2. photos without credit
+    for n in nodes:
+        if n.tag in ('img', 'video') and not in_lightbox(n) and n.attrs.get('aria-hidden') != 'true':
+            fig = n.up(lambda p: p.tag == 'figure')
+            cap = next((c for c in fig.iter() if c.tag == 'figcaption'), None) if fig else None
+            credit = None
+            if cap is not None:
+                credit = next((c for c in cap.iter() if 'credit' in c.classes()), None)
+            ok = cap is not None and ((credit is not None and credit.text().strip()) or CREDIT_WORDS.search(cap.text()))
+            if not ok:
+                what = (n.attrs.get('alt') or n.attrs.get('aria-label') or n.attrs.get('src') or '')[:60]
+                problems.append(('photo without credit', f'line {n.line}: {n.tag} {what!r}'))
+    # 3. facts without a source
+    marked = [n for n in nodes if 'data-fact' in n.attrs]
+    candidates = marked if marked else [n for n in nodes if n.tag in ('li', 'p', 'td', 'dd')
+                                         and not n.up(lambda p: p.tag in ('header', 'nav', 'footer', 'figure', 'template') or 'timeline' in p.classes())
+                                         and not any(isinstance(c, Node) and c.tag in ('li', 'p', 'ul', 'ol') for c in n.children)]
+    for n in candidates:
+        txt = ' '.join(n.text().split())
+        if not txt or not DATUM.search(txt):
+            continue
+        has = any(('src' in c.classes()) or 'data-source' in c.attrs or c.tag == 'cite' or (not marked and c.tag == 'a' and (c.attrs.get('href') or '').startswith('https://'))
+                  for c in n.iter())
+        if not has:
+            problems.append(('fact without a source', f'line {n.line}: {txt[:90]!r}'))
+    # 4. http links (namespaces such as xmlns are not links)
+    for n in nodes:
+        for k, v in n.attrs.items():
+            if k in URL_ATTRS and v and not v.strip().lower().startswith('data:') and re.search(r'(?i)(^|[\s,])http://', v.strip()):
+                problems.append(('http link', f'line {n.line}: {k}="{v.strip()[:80]}"'))
+        if n.tag == 'style':
+            for m in re.finditer(r'(?i)(url\(\s*["\']?|@import\s+["\'])http://[^\s"\')]+', n.text()):
+                problems.append(('http link', f'stylesheet: {m.group(0)[:80]}'))
+    return problems
+
+
+def report(name, problems):
+    if not problems:
+        print(f'PASS {name}')
+        return True
+    print(f'FAIL {name}: {len(problems)} problem(s)')
+    by = {}
+    for rule, detail in problems:
+        by.setdefault(rule, []).append(detail)
+    for rule, details in by.items():
+        print(f'  {rule}: {len(details)}')
+        for x in details[:12]:
+            print(f'    - {x}')
+        if len(details) > 12:
+            print(f'    ... and {len(details) - 12} more')
+    return False
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description='Render a trip data file into a coffee-table page, or check pages.')
+    ap.add_argument('inputs', nargs='+', help='trip.json to render; with --check, pages (.html) or data files (.json)')
+    ap.add_argument('-o', '--out', help='where to write the page (default: next to the data file, .html)')
+    ap.add_argument('--check', action='store_true', help="report pages failing the owner's rules")
+    a = ap.parse_args(argv)
+    if a.check:
+        ok = True
+        for path in a.inputs:
+            try:
+                if path.endswith('.json'):
+                    html = build(load(path))
+                else:
+                    with open(path, encoding='utf-8') as f:
+                        html = f.read()
+            except (KitError, OSError, ValueError) as e:
+                print(f'FAIL {path}: {e}')
+                ok = False
+                continue
+            ok = report(path, check_html(html, path)) and ok
+        return 0 if ok else 1
+    if len(a.inputs) != 1:
+        ap.error('render one data file at a time')
+    src = a.inputs[0]
+    try:
+        html = build(load(src))
+    except (KitError, ValueError) as e:
+        print(f'error: {e}', file=sys.stderr)
+        return 2
+    out = a.out or os.path.splitext(src)[0] + '.html'
+    with open(out, 'w', encoding='utf-8') as f:
+        f.write(html)
+    problems = check_html(html, out)
+    print(f'wrote {out} ({len(html.encode("utf-8"))} bytes)')
+    if problems:
+        report(out, problems)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -15,7 +15,11 @@ import { createSignaturePad, signatureNodes } from './signature.mjs';
 export const LIMITS = { key: 200, value: 4000, storage: 8000, label: 200, quote: 1000, around: 64, id: 20, text: 500, body: 4000, path: 400 };
 export const COLORS = ['yellow', 'green', 'blue', 'pink', 'orange'];
 export const STAMPS = [['check', '✓'], ['cross', '✗'], ['approved', 'Approved'], ['reviewed', 'Reviewed'], ['signedoff', 'Signed off']];
-const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape']);
+const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape', 'hj:weather-want']);
+/// A trip page may ask for the forecast of up to this many places (travel kit, Phase 1).
+export const MAX_WEATHER_PLACES = 12;
+const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+const PLACE_KEY = /^[a-z0-9][a-z0-9-]{0,29}$/;
 /// Loupe magnifications (D3): 0 is closed.
 export const LOUPE_ZOOMS = [0, 2, 3];
 const INPUTS = new Set(['mouse', 'touch', 'pen', 'keyboard']);
@@ -93,6 +97,19 @@ export function validMessage(data) {
     case 'hj:escape':
       // Escape pressed while the document has the keyboard: it closes the annotation menu.
       return { type: data.type };
+    case 'hj:weather-want': {
+      // A trip page names its places and dates; the server checks them again before asking.
+      if (!Array.isArray(data.places) || data.places.length < 1 || data.places.length > MAX_WEATHER_PLACES) return null;
+      const places = [];
+      for (const p of data.places) {
+        if (!p || typeof p !== 'object' || !isText(p.key, 30) || !PLACE_KEY.test(p.key)) return null;
+        if (!isNumber(p.lat, -90, 90) || !isNumber(p.lon, -180, 180)) return null;
+        if (!isText(p.start, 10) || !DATE.test(p.start) || !isText(p.end, 10) || !DATE.test(p.end) || p.end < p.start) return null;
+        places.push({ key: p.key, lat: p.lat, lon: p.lon, start: p.start, end: p.end });
+      }
+      if (new Set(places.map(p => p.key)).size !== places.length) return null;
+      return { type: data.type, places };
+    }
   }
   return null;
 }
@@ -289,6 +306,27 @@ function start() {
     body: new URLSearchParams(fields).toString()
   });
   const toFrame = message => frame.contentWindow?.postMessage(message, '*');
+  // Trip pages (travel kit, Phase 1): the page names its places and dates, this page asks the
+  // server, which asks Open-Meteo, and each answer goes back into the frame as 'hj:weather'.
+  // Each place is asked for once per load of the document.
+  const weatherAsked = new Set();
+  const askWeather = async places => {
+    for (const p of places) {
+      if (weatherAsked.has(p.key)) continue;
+      weatherAsked.add(p.key);
+      const query = new URLSearchParams({ lat: String(p.lat), lon: String(p.lon), start: p.start, end: p.end });
+      let answer;
+      try {
+        const reply = await fetch(`/api/weather?${query}`, { credentials: 'same-origin', headers: { accept: 'application/json' } });
+        const data = await reply.json();
+        answer = reply.ok ? { ok: true, available: data.available === true, from: data.from ?? '', past: data.past === true, days: Array.isArray(data.days) ? data.days : [], source: data.source ?? '', link: data.link ?? '' }
+          : { ok: false, error: data.error ?? 'The forecast could not be fetched just now.' };
+      } catch {
+        answer = { ok: false, error: 'The forecast could not be fetched just now.' };
+      }
+      toFrame({ type: 'hj:weather', key: p.key, ...answer });
+    }
+  };
 
   // Saved values, gathered briefly so a burst of typing is one request per field.
   const pending = new Map();
@@ -1225,6 +1263,10 @@ function start() {
       case 'hj:ready':
         sendAnchors();
         toFrame({ type: 'hj:tool', color });
+        weatherAsked.clear();
+        break;
+      case 'hj:weather-want':
+        askWeather(message.places);
         break;
       case 'hj:field':
         save(`f:${message.key}`, { kind: 'field', op: 'set', key: message.key, value: message.value, label: message.label });

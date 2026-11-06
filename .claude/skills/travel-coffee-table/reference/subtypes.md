@@ -1,0 +1,115 @@
+# Sub-types: what each kind of trip must cover
+
+Every trip page starts from the same kit and the same quality bar (SKILL.md). These checklists add
+what each kind of trip needs. A trip can mix sub-types: use every list that applies. Each item that
+states a fact needs a source on the page.
+
+## Road trip and countryside (complete)
+
+This is the complete list, proven on a full trip page; the lists below are shorter starting points.
+
+- **Shape**
+  - [ ] Bases chosen so no day starts with a long drive after a flight; one or two bases rather than a new bed every night.
+  - [ ] Check-in and check-out times for every base; the arrival day and the departure day kept free of long outings.
+  - [ ] One principal outing a day, back at the base by mid-afternoon, rest before dinner.
+  - [ ] Transfer days are transfer days: one real break (toilets, refreshments, a stretch), not sightseeing.
+- **Driving**
+  - [ ] Road distance and model drive time for every leg (a routing service, cited), and planning times with buffers for parking, traffic and holiday crowds. Say which is which.
+  - [ ] Total driving per day stated; a midway break on any leg over about two hours.
+  - [ ] No dusk or night driving on country roads where wildlife is active; return times set to suit.
+  - [ ] Fuel: refill when convenient, not on the last stretch.
+  - [ ] Rental car checklist: automatic, room for every traveller and all luggage, driver eligibility, insurance excess, extra driver, fuel policy, mileage, depot hours, airport return.
+  - [ ] A "nobody wants to drive" alternative: a private driver or tour, quoted in full before changing the plan.
+  - [ ] Taxi and rideshare: do not assume they are available for regional returns; book ahead.
+  - [ ] Fare estimates from the official tariffs (flagfall, per km, waiting, the night and holiday tariff), with the method shown; "estimate, not a quote".
+- **Country towns**
+  - [ ] Shop and supermarket trading hours outside the city, including Sunday and public-holiday closures; groceries bought before arriving where needed.
+  - [ ] Cafes and bakeries with their service hours; tastings are a treat, not lunch.
+  - [ ] A replacement stop for each optional town ("swap, don't stack").
+- **Safety in each area**
+  - [ ] Nearest 24-hour emergency department, with road distance and time.
+  - [ ] Pharmacy, a GP (appointment needed or not), and police: the nearest station, its counter hours, and the nearest one open 24/7.
+  - [ ] National emergency number, police attendance, a health advice line, a wildlife or roadside line.
+- **Calendar and weather**
+  - [ ] Public holidays on the trip dates, and what they change (shops, drinks, surcharges, taxis' holiday tariff, which venues open).
+  - [ ] Long-term climate averages per base (day maximum, night minimum, rain days): climate context, not a forecast.
+  - [ ] Heat precautions for older travellers: outdoor stops early, shade, air-conditioned breaks, medicines out of a hot car, the clinician's advice before departure.
+  - [ ] Forecast places for every base and its dates; Plan B (rain) and Plan C (heat, wind, storm) per day.
+- **Stays**
+  - [ ] Room layout per traveller (real beds, no sofa-bed assumption), quiet unit, step-free or ground floor, shower type, air-conditioning per bedroom, parking.
+  - [ ] Places to avoid, with the reason and a source (building works, noise, stairs).
+  - [ ] A ready-to-send quote request, clearly marked "nothing has been sent".
+
+## City and culture
+
+- [ ] Museums and galleries: days closed, late openings, timed tickets, free days, cloakroom and bag rules.
+- [ ] Public transport: the pass or card to use, airport link, step-free stations, last services.
+- [ ] Neighbourhoods by mood (old town, design district, markets) with a walking radius per day.
+- [ ] Performances and events on the dates: venue, dress, start times, booking window.
+- [ ] Restaurant reservations: release dates, dress codes, tasting menu lengths.
+- [ ] Rainy-day Plan B (covered markets, galleries); heat Plan C (shaded parks, river or garden cafes).
+- [ ] Pickpocket hot spots and safe late-evening routes back to the hotel.
+
+## Nature and wildlife
+
+- [ ] Park entry, permits and timed access; ranger-led options.
+- [ ] Best hours for wildlife; seasonal closures, breeding seasons and rules on distance.
+- [ ] Trail facts: length, height gain, surface, shade, toilets, and a short version.
+- [ ] Tide, sunrise and sunset times where they matter.
+- [ ] Fire danger, flood and heat warnings: where to check them, and the Plan C that avoids them.
+- [ ] Mobile coverage and the nearest help on remote stretches; what to carry (water, layers).
+- [ ] Responsible-viewing operators only; how they are accredited.
+
+## Food and wine
+
+- [ ] Cellar doors, producers and markets with their tasting hours and booking rules.
+- [ ] A designated driver or a driver service; never tasting and driving.
+- [ ] Signature dishes and where to have them; seasonal produce on the dates.
+- [ ] Dietary needs per traveller and which venues can meet them.
+- [ ] Shipping wine home: who ships, to where, and the import limits.
+- [ ] Lunch is a meal: tastings do not replace it.
+
+## Cruise
+
+- [ ] Ship, cabin and deck plan; embarkation and disembarkation times and terminal.
+- [ ] Each port: time ashore, all-aboard time, tender or pier, the distance to the sights.
+- [ ] Shore days planned to return with a wide margin; the ship will not wait.
+- [ ] Sea-day programme highlights; dress codes for formal nights.
+- [ ] Sea conditions, seasickness advice, and which ports get skipped in bad weather (Plan B).
+- [ ] Accessibility on board and ashore (tenders often are not step-free).
+
+## Faith and heritage
+
+- [ ] Opening times around services; when visits are not allowed.
+- [ ] Dress codes (shoulders, knees, head covering, shoes), photography rules, quiet zones.
+- [ ] Religious calendar on the dates: festivals, fasting, closures, crowds.
+- [ ] Guided tours by recognised guides; the story of each place in two or three lines.
+- [ ] Steps, kneeling and long standing: seats and step-free routes.
+- [ ] Offerings, donations and etiquette, said respectfully.
+
+## Young family
+
+- [ ] Naps, meals and early nights shape each day; one big thing a day.
+- [ ] Toilets, baby change, shade and play areas at each stop (suitability marks on every stop).
+- [ ] Pram or carrier per stop; lifts and step-free routes.
+- [ ] Child prices and ages, car seats in taxis and rental cars, cots and family rooms.
+- [ ] A rain Plan B that children enjoy (aquarium, museum with hands-on rooms).
+- [ ] Sun and water safety: patrolled beaches, swim between the flags, hats and sunscreen.
+- [ ] The nearest children's emergency department.
+
+## Gentle travel for seniors
+
+- [ ] Short walks, seats at every stop, lifts or ramps, step-free rooms with walk-in showers.
+- [ ] Door-to-door transport for anything beyond a short walk.
+- [ ] Late starts, a rest every afternoon, early dinners, no back-to-back long days.
+- [ ] Heat Plan C as a rule, not an exception; regular medicines in hand luggage; the clinician's advice on travel and heat.
+- [ ] Travel insurance that covers declared conditions.
+- [ ] Large-print friendly: the print mode, phone numbers as buttons, the concierge panel per area.
+
+## Celebration
+
+- [ ] The occasion's moment: the place, the time (golden hour, sunset), the table, the cake or the flowers, and who arranges each.
+- [ ] Private options as upgrades: a private dining room, a chef's table, a yacht, a photographer, a driver.
+- [ ] Book-ahead windows and deposits; what happens if the weather turns (Plan B for the moment itself).
+- [ ] Surprise handling: what the guests must not see on the page.
+- [ ] Dress code for each event; a short programme for the day.
