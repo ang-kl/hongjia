@@ -229,7 +229,7 @@ li .tel,p .tel,dd .tel{min-height:0;padding:0 8px;line-height:1.7;font-size:.86r
 .pc-grid ul{margin:0;padding-left:1.05em;font-size:.9rem;color:var(--ink2)}
 .pc-grid li{margin:.35em 0}
 .pc-grid .med{border-color:#e3c9c4}
-/* easter, stays, transport */
+/* holidays, stays, transport */
 .two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
 .three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .three article,.stay{border:1px solid var(--rule);padding:16px}
