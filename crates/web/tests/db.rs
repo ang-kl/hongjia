@@ -451,16 +451,89 @@ async fn location_needs_consent_and_is_rounded(pool: PgPool) {
     assert_eq!(send(&mut o, &csrf, "1.3521", "103.8198").await, 204);
     let journal = o.get("/journal").await.body;
     assert!(
-        journal.contains("about 1.4°N, 103.8°E"),
-        "rounded to tenths"
+        journal.contains("about 1.2°N, 104.0°E"),
+        "rounded to 0.4 of a degree, about 40 km"
     );
-    assert!(!journal.contains("1.3521"));
+    assert!(!journal.contains("1.3521") && !journal.contains("1.4°N"));
     assert_eq!(o.consent("no").await.status, 303);
     let journal = o.get("/journal").await.body;
     assert!(
-        !journal.contains("about 1.4°N"),
+        !journal.contains("about 1.2°N"),
         "choosing No removes stored locations from this device"
     );
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn this_device_asks_without_a_preset_answer(pool: PgPool) {
+    let port = start(pool, config()).await;
+    let mut c = Client::new(port);
+    assert_eq!(
+        c.signin("alpha", FAMILY).await.header("location"),
+        Some("/consent")
+    );
+    let page = c.get("/consent").await.body;
+    assert!(page.contains("about 40 km") && !page.contains("11 km"));
+    assert_eq!(page.matches(r#"name="location""#).count(), 2);
+    assert_eq!(
+        page.matches(" required").count(),
+        2,
+        "an answer is required"
+    );
+    assert!(
+        !page.contains(" checked"),
+        "neither answer is chosen in advance"
+    );
+    assert!(
+        page.find(r#"value="yes""#) < page.find(r#"value="no""#),
+        "Yes is listed first"
+    );
+    // A form without an answer is shown again and saves nothing.
+    let csrf = c.csrf().await;
+    let r = c
+        .post("/consent", &[("csrf", &csrf), ("device_label", "tablet")])
+        .await;
+    assert_eq!(r.status, 400);
+    assert!(r.body.contains("Choose Yes or No to continue."));
+    assert_eq!(c.get("/about").await.header("location"), Some("/consent"));
+    // Once answered, the page shows that answer, and Settings leads back to it.
+    assert_eq!(c.consent("no").await.status, 303);
+    let again = c.get("/consent").await.body;
+    assert!(again.contains(r#"value="no" required checked"#));
+    assert!(!again.contains(r#"value="yes" required checked"#));
+    let about = c.get("/about").await.body;
+    assert!(about.contains(r#"<a class="menu-sub" href="/consent">This device</a>"#));
+    assert_eq!(c.consent("yes").await.status, 303);
+    assert!(
+        c.get("/consent")
+            .await
+            .body
+            .contains(r#"value="yes" required checked"#)
+    );
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn stored_locations_are_rounded_to_about_40_km(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let _o = owner(port).await;
+    sqlx::query("UPDATE sessions SET lat_tenths = 13, lon_tenths = 1038, location_at = now()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let migration = include_str!("../../../db/migrations/0011_location_about_40km.sql");
+    for _ in 0..2 {
+        sqlx::query(migration).execute(&pool).await.unwrap();
+        let (lat, lon): (i16, i16) = sqlx::query_as(
+            "SELECT lat_tenths, lon_tenths FROM sessions WHERE lat_tenths IS NOT NULL",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            (lat, lon),
+            (12, 1040),
+            "the same rounding as the server, and running it again changes nothing"
+        );
+    }
 }
 
 #[sqlx::test(migrations = "../../db/migrations")]
@@ -3768,7 +3841,8 @@ async fn trip_pages_get_the_forecast_through_the_server(pool: PgPool) {
     );
     assert!(
         privacy.contains("Instagram or TikTok then sees")
-            && privacy.contains("Near me")
+            && privacy.contains("Add to calendar buttons")
+            && privacy.contains("Hungry? and Shop nearby")
             && privacy.contains("not sent to the site"),
         "the privacy page covers Instagram panels and Near me"
     );
@@ -3903,4 +3977,33 @@ async fn trip_maps_get_their_tiles_through_the_server(pool: PgPool) {
         privacy.contains("map pictures"),
         "the privacy page says what is fetched"
     );
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn add_to_calendar_gives_a_calendar_file_to_signed_in_readers(pool: PgPool) {
+    let port = start(pool, config()).await;
+    let link = "/calendar.ics?tz=%2B0800&name=Day%202&t0=Mandurah%20break&s0=20270321T1015&e0=20270321T1130&l0=Mandurah";
+    let mut stranger = Client::new(port);
+    let r = stranger.get(link).await;
+    assert_eq!(r.status, 303, "signed-in readers only");
+    assert_eq!(r.header("location"), Some("/"));
+    let mut o = owner(port).await;
+    let r = o.get(link).await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert_eq!(
+        r.header("content-type"),
+        Some("text/calendar; charset=utf-8")
+    );
+    assert_eq!(
+        r.header("content-disposition"),
+        Some("inline; filename=\"day-2.ics\"")
+    );
+    assert!(
+        r.body.contains("DTSTART:20270321T021500Z") && r.body.contains("SUMMARY:Mandurah break")
+    );
+    let bad = o
+        .get("/calendar.ics?tz=%2B0800&t0=A&s0=20270230T1015&e0=20270230T1130")
+        .await;
+    assert_eq!(bad.status, 400);
+    assert!(bad.body.contains("does not work"));
 }

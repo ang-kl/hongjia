@@ -49,7 +49,7 @@ fn page(status: StatusCode, body: String) -> Response {
         .into_response()
 }
 
-fn see_other(path: &str) -> Response {
+pub(super) fn see_other(path: &str) -> Response {
     Redirect::to(path).into_response()
 }
 
@@ -292,7 +292,7 @@ pub async fn consent_page(State(state): State<FamilyState>, headers: HeaderMap) 
     };
     Ok(page(
         StatusCode::OK,
-        pages::consent(&nav(&session), &label, session.location_allowed),
+        pages::consent(&nav(&session), &label, session.location_allowed, false),
     ))
 }
 
@@ -327,11 +327,23 @@ pub async fn consent(
         .filter(|c| !c.is_control())
         .take(40)
         .collect();
+    // Neither answer is chosen in advance (the owner, 7 November 2026), so a form without one is
+    // shown again, and nothing is saved.
+    let location = match form.location.as_str() {
+        "yes" => true,
+        "no" => false,
+        _ => {
+            return Ok(page(
+                StatusCode::BAD_REQUEST,
+                pages::consent(&nav(&session), &label, session.location_allowed, true),
+            ));
+        }
+    };
     store::save_consent(
         &state.pool,
         session.profile_id,
         device_hash,
-        form.location == "yes",
+        location,
         Some(&label),
     )
     .await?;
@@ -612,13 +624,13 @@ pub async fn location(
         .trim()
         .parse::<f64>()
         .ok()
-        .and_then(|v| web::tenths(v, 90.0));
+        .and_then(|v| web::rough_tenths(v, 90.0));
     let lon = form
         .lon
         .trim()
         .parse::<f64>()
         .ok()
-        .and_then(|v| web::tenths(v, 180.0));
+        .and_then(|v| web::rough_tenths(v, 180.0));
     let (Some(lat), Some(lon)) = (lat, lon) else {
         return Ok(StatusCode::BAD_REQUEST.into_response());
     };

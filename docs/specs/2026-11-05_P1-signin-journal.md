@@ -174,3 +174,14 @@ Owner decision: "i dont want to enrol / it is meant to be simple", then "just on
 - If `HONGJIA_FAMILY_PASSWORD` is missing the server keeps serving the placeholder instead of failing.
 - Known and accepted by the owner: a shared password cannot show who really picked which name. Invariant I1 ("own credential per profile") is withdrawn by this decision.
 
+
+### Amendment (7 November 2026): "This device" in Settings, no preset answer, about 40 km
+
+Owner decisions: "place this under setting to tweak", then "1a, neither pre-selected, keep No, re-round now".
+
+- ☰ Settings now lists **This device** (before About). It opens the same page as after the first sign-in on a device, to change the location choice or the device's name.
+- Neither answer is chosen in advance on a device that has not answered. Yes is listed first, both are `required`, and a form without an answer is shown again ("Choose Yes or No to continue.") and saves nothing. A device that has answered sees its saved answer; no saved answer is changed.
+- "If within location" means the browser's own permission (option 1a): after Yes, the browser asks its own question, and nothing is shared unless it is allowed there too. The page now says so.
+- Locations are rounded to 0.4 of a degree (about 40 km) instead of a tenth (about 11 km), on the device before sending and again on the server, still stored as tenths (always a multiple of 4). Migration 0011 re-rounds locations already stored, the same way. This cannot be undone: the finer values are not kept.
+- The notice version is now `p1-2026-11-07`; consents given before keep their earlier version in the record.
+- Checks: unit tests of the rounding (a multiple of 4 tenths, never more than 0.2 degree away), the browser's rounding test, database tests for the page (no preset answer, required, re-shown when unanswered, saved answer shown, Settings link), for the journal's rounded location and for the migration (same rounding, running it twice changes nothing), and the browser flow choosing an answer before saving.

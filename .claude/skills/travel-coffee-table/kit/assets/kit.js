@@ -685,8 +685,11 @@ if(tourEl&&playBtn){
     }
     label();
   };
+  // On the family site, the tour says when it opens and closes, so the site's own buttons fold away.
+  var tellSite=function(open){ if(window.parent!==window){ try{ window.parent.postMessage({type:'hj:tour',open:open},'*'); }catch(e){} } };
   var openTour=function(){
     if(!steps.length){ return; }
+    tellSite(true);
     tReturn=document.activeElement; tScroll=window.scrollY;
     tourEl.hidden=false; document.body.style.overflow='hidden';
     if(map&&mapBox&&!mapHome){ map.stop(); mapHome={parent:mapBox.parentNode,next:mapBox.nextSibling}; tourEl.querySelector('.tour-map').appendChild(mapBox); }
@@ -695,7 +698,7 @@ if(tourEl&&playBtn){
   var closeTour=function(){
     clearTimeout(tTimer); tPlaying=false; if(tAnim){ var old=tAnim; tAnim=null; old.cancel(); } if(tGlobe){ tGlobe.stop(); }
     if(mapHome){ if(map){ map.stop(); } mapHome.parent.insertBefore(mapBox,mapHome.next); mapHome=null; if(map){ map.invalidateSize(false); } }
-    tourEl.hidden=true; document.body.style.overflow=''; window.scrollTo(0,tScroll);
+    tourEl.hidden=true; document.body.style.overflow=''; window.scrollTo(0,tScroll); tellSite(false);
     if(tReturn&&tReturn.focus){ tReturn.focus(); }
   };
   playBtn.addEventListener('click',openTour);
@@ -938,4 +941,18 @@ if(gallery){
     var pb=e.target.closest&&e.target.closest('.g-tile button.g-play'); if(pb){ playTile(pb.closest('.g-tile')); }
   });
 }
+
+/* ==== Add to calendar (the owner, 7 November 2026): each Add opens the family site's /calendar.ics with
+   the event in its address. On the site, the link also names this trip page so the event links back;
+   anywhere else (a saved copy of the page) the buttons are hidden, with a note. ==== */
+(function(){
+  var links=$$('a[data-ics]'); if(!links.length){ return; }
+  var m=/^(\/documents\/[0-9]{4}-[0-9]{4}_[0-9]+)\/raw$/.exec(location.pathname||'');
+  if(!m || !/^https?:$/.test(location.protocol)){
+    root.classList.add('cal-offsite');
+    var off=$('.cal-off'); if(off){ off.hidden=false; }
+    return;
+  }
+  links.forEach(function(a){ a.setAttribute('href', a.getAttribute('href')+'&u='+encodeURIComponent(m[1])); });
+})();
 })();

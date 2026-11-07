@@ -215,3 +215,33 @@ The skill and kit live in `.claude/skills/travel-coffee-table/`, so a Claude ses
     - no post loading before a tap;
     - a browser test of the switch and tap-to-load at desktop and phone widths.
   - The database test covers the privacy line.
+
+## Follow-up T5: Calendar section and Add to calendar (7 November 2026)
+
+- **Owner request:** "create calendar section by lenght-of-the-trip-columns and place the iCal inside according to the timing of the itinerary so I can click and add to my calendar", then "as recommended" to the choices offered.
+- **Decisions (as recommended):**
+  - Add works through a signed-in-only site address, `/calendar.ics`, that turns the event or events in the link into a calendar file. Nothing is stored. The document frame stays as locked as before (no downloads).
+  - One Add per timed item, plus Add this day. No whole-trip button.
+  - Plan A timeline items only. An item with only a start or only an end lasts 30 minutes. Items with no clock time are shown but never added or given a time.
+  - Each event's note carries the trip's status ("Proposed, not booked") and links back to the trip page. Times are the trip's time zone, sent as UTC.
+  - On a phone the day columns scroll sideways inside the section. On an iPad they sit side by side.
+- **Kit:** `clock_span` and `tz_offset` read the times; the Calendar section is built after Days when `meta.tz` is `UTC±H` and an item has a clock time. The page script adds the trip page to each link on the site, and hides the buttons elsewhere.
+- **Site:** `calendar.rs` builds the file (RFC 5545: escaped text, lines folded at 75 bytes, stable identifiers so adding twice updates); only trip-page paths are linked back; the privacy page says what the link holds.
+- **Checks:** kit tests for the times, the markup and links, items with no set time, and a browser test at desktop and phone widths (no sideways page scroll, no overlapping cards, the note away from the site). Site unit tests for offsets, dates, the file, escaping and folding, bad links and links back; a database test for signed-in access, the file's headers and a bad link.
+
+## Follow-up T6: the tour folds the site's buttons; the globe on a slow phone (7 November 2026)
+
+- **Owner report and request:** "The FAB-Globe isnt working on iphone." and "if I am playing the trip, hide all right 3 FAB to a tiny glow blue border circle with 🔭".
+- **The globe:**
+  - On an iPhone over 4G the globe showed three copies, stacked.
+  - Cause: every tap on the globe button while the document list was still loading built its own globe. Reproduced locally: three taps during a 2-second load drew three.
+  - Fix: the globe is built once, whatever arrives while it loads. A browser check in the flow (`p1-flow.mjs`, slow connection) now expects exactly one.
+- **The 🔭:**
+  - While a trip page's tour is open (playing or paused), the page says so to the site (`hj:tour` with `open` true or false, a message the site checks).
+  - The site folds the 🛰️ globe 📁 buttons into one small circle with a soft blue glow and 🔭, just above the tour's own buttons. Tapping 🔭 unfolds them, and tapping again folds them.
+  - Closing the tour, or loading another page in the frame, brings them back. The ☰ menu on the left is unchanged.
+  - Only trip pages built with this kit or later send the message. Older documents (such as the first Perth document, 2026-1105_#1) keep their buttons as before.
+- **Checks:** a kit browser test that the tour sends open, then closed; a message test; a browser check in the flow that the buttons fold, unfold with 🔭, and return when the tour closes.
+- **Also:** the flow's "Near me asks in the site's words first" check read the site's question bar before it was shown, and failed every time on this branch. It now waits for the bar to show; the site itself already asked correctly.
+
+- **Near me removed (7 November 2026):** the owner: "remove near me", then "ignore my decision to remove \"near me\". continue", then "remove near me" again. Taken as final: the plain "📍 Near me" button is gone from trip pages. Hungry? and Shop nearby, approved with Taste & Shop, stay, with the same site question and rough reading. The privacy page now names them instead.

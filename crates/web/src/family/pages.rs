@@ -35,6 +35,7 @@ fn explorer(contents: &str) -> String {
 <button type="button" class="fab-globe" data-fab-globe aria-haspopup="dialog" aria-controls="globe" aria-expanded="false" title="Explore the documents" disabled><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><defs><radialGradient id="fab-g" cx="38%" cy="32%" r="70%"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset=".6" stop-color="#eef3fa" stop-opacity=".9"/><stop offset="1" stop-color="#c9d7ea" stop-opacity=".9"/></radialGradient></defs><circle cx="24" cy="24" r="19" fill="url(#fab-g)" stroke="#7f9bc4" stroke-opacity=".9" stroke-width="1.4"/><path d="M12 18c3-4 8-4 10-1s6 1 9-2c3 3 3 8 1 11s-7 2-9 0-6 1-9 3c-3-3-4-7-2-11z" fill="#d7e3f3" stroke="#9fb6d6" stroke-width=".8"/><circle cx="16" cy="19" r="2.2" fill="#f0b8a2"/><circle cx="31" cy="15" r="2.2" fill="#a8c8f0"/><circle cx="33" cy="30" r="2.2" fill="#f3d58b"/><circle cx="20" cy="33" r="2.2" fill="#b9e0c6"/></svg><span class="visually-hidden">Explore the documents</span></button>
 <button type="button" class="fab-folder" data-fab-folder aria-expanded="false" aria-controls="fab-contents" title="Contents" disabled><span aria-hidden="true">📁</span><span class="visually-hidden">Contents</span></button>
 </div>
+<button type="button" class="fab-scope" data-fab-scope aria-expanded="false" title="Show the search, globe and contents buttons"><span aria-hidden="true">🔭</span><span class="visually-hidden">Show the search, globe and contents buttons</span></button>
 <div class="globe-dialog" id="globe" role="dialog" aria-modal="true" aria-label="Globe of the family documents" data-globe hidden>
 <div class="globe-backdrop" data-globe-close></div>
 <p class="visually-hidden" role="status" aria-live="polite" data-globe-status></p>
@@ -68,7 +69,7 @@ fn menu(nav: &Nav, viewer: bool) -> String {
 {sidebar}
 <details class="menu-group" data-menu-documents><summary class="menu-item">Documents</summary><div class="menu-list" data-menu-docs><a class="menu-sub" href="/documents">All documents</a></div></details>
 <a class="menu-item" href="/journal">Journal</a>
-<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list"><a class="menu-sub" href="/about">About</a>{owner}</div></details>
+<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list"><a class="menu-sub" href="/consent">This device</a><a class="menu-sub" href="/about">About</a>{owner}</div></details>
 <form method="post" action="/signout" class="menu-signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="menu-item" data-signout>Sign out {handle}</button></form>
 </div></details></nav>"#,
         csrf = escape(nav.csrf),
@@ -175,14 +176,27 @@ pub fn signin(profiles: &[Profile], csrf: &str, message: Option<&str>) -> String
     )
 }
 
-pub fn consent(nav: &Nav, device_label: &str, location_allowed: Option<bool>) -> String {
+/// The "This device" page: shown after the first sign-in on a device, and from Settings, This device.
+/// Neither answer is chosen until this device has given one (the owner, 7 November 2026);
+/// `unanswered` is true when the form came back without one.
+pub fn consent(
+    nav: &Nav,
+    device_label: &str,
+    location_allowed: Option<bool>,
+    unanswered: bool,
+) -> String {
     let yes = if location_allowed == Some(true) {
         " checked"
     } else {
         ""
     };
-    let no = if location_allowed != Some(true) {
+    let no = if location_allowed == Some(false) {
         " checked"
+    } else {
+        ""
+    };
+    let ask = if unanswered {
+        r#"<p class="notice" role="alert">Choose Yes or No to continue.</p>"#
     } else {
         ""
     };
@@ -196,18 +210,19 @@ pub fn consent(nav: &Nav, device_label: &str, location_allowed: Option<bool>) ->
 <ul>
 <li>Each sign-in: the profile chosen, the time, a short description of this browser, and a device code. All four profiles can see this in the journal.</li>
 <li>While the page is open and you are using it, an estimate of active time. An open tab does not prove anyone was reading.</li>
-<li>Your approximate location, <strong>only if you allow it below</strong>, rounded to about 11 km. It is off unless you choose it.</li>
+<li>Your approximate location, <strong>only if you allow it below and your browser allows it</strong>, rounded to about 40 km. It is off unless you choose it.</li>
 </ul>
-<form method="post" action="/consent" class="stack">
+{ask}<form method="post" action="/consent" class="stack">
 <input type="hidden" name="csrf" value="{csrf}">
 <fieldset class="choices"><legend>Share approximate location from this device?</legend>
-<label class="choice"><input type="radio" name="location" value="no"{no}><span>No, do not share</span></label>
-<label class="choice"><input type="radio" name="location" value="yes"{yes}><span>Yes, share about 11 km</span></label>
+<label class="choice"><input type="radio" name="location" value="yes" required{yes}><span>Yes, share about 40 km</span></label>
+<label class="choice"><input type="radio" name="location" value="no" required{no}><span>No, do not share</span></label>
 </fieldset>
+<p class="small">If you choose Yes, your browser asks its own question first; nothing is shared unless you allow it there too.</p>
 <label>Name this device (optional) <input type="text" name="device_label" maxlength="40" value="{label}" placeholder="for example: my phone"></label>
 <button type="submit">Save and continue</button>
 </form>
-<p class="small">You can change this at any time from this page. Choosing No also removes locations already stored from this device.</p>"#,
+<p class="small">You can change this at any time from ☰ Settings, This device. Choosing No also removes locations already stored from this device.</p>"#,
             csrf = escape(nav.csrf),
             label = escape(device_label)
         ),
@@ -468,7 +483,7 @@ pub fn privacy(owner: &str, journal_days: i32, location_days: i32) -> String {
 <div class="scroll"><table><thead><tr><th>Data</th><th>When</th><th>Who can see it</th><th>Kept for</th></tr></thead><tbody>
 <tr><td>Profile chosen, time, result of each sign-in</td><td>Every sign-in</td><td>All four profiles (details of unsuccessful attempts: the owner)</td><td>{journal_days} days (attempts at most 90)</td></tr>
 <tr><td>Short browser description and a device code</td><td>Every sign-in</td><td>All four profiles</td><td>{journal_days} days</td></tr>
-<tr><td>Approximate location, rounded to about 11 km</td><td>Only if you allowed it on that device</td><td>All four profiles</td><td>{location_days} days</td></tr>
+<tr><td>Approximate location, rounded to about 40 km</td><td>Only if you allowed it on that device</td><td>All four profiles</td><td>{location_days} days</td></tr>
 <tr><td>Estimated active time</td><td>While a page is visible and in use</td><td>All four profiles</td><td>{journal_days} days</td></tr>
 <tr><td>Network address</td><td>Every request</td><td>Nobody; it is coarsened and hashed before storage, only to slow down password guessing</td><td>at most 90 days</td></tr>
 </tbody></table></div>
@@ -476,7 +491,8 @@ pub fn privacy(owner: &str, journal_days: i32, location_days: i32) -> String {
 <p>Trip pages can show a weather forecast. The server then asks Open-Meteo for the trip's places, sending only their coordinates, rounded to about 1 km, and the dates. Your device, network address and documents are not sent. Weather data by <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0).</p>
 <p>Trip-page maps show map pictures that the server fetches from OpenStreetMap for the area on screen and keeps for at least a week. Your device, network address and documents are not sent. Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.</p>
 <p>Trip pages can show Instagram and TikTok posts, in a place's panel or in the Gallery view. Each loads from Instagram or TikTok only when you open that panel or tap that post, and Instagram or TikTok then sees your device's network address, as with any visit to them. Facebook posts are links that open Facebook.</p>
-<p>Trip pages have a Near me button. If you agree when the site asks, your device gives a rough location, used on that device only to sort the trip's places by distance. It is not sent to the site, passed to the trip page or kept.</p>
+<p>Trip pages can have Add to calendar buttons. The button opens a link on this site that holds the event's title, times, place and note; the site turns it into a calendar file for your device and keeps nothing.</p>
+<p>Trip pages have Hungry? and Shop nearby buttons, which list the nearest food or shops. If you agree when the site asks, your device gives a rough location, used on that device only to sort the trip's places by distance. It is not sent to the site, passed to the trip page or kept.</p>
 <p>Questions or corrections: ask {owner}.</p>
 <p class="small"><a href="/">Back</a></p>"#,
             owner = escape(owner)

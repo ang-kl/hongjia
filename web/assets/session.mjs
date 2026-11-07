@@ -1,13 +1,13 @@
 // Signed-in pages only. Sends a heartbeat each minute while the tab is visible and was used in the
 // last two minutes (an estimate of active time, not proof of reading), and, only where this device
-// allowed it, one approximate location per session, rounded here to about 11 km before sending.
+// allowed it, one approximate location per session, rounded here to about 40 km before sending.
 
 export const HEARTBEAT_MS = 60_000;
 export const IDLE_LIMIT_MS = 120_000;
 
-/// Rounds a coordinate to tenths of a degree (about 11 km).
+/// Rounds a coordinate to the nearest 0.4 of a degree (about 40 km); the server rounds it the same way.
 export function roundCoordinate(value) {
-  return Math.round(value * 10) / 10;
+  return Math.round(value * 2.5) * 4 / 10;
 }
 
 /// Whether a heartbeat should be sent now.
