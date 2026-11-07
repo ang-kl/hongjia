@@ -706,7 +706,7 @@ class KitTest(unittest.TestCase):
             self.assertTrue(find(f, 'img')[0].attrs['src'])
             self.assertTrue(find(f, 'span', 'credit')[0].text().strip())
         cd = find(op, 'span', id='op-count')[0]
-        self.assertEqual((cd.attrs['data-start'], cd.attrs['data-end']), ('2027-06-12', '2027-06-13'))
+        self.assertEqual((cd.attrs['data-start'], cd.attrs['data-end']), (self.data['opener']['start'], self.data['opener']['end']))
         self.assertEqual(find(op, 'span', id='op-time')[0].attrs['data-tz'], 'UTC')
         self.assertEqual(len(find(op, 'ol', 'tldr')[0].children), 3)
         ids = {n.attrs['id'] for n in self.root.iter() if n.attrs.get('id')}
@@ -883,7 +883,7 @@ class KitTest(unittest.TestCase):
             self.assertTrue(hours and find(hours[0], 'a', 'src'), 'hours carry their source')
             self.assertTrue(find(c, 'button', 'show-map'))
         stays = find(self.root, 'section', id='stays')[0]
-        self.assertEqual(len(find(find(stays, 'div', 'worship')[0], 'article', 'alt')), 3)
+        self.assertEqual(len(find(find(stays, 'div', 'worship')[0], 'article', 'alt')), sum(len(w['items']) for w in self.data['worship']))
         cats = [p['cats'] for p in self.trip['nearby']]
         self.assertIn(['worship'], cats)
         self.assertGreaterEqual(len(self.trip['nearby']), 10)
@@ -1011,7 +1011,7 @@ class KitTest(unittest.TestCase):
     def test_meals_have_their_choices(self):
         day1 = find(self.root, 'article', id='day-1')[0]
         meals = find(day1, 'div', 'meal')
-        self.assertEqual([m.attrs['data-meal'] for m in meals], ['lunch', 'dinner'])
+        self.assertEqual([m.attrs['data-meal'] for m in meals], [m['meal'] for m in self.data['days'][0]['meals']])
         for m in meals:
             self.assertEqual(len(find(m, 'article', 'alt')), 4, 'four choices, the planned place counted')
             self.assertIn('4 choices', find(m, 'h4')[0].text())
@@ -1033,7 +1033,12 @@ class KitTest(unittest.TestCase):
 
     def test_photo_spots_and_venue_instagram(self):
         spots = find(self.root, 'p', 'spot')
-        self.assertEqual(len(spots), len(find(self.root, 'article', id='d1-lighthouse')) + 1)
+        with_spot = {k for k, st in self.data['stops'].items() if st.get('photo_spot')}
+        arts = [a.attrs['id'] for a in find(self.root, 'article')
+                if re.match(r'^d\d+[bc]?-(.+)$', a.attrs.get('id', '')) and re.match(r'^d\d+[bc]?-(.+)$', a.attrs['id']).group(1) in with_spot]
+        self.assertIn('d1-lighthouse', arts)
+        self.assertEqual(len(spots), len(arts) + sum(1 for w in self.data['worship'] for it in w['items'] if it.get('photo_spot')),
+                         'every stop article with a photo spot shows it, and so does each place of worship with one')
         for sp in spots:
             self.assertIn('Photo spot', sp.text())
             self.assertTrue(find(sp, 'a', 'src'), 'a photo spot names its source')
@@ -1162,9 +1167,12 @@ class KitTest(unittest.TestCase):
             if find(t, 'img'):
                 self.assertTrue(find(t, 'span', 'credit'), 'every picture keeps its credit')
         self.assertEqual(find(g, 'iframe'), [], 'no post loads until it is tapped')
-        embeds = {t.attrs.get('data-kind'): t.attrs.get('data-embed') for t in tiles if 'g-social' in t.classes()}
-        self.assertEqual(embeds['tiktok'], 'https://www.tiktok.com/embed/v2/7300000000000000001')
-        self.assertIn(embeds['instagram'], ('https://www.instagram.com/p/C0ExampleBay1/embed/captioned/', 'https://www.instagram.com/reel/C0ExampleReel/embed/captioned/'))
+        embeds = {}
+        for t in tiles:
+            if 'g-social' in t.classes():
+                embeds.setdefault(t.attrs.get('data-kind'), []).append(t.attrs.get('data-embed'))
+        self.assertIn('https://www.tiktok.com/embed/v2/7300000000000000001', embeds['tiktok'])
+        self.assertTrue({'https://www.instagram.com/p/C0ExampleBay1/embed/captioned/', 'https://www.instagram.com/reel/C0ExampleReel/embed/captioned/'} & set(embeds['instagram']))
         for t in tiles:
             if t.attrs.get('data-kind') in ('instagram', 'tiktok'):
                 o = find(t, 'a', 'g-orig')
@@ -1186,7 +1194,8 @@ class KitTest(unittest.TestCase):
         d['stops']['tearoom']['social'] = [{'kind': 'tiktok', 'url': 'https://www.tiktok.com/@examplebay/video/7300000000000000009', 'by': 'examplebay'}]
         r = build.parse_html(build.build(d))
         pt = [t for t in find(find(r, 'section', id='gallery')[0], 'figure', 'g-tile') if 'tiktok.com/embed/v2/7300000000000000009' in t.attrs.get('data-embed', '')]
-        self.assertEqual(len(pt), 1, 'one tile though the stop is in Plan B and Plan C')
+        plan_days = [day for day in d['days'] if any(x['stop'] == 'tearoom' for p in ('plan_b', 'plan_c') for x in day.get(p) or [])]
+        self.assertEqual(len(pt), len(plan_days), 'one tile a day, though the stop is in Plan B and Plan C')
         self.assertIn('Plan B', find(pt[0], 'span', 'g-k')[0].text())
         js = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read())
         self.assertIn(r"varEMBED_OK=/^https:\/\/www\.instagram\.com\/(p|reel)\/[A-Za-z0-9_-]{5,40}\/embed\/captioned\/$|^https:\/\/www\.tiktok\.com\/embed\/v2\/[0-9]{8,25}$/;", js)

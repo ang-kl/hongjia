@@ -64,8 +64,8 @@ jobs:
           node-version: 24.22.2
       - name: Device profile parity with michi
         run: node --test "web/test/**/*.test.mjs"
-      - name: Travel kit (renderer and page checks)
-        run: python3 .claude/skills/travel-coffee-table/kit/test_kit.py
+      - name: Holiday template (renderer and page checks)
+        run: python3 .claude/skills/holiday-coffee-table/kit/test_kit.py
 
   container:
     name: container

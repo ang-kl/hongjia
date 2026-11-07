@@ -1,4 +1,4 @@
-# Trip data file (kit 1)
+# Trip data file (holiday-coffee-table, version 1, 7 November 2026)
 
 One JSON object describes one trip. `build.py` turns it into one self-contained HTML page.
 
@@ -8,7 +8,8 @@ python3 kit/build.py --check trip.html          # check a finished page (or a .j
 python3 kit/test_kit.py                         # the kit's own tests
 ```
 
-`kit/example/trip.json` is a complete, fictional example that uses every field below.
+`kit/example/trip.json` is a complete, fictional example that uses every field below: a made-up eight-day trip
+shaped like the family's v15 page (two bases, two transfer days with a midway break). Copy its shape, never its facts.
 
 Required fields are marked **(required)**. Everything else is optional; a section with no data is
 left out of the page and out of the top navigation.
@@ -341,7 +342,7 @@ with the masthead as before.
 |---|---|---|
 | `hero` | **yes** | 1 to 8 photo ids: they cross-fade and zoom slowly (still under reduced motion). |
 | `title`, `kicker` | | Default: the masthead's. The hero title is the page's only `h1`. |
-| `dates` | | The dates as shown, for example "Saturday 12 to Sunday 13 June 2027". |
+| `dates` | | The dates as shown, for example "Saturday 12 to Saturday 19 June 2027". |
 | `start`, `end` | | `YYYY-MM-DD` for the countdown ("134 days to go", "Day 3 of 8" during, hidden after); default: the first and last day's `iso`. |
 | `tz`, `tz_place` | | The destination's IANA time zone (`Europe/Lisbon`) and the place named with its local time. |
 | `tldr` | | Three lines (*rich*): the trip at a glance. |
