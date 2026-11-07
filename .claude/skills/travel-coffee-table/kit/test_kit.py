@@ -117,9 +117,20 @@ const { chromium } = require('playwright');
     await q.waitForTimeout(400);
     const hashed = await q.evaluate(() => ({ view: document.documentElement.getAttribute('data-view'),
       top: Math.round(document.getElementById('g-day-1').getBoundingClientRect().top - document.querySelector('.topnav').getBoundingClientRect().bottom) }));
+    // the date bar follows the Gallery day being looked at, not the hidden reading view
+    const chip = () => q.evaluate(() => { const a = document.querySelector('.topnav a.tn-day.on'); return a ? +a.getAttribute('data-day') : -1; });
+    hashed.chips = [await chip()];
+    const second = await q.evaluate(() => { const g = document.querySelectorAll('#gallery .g-day')[1]; if (!g) return null;
+      window.scrollTo({ top: g.getBoundingClientRect().top + scrollY - 80, behavior: 'instant' }); return +g.id.replace('g-day-', '') - 1; });
+    await q.waitForTimeout(400);
+    hashed.chips.push([second, await chip()]);
+    hashed.navOn = await q.evaluate(() => document.querySelectorAll('.topnav a.on:not(.tn-day)').length);
     await q.evaluate(() => { location.hash = 'day-2'; });
     await q.waitForTimeout(400);
     hashed.after = await q.evaluate(() => document.documentElement.getAttribute('data-view'));
+    hashed.chips.push(await chip());
+    hashed.sectionOn = await q.evaluate(() => [...document.querySelectorAll('.topnav a.on:not(.tn-day)')].map(a => a.getAttribute('href')));
+    hashed.readTop = await q.evaluate(() => Math.round(document.getElementById('day-2').getBoundingClientRect().top - document.querySelector('.topnav').getBoundingClientRect().bottom));
     // a saved copy cannot share, so the # is an ordinary link to that part
     await q.click('#days > h2 .sec-link');
     await q.waitForTimeout(200);
@@ -1251,6 +1262,14 @@ class KitTest(unittest.TestCase):
             self.assertEqual(h['view'], 'gallery', f'{k}: #g-day-1 opens the Gallery')
             self.assertTrue(0 <= h['top'] <= 40, f'{k}: that day starts just below the days bar ({h["top"]})')
             self.assertIsNone(h['after'], f'{k}: #day-2 goes back to reading')
+            first, (second, at_second), back = h['chips']
+            self.assertEqual(first, 0, f'{k}: in the Gallery at day 1, the date bar marks day 1')
+            self.assertIsNotNone(second, f'{k}: the example has a second Gallery day')
+            self.assertEqual(at_second, second, f'{k}: scrolled to the next Gallery day, the date bar follows it')
+            self.assertEqual(h['navOn'], 0, f'{k}: no reading section is marked in the Gallery')
+            self.assertEqual(back, 1, f'{k}: back in reading at day 2, the date bar marks day 2')
+            self.assertEqual(h['sectionOn'], ['#days'], f'{k}: and its Days link, though the hidden Gallery comes after')
+            self.assertTrue(0 <= h['readTop'] <= 40, f'{k}: #day-2 starts just below the days bar ({h["readTop"]}), though drawers open on the way')
             self.assertEqual(h['clicked'], '#days', k)
             self.assertTrue(h['links'], k)
             for lid, width, inside in h['links']:
