@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { roundCoordinate, shouldBeat, IDLE_LIMIT_MS } from '../assets/session.mjs';
 
-test('coordinates are rounded to tenths of a degree before sending', () => {
-  assert.equal(roundCoordinate(1.3521), 1.4);
-  assert.equal(roundCoordinate(103.8198), 103.8);
-  assert.equal(roundCoordinate(-33.8688), -33.9);
+test('coordinates are rounded to 0.4 of a degree (about 40 km) before sending', () => {
+  assert.equal(roundCoordinate(1.3521), 1.2);
+  assert.equal(roundCoordinate(103.8198), 104);
+  assert.equal(roundCoordinate(-33.8688), -34);
+  assert.equal(roundCoordinate(-31.97), -32);
 });
 
 test('heartbeats only while visible and recently used', () => {

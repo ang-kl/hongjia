@@ -119,12 +119,17 @@ pub fn escape(text: &str) -> String {
     out
 }
 
-/// Rounds a coordinate to tenths of a degree (about 11 km), as a whole number of tenths.
-pub fn tenths(value: f64, limit: f64) -> Option<i16> {
+/// The step locations are rounded to: 0.4 of a degree (about 40 km), held as tenths of a degree.
+pub const ROUGH_STEP_TENTHS: i16 = 4;
+
+/// Rounds a coordinate to the nearest 0.4 of a degree (about 40 km), as a whole number of tenths of a
+/// degree (always a multiple of 4). The owner's choice of 7 November 2026; it was about 11 km before.
+pub fn rough_tenths(value: f64, limit: f64) -> Option<i16> {
     if !value.is_finite() || value.abs() > limit {
         return None;
     }
-    Some((value * 10.0).round() as i16)
+    let step = f64::from(ROUGH_STEP_TENTHS);
+    Some(((value * 10.0 / step).round() * step) as i16)
 }
 
 /// One value from a URL query string, percent-decoded (`+` is a space). Invalid escapes are kept
@@ -266,10 +271,25 @@ mod tests {
             escape(r#"<b a="x">&'"#),
             "&lt;b a=&quot;x&quot;&gt;&amp;&#39;"
         );
-        assert_eq!(tenths(1.3521, 90.0), Some(14));
-        assert_eq!(tenths(103.8198, 180.0), Some(1038));
-        assert_eq!(tenths(-33.86, 90.0), Some(-339));
-        assert_eq!(tenths(91.0, 90.0), None);
-        assert_eq!(tenths(f64::NAN, 90.0), None);
+        assert_eq!(rough_tenths(1.3521, 90.0), Some(12));
+        assert_eq!(rough_tenths(103.8198, 180.0), Some(1040));
+        assert_eq!(rough_tenths(-31.97, 90.0), Some(-320));
+        assert_eq!(rough_tenths(-33.86, 90.0), Some(-340));
+        assert_eq!(rough_tenths(90.0, 90.0), Some(900));
+        assert_eq!(rough_tenths(-180.0, 180.0), Some(-1800));
+        assert_eq!(rough_tenths(91.0, 90.0), None);
+        assert_eq!(rough_tenths(f64::NAN, 90.0), None);
+        for v in [-179.99, -45.3, -0.21, 0.0, 0.19, 12.6, 89.9] {
+            let t = rough_tenths(v, 180.0).unwrap();
+            assert_eq!(
+                t % ROUGH_STEP_TENTHS,
+                0,
+                "{v} rounds to a multiple of 0.4 degree"
+            );
+            assert!(
+                (f64::from(t) / 10.0 - v).abs() <= 0.2 + 1e-9,
+                "{v} moves at most 0.2 degree"
+            );
+        }
     }
 }

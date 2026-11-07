@@ -68,7 +68,7 @@ fn menu(nav: &Nav, viewer: bool) -> String {
 {sidebar}
 <details class="menu-group" data-menu-documents><summary class="menu-item">Documents</summary><div class="menu-list" data-menu-docs><a class="menu-sub" href="/documents">All documents</a></div></details>
 <a class="menu-item" href="/journal">Journal</a>
-<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list"><a class="menu-sub" href="/about">About</a>{owner}</div></details>
+<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list"><a class="menu-sub" href="/consent">This device</a><a class="menu-sub" href="/about">About</a>{owner}</div></details>
 <form method="post" action="/signout" class="menu-signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="menu-item" data-signout>Sign out {handle}</button></form>
 </div></details></nav>"#,
         csrf = escape(nav.csrf),
@@ -175,14 +175,27 @@ pub fn signin(profiles: &[Profile], csrf: &str, message: Option<&str>) -> String
     )
 }
 
-pub fn consent(nav: &Nav, device_label: &str, location_allowed: Option<bool>) -> String {
+/// The "This device" page: shown after the first sign-in on a device, and from Settings, This device.
+/// Neither answer is chosen until this device has given one (the owner, 7 November 2026);
+/// `unanswered` is true when the form came back without one.
+pub fn consent(
+    nav: &Nav,
+    device_label: &str,
+    location_allowed: Option<bool>,
+    unanswered: bool,
+) -> String {
     let yes = if location_allowed == Some(true) {
         " checked"
     } else {
         ""
     };
-    let no = if location_allowed != Some(true) {
+    let no = if location_allowed == Some(false) {
         " checked"
+    } else {
+        ""
+    };
+    let ask = if unanswered {
+        r#"<p class="notice" role="alert">Choose Yes or No to continue.</p>"#
     } else {
         ""
     };
@@ -196,18 +209,19 @@ pub fn consent(nav: &Nav, device_label: &str, location_allowed: Option<bool>) ->
 <ul>
 <li>Each sign-in: the profile chosen, the time, a short description of this browser, and a device code. All four profiles can see this in the journal.</li>
 <li>While the page is open and you are using it, an estimate of active time. An open tab does not prove anyone was reading.</li>
-<li>Your approximate location, <strong>only if you allow it below</strong>, rounded to about 11 km. It is off unless you choose it.</li>
+<li>Your approximate location, <strong>only if you allow it below and your browser allows it</strong>, rounded to about 40 km. It is off unless you choose it.</li>
 </ul>
-<form method="post" action="/consent" class="stack">
+{ask}<form method="post" action="/consent" class="stack">
 <input type="hidden" name="csrf" value="{csrf}">
 <fieldset class="choices"><legend>Share approximate location from this device?</legend>
-<label class="choice"><input type="radio" name="location" value="no"{no}><span>No, do not share</span></label>
-<label class="choice"><input type="radio" name="location" value="yes"{yes}><span>Yes, share about 11 km</span></label>
+<label class="choice"><input type="radio" name="location" value="yes" required{yes}><span>Yes, share about 40 km</span></label>
+<label class="choice"><input type="radio" name="location" value="no" required{no}><span>No, do not share</span></label>
 </fieldset>
+<p class="small">If you choose Yes, your browser asks its own question first; nothing is shared unless you allow it there too.</p>
 <label>Name this device (optional) <input type="text" name="device_label" maxlength="40" value="{label}" placeholder="for example: my phone"></label>
 <button type="submit">Save and continue</button>
 </form>
-<p class="small">You can change this at any time from this page. Choosing No also removes locations already stored from this device.</p>"#,
+<p class="small">You can change this at any time from ☰ Settings, This device. Choosing No also removes locations already stored from this device.</p>"#,
             csrf = escape(nav.csrf),
             label = escape(device_label)
         ),
@@ -468,7 +482,7 @@ pub fn privacy(owner: &str, journal_days: i32, location_days: i32) -> String {
 <div class="scroll"><table><thead><tr><th>Data</th><th>When</th><th>Who can see it</th><th>Kept for</th></tr></thead><tbody>
 <tr><td>Profile chosen, time, result of each sign-in</td><td>Every sign-in</td><td>All four profiles (details of unsuccessful attempts: the owner)</td><td>{journal_days} days (attempts at most 90)</td></tr>
 <tr><td>Short browser description and a device code</td><td>Every sign-in</td><td>All four profiles</td><td>{journal_days} days</td></tr>
-<tr><td>Approximate location, rounded to about 11 km</td><td>Only if you allowed it on that device</td><td>All four profiles</td><td>{location_days} days</td></tr>
+<tr><td>Approximate location, rounded to about 40 km</td><td>Only if you allowed it on that device</td><td>All four profiles</td><td>{location_days} days</td></tr>
 <tr><td>Estimated active time</td><td>While a page is visible and in use</td><td>All four profiles</td><td>{journal_days} days</td></tr>
 <tr><td>Network address</td><td>Every request</td><td>Nobody; it is coarsened and hashed before storage, only to slow down password guessing</td><td>at most 90 days</td></tr>
 </tbody></table></div>

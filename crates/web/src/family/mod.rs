@@ -30,7 +30,7 @@ use axum::{
 use sqlx::PgPool;
 use std::sync::Arc;
 
-pub const NOTICE_VERSION: &str = "p1-2026-11-05";
+pub const NOTICE_VERSION: &str = "p1-2026-11-07";
 
 /// Settings read from the environment. Family names come only from here, never from the code.
 #[derive(Clone, Debug)]

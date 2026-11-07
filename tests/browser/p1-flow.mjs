@@ -81,6 +81,10 @@ await page.fill('input[name=passphrase]', FAMILY);
 await page.click('form[action="/signin"] button[type=submit]');
 await page.waitForURL(base + '/consent');
 await page.fill('input[name=device_label]', 'browser test');
+// Neither answer is chosen in advance: pressing Save first is held back by the browser.
+await page.click('form[action="/consent"] button[type=submit]');
+if (!page.url().endsWith('/consent')) failures.push('This device saved without an answer');
+await page.check('input[name=location][value=no]');
 await page.click('form[action="/consent"] button[type=submit]');
 // No documents yet, so the landing (the latest document) is the documents list.
 await page.waitForURL(base + '/documents');
@@ -107,6 +111,7 @@ async function signIn(context, profile) {
   await p.fill('input[name=passphrase]', FAMILY);
   await p.click('form[action="/signin"] button[type=submit]');
   await p.waitForURL(base + '/consent');
+  await p.check('input[name=location][value=no]');
   await p.click('form[action="/consent"] button[type=submit]');
   await p.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
   return p;
