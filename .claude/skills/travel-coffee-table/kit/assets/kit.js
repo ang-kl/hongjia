@@ -301,7 +301,8 @@ if('IntersectionObserver' in window){
 }
 /* ---- nav state: worked out from the scroll position, because observer margins are ignored inside the site's frame ---- */
 var navLinks=$$('.topnav a:not(.tn-day)'), navSecs=$$('.layout > [id]'), navCur=null;
-function markNav(line){ var cur=''; navSecs.forEach(function(s){ if(s.getBoundingClientRect().top+window.scrollY<=line){ cur=s.id; } });
+// a hidden section (the Gallery while reading, the reading view's sections in the Gallery) has no place on the page
+function markNav(line){ var cur=''; navSecs.forEach(function(s){ if(s.getClientRects().length&&s.getBoundingClientRect().top+window.scrollY<=line){ cur=s.id; } });
   if(cur===navCur){return;} navCur=cur; navLinks.forEach(function(a){ a.classList.toggle('on',!!cur&&a.getAttribute('href')==='#'+cur); }); }
 var dayLinks=$$('.topnav a.tn-day');
 function markDay(i){ dayLinks.forEach(function(a,j){ var on=j===i; if(a.classList.contains('on')===on){return;} a.classList.toggle('on',on);
@@ -314,8 +315,15 @@ if(rail){
   var span=function(){ return Math.max(1,document.documentElement.scrollHeight-window.innerHeight); };
   var docY=function(n){ return n.getBoundingClientRect().top+window.scrollY; };
   var railPaint=function(){
-    var k=Math.min(1,Math.max(0,window.scrollY/span())); rfill.style.height=(k*100)+'%'; thumb.style.top=(k*100)+'%';
     var line=window.scrollY+window.innerHeight*0.35, cur=null, day=-1;
+    if(root.getAttribute('data-view')==='gallery'){
+      /* the Gallery (the owner, 7 November 2026: "fix the gallery date bar highlight"): the reading view is
+         hidden, so the date bar follows the Gallery day being looked at, and no section is marked */
+      $$('#gallery .g-day').forEach(function(g){ var n=+String(g.id).replace('g-day-',''); if(n>0&&docY(g)<=line){ day=n-1; } });
+      markDay(day); markNav(-1);
+      return;
+    }
+    var k=Math.min(1,Math.max(0,window.scrollY/span())); rfill.style.height=(k*100)+'%'; thumb.style.top=(k*100)+'%';
     marks.forEach(function(m,j){ var tg=targets[j]; if(tg&&docY(tg)<=line){ cur=m; if(m.classList.contains('day')){ day=+m.getAttribute('data-day'); } } });
     marks.forEach(function(m){ m.classList.toggle('on',m===cur); });
     tip.textContent=cur?cur.getAttribute('data-tip'):t('rail_start','Start of the guide');
@@ -324,7 +332,12 @@ if(rail){
     /* on wide screens the sticky map follows the day you are reading */
     if(day>=0&&day!==dayIdx&&window.innerWidth>=1100&&!flying&&root.getAttribute('data-mode')!=='print'){ selectDay(day); }
   };
-  window.railLayout=function(){ var h=span(); marks.forEach(function(m,j){ var tg=targets[j]; if(!tg){m.hidden=true;return;} m.style.top=(Math.min(1,Math.max(0,docY(tg)/h))*100)+'%'; }); railPaint(); };
+  window.railLayout=function(){
+    if(root.getAttribute('data-view')!=='gallery'){  // the timeline bar is hidden in the Gallery, and its places are the reading view's
+      var h=span(); marks.forEach(function(m,j){ var tg=targets[j]; if(!tg){m.hidden=true;return;} m.style.top=(Math.min(1,Math.max(0,docY(tg)/h))*100)+'%'; });
+    }
+    railPaint();
+  };
   var dragging=false;
   var toY=function(e){ var r=rail.getBoundingClientRect(); var k=Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)); window.scrollTo(0,k*span()); };
   rail.addEventListener('pointerdown',function(e){ dragging=true; rail.classList.add('drag'); try{rail.setPointerCapture(e.pointerId);}catch(x){} toY(e); e.preventDefault(); });
@@ -927,6 +940,7 @@ function setView(v,from){
   if(g===(root.getAttribute('data-view')==='gallery')){ return; }
   if(g){ readScroll=window.scrollY; root.setAttribute('data-view','gallery'); window.scrollTo(0,0); }
   else { root.removeAttribute('data-view'); window.scrollTo(0,readScroll); }
+  if(window.railLayout){ window.railLayout(); }  // the date bar follows the view now shown
   $$('button[data-view]').forEach(function(b){ b.setAttribute('aria-pressed',String(b.getAttribute('data-view')===(g?'gallery':'read'))); });
   if(g){ $$('.g-tile',gallery).slice(0,12).forEach(function(t2,i){ motion(t2,[{opacity:0,transform:'translateY(18px)'},{opacity:1,transform:'none'}],{duration:700,delay:i*60,easing:'cubic-bezier(.2,.7,.2,1)'}); }); }
   if(from&&from.focus){ from.focus({preventScroll:true}); }
@@ -964,9 +978,23 @@ function goToHash(){
   if(!ANCHOR_OK.test(id)){ return; }
   var target=document.getElementById(id); if(!target){ return; }
   if(gallery){ setView(gallery.contains(target)?'gallery':'read'); }
-  // the days bar stays at the top while reading, so the part starts just below it
+  // Parts above can still change height just after the jump (drawers opening, pictures arriving). Browsers that
+  // hold the page in place (scroll anchoring) sometimes hold the wrong spot, and iPhone Safari does not hold it at
+  // all, so holding is off while the jump settles: the part is placed again shortly after, but only while nobody
+  // has scrolled the page since.
+  anchorHold(true);
+  placeAt(target);
+  hashSettle.forEach(clearTimeout);
+  var settle=function(){ if(Math.abs(window.scrollY-placedY)<=2){ placeAt(target); } };
+  hashSettle=[setTimeout(settle,120),setTimeout(settle,450),setTimeout(settle,1300),setTimeout(function(){ anchorHold(false); },1400)];
+}
+var hashSettle=[], placedY=-1;
+function anchorHold(off){ [root,document.body].forEach(function(n){ if(n){ n.style.overflowAnchor=off?'none':''; } }); }
+// the days bar stays at the top while reading, so the part starts just below it
+function placeAt(target){
   var bar=$('.topnav'), over=bar&&getComputedStyle(bar).position==='sticky'?bar.getBoundingClientRect().height:0;
-  window.scrollTo(0,Math.max(0,target.getBoundingClientRect().top+window.scrollY-over-12));
+  window.scrollTo({top:Math.max(0,target.getBoundingClientRect().top+window.scrollY-over-12),behavior:'instant'});
+  placedY=window.scrollY;
 }
 window.addEventListener('hashchange',goToHash);
 if(location.hash){ if(document.readyState==='complete'){ goToHash(); } else { window.addEventListener('load',goToHash); } }
