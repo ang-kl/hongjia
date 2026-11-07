@@ -964,7 +964,9 @@ function goToHash(){
   if(!ANCHOR_OK.test(id)){ return; }
   var target=document.getElementById(id); if(!target){ return; }
   if(gallery){ setView(gallery.contains(target)?'gallery':'read'); }
-  target.scrollIntoView({block:'start'});
+  // the days bar stays at the top while reading, so the part starts just below it
+  var bar=$('.topnav'), over=bar&&getComputedStyle(bar).position==='sticky'?bar.getBoundingClientRect().height:0;
+  window.scrollTo(0,Math.max(0,target.getBoundingClientRect().top+window.scrollY-over-12));
 }
 window.addEventListener('hashchange',goToHash);
 if(location.hash){ if(document.readyState==='complete'){ goToHash(); } else { window.addEventListener('load',goToHash); } }

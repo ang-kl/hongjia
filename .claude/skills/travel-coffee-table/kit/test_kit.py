@@ -116,7 +116,7 @@ const { chromium } = require('playwright');
     await q.goto('file://' + process.argv[2] + '#g-day-1', { waitUntil: 'load' });
     await q.waitForTimeout(400);
     const hashed = await q.evaluate(() => ({ view: document.documentElement.getAttribute('data-view'),
-      top: Math.round(document.getElementById('g-day-1').getBoundingClientRect().top) }));
+      top: Math.round(document.getElementById('g-day-1').getBoundingClientRect().top - document.querySelector('.topnav').getBoundingClientRect().bottom) }));
     await q.evaluate(() => { location.hash = 'day-2'; });
     await q.waitForTimeout(400);
     hashed.after = await q.evaluate(() => document.documentElement.getAttribute('data-view'));
@@ -1249,7 +1249,7 @@ class KitTest(unittest.TestCase):
             self.assertEqual(sorted(set(r['orig'])), ['idle none', 'live flex'] if len(r['orig']) > 2 else ['live flex'], k)
             h = r['hashed']
             self.assertEqual(h['view'], 'gallery', f'{k}: #g-day-1 opens the Gallery')
-            self.assertLess(abs(h['top']), 120, f'{k}: at that day')
+            self.assertTrue(0 <= h['top'] <= 40, f'{k}: that day starts just below the days bar ({h["top"]})')
             self.assertIsNone(h['after'], f'{k}: #day-2 goes back to reading')
             self.assertEqual(h['clicked'], '#days', k)
             self.assertTrue(h['links'], k)
