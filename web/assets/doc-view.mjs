@@ -378,7 +378,7 @@ function start() {
   const tourMode = on => {
     const root = document.documentElement;
     root.classList.toggle('tour-on', on);
-    if (!on) root.classList.remove('fabs-peek');
+    root.classList.remove('fabs-peek');
     document.querySelector('[data-fab-scope]')?.setAttribute('aria-expanded', 'false');
   };
   // Trip pages (travel kit, Phase 1): the page names its places and dates, this page asks the
@@ -996,7 +996,7 @@ function start() {
     });
   }
 
-  // The annotation menu, opened by right-click, a long press or two Pencil taps in the frame (and by
+  // The annotation menu, opened by right-click or two quick taps (a finger or the Pencil) in the frame (and by
   // ✎ Mark Up beside a touch selection). The owner's design, 6 November 2026: a short main menu whose
   // submenus pop up in its place; the same bar on every menu (◀ back, ▼/▲ fold and unfold, … more
   // and why items are grey, × close); everything unavailable greyed out with its reason; submenus in

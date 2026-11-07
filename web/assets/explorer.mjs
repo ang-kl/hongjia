@@ -514,8 +514,10 @@ function setup() {
     fab.classList.add('is-lit');
     setTimeout(() => { fab.classList.remove('is-lit'); open(); }, 220);
   });
-  // While a trip page plays its tour, the three buttons fold into 🔭 (the owner, 7 November 2026);
-  // 🔭 unfolds them and folds them again. The document viewer sets html.tour-on.
+  // The three buttons stay folded into 🔭 on every page (the owner, 7 November 2026: "Always folded");
+  // 🔭 unfolds them and folds them again. While a trip page plays its tour (html.tour-on, set by the
+  // document viewer) the 🔭 sits above the tour's own buttons.
+  document.documentElement.classList.add('fabs-fold');
   const scope = document.querySelector('[data-fab-scope]');
   scope?.addEventListener('click', () => {
     const peek = document.documentElement.classList.toggle('fabs-peek');

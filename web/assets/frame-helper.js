@@ -5,7 +5,7 @@
 // - it restores what people filled in (ticks, typed answers, choices) and reports changes;
 // - it reports selected text and the focused field so a person can comment on them, and it
 //   highlights annotated passages. Comment text never enters the frame;
-// - D1: right-click, a long press (touch) or two quick Pencil taps report the point, the selection
+// - D1: right-click, two quick taps (a finger or the Pencil) report the point, the selection
 //   and the element there so the page can open its annotation menu; it draws coloured highlights,
 //   underlines, strikethroughs and insertion carets, and reports where placed marks sit so the
 //   page can draw notes, text boxes, stamps and inserted words over the frame. Words people write
@@ -115,11 +115,6 @@
   function isDoubleTap(prev, next, maxMs, slop) {
     return !!prev && next.t >= prev.t && next.t - prev.t <= maxMs
       && Math.abs(next.x - prev.x) <= slop && Math.abs(next.y - prev.y) <= slop;
-  }
-
-  // A press held long enough without moving far.
-  function isLongPress(down, now, moved, delay, slop) {
-    return !!down && now - down.t >= delay && moved <= slop;
   }
 
   // A number between lo and hi.
@@ -634,11 +629,14 @@
       send({ type: 'hj:selection', quote: '', prefix: '', suffix: '' });
     }
   }
-  var lastTouchMenu = 0;
+  var lastTouchMenu = 0, lastTouchDown = 0;
   document.addEventListener('contextmenu', function (event) {
     if (event.shiftKey) return; // Shift+right-click keeps the browser's own menu.
+    // A long press on a touch screen is the phone's own (text selection, then Comment as before): the
+    // menu opens with two quick taps instead (the owner, 7 November 2026).
+    if (Date.now() - lastTouchDown < 1500) return;
     event.preventDefault();
-    if (Date.now() - lastTouchMenu < 800) return; // a long press already opened it (Android sends both)
+    if (Date.now() - lastTouchMenu < 800) return; // two taps already opened it
     menuAt(event.clientX, event.clientY, 'mouse', event.target);
   }, true);
   document.addEventListener('keydown', function (event) {
@@ -652,27 +650,31 @@
     menuAt(x, y, 'keyboard', document.activeElement);
   }, true);
 
-  // A long press on a touch screen.
-  var press = null, pressTimer = 0, swallowClick = 0;
+  // Two quick taps with a finger open the menu, as two Pencil taps do. Taps on links, buttons and
+  // form fields act as usual (the first tap already acts), so a double tap there opens nothing. The
+  // browser's double-tap zoom is turned off for the document; pinch zoom still works.
+  var INTERACTIVE = 'a[href],button,input,select,textarea,label,summary,[role="button"],[contenteditable=""],[contenteditable="true"],video,audio,iframe';
+  var touchDown = null, lastTouchTap = null, swallowClick = 0;
+  try { document.documentElement.style.touchAction = 'manipulation'; } catch (e) {}
   document.addEventListener('pointerdown', function (event) {
     if (event.pointerType !== 'touch' || !event.isPrimary) return;
-    press = { x: event.clientX, y: event.clientY, t: Date.now(), moved: 0, target: event.target };
-    clearTimeout(pressTimer);
-    pressTimer = setTimeout(function () {
-      if (press && isLongPress(press, Date.now(), press.moved, 550, 10)) {
-        lastTouchMenu = Date.now();
-        swallowClick = Date.now();
-        menuAt(press.x, press.y, 'touch', press.target);
-      }
-      press = null;
-    }, 560);
+    lastTouchDown = Date.now();
+    touchDown = { x: event.clientX, y: event.clientY, t: Date.now() };
   }, true);
-  document.addEventListener('pointermove', function (event) {
-    if (press && event.pointerType === 'touch') press.moved = Math.max(press.moved, Math.abs(event.clientX - press.x), Math.abs(event.clientY - press.y));
+  document.addEventListener('pointerup', function (event) {
+    if (event.pointerType !== 'touch' || !event.isPrimary || !touchDown) return;
+    var quick = Date.now() - touchDown.t < 400 && Math.abs(event.clientX - touchDown.x) <= 10 && Math.abs(event.clientY - touchDown.y) <= 10;
+    touchDown = null;
+    if (!quick || (event.target && event.target.closest && event.target.closest(INTERACTIVE))) { lastTouchTap = null; return; }
+    var tap = { x: event.clientX, y: event.clientY, t: Date.now() };
+    if (isDoubleTap(lastTouchTap, tap, 350, 30)) {
+      lastTouchTap = null;
+      lastTouchMenu = Date.now();
+      swallowClick = Date.now();
+      menuAt(tap.x, tap.y, 'touch', event.target);
+    } else lastTouchTap = tap;
   }, true);
-  function endPress() { clearTimeout(pressTimer); press = null; }
-  document.addEventListener('pointerup', function (event) { if (event.pointerType === 'touch') endPress(); }, true);
-  document.addEventListener('pointercancel', endPress, true);
+  document.addEventListener('pointercancel', function () { touchDown = null; }, true);
   document.addEventListener('click', function (event) {
     if (Date.now() - swallowClick < 700) { event.preventDefault(); event.stopPropagation(); swallowClick = 0; }
   }, true);

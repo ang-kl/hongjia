@@ -185,3 +185,15 @@ Owner report in chat: "Issue with Pencil: I click "Mark Up" but show default con
 - **Likely cause (inferred, not seen on a device):** iPad keeps its own edit menu (Copy, Look Up, Translate and so on) for as long as words are selected in the page. Tapping ✎ Mark Up opened our menu, but the selection stayed, so iPad's menu sat on top of ours. A tap outside the page can also clear the selection a moment before the menu asks for the words, which leaves the word tools grey.
 - **Change:** once our menu opens with the words from a finger or the Pencil, the page lets go of its own selection, and iPad's edit menu goes with it. The menu keeps the words, so highlight, underline, comment and the rest still apply to them. When the tap on ✎ Mark Up has already cleared the selection, the menu uses the words reported just before (within 3 seconds of their going). Mouse and keyboard keep the selection as before.
 - **Checks:** `tests/browser/p1-flow.mjs` selects words by touch and by Pencil, taps ✎ Mark Up, and checks that the menu opens with the word tools ready and the page's own selection is gone. It also clears the selection before the menu is asked for, and checks that the menu still has the words. iPad itself cannot be driven from the test machine, so the owner's check on the iPad is the final one.
+
+
+### Amendment (7 November 2026): two quick taps open the menu on a touch screen
+
+- **Owner question and decision:** "when using phone/tablet//touch-screen devices, double-tap to open context menu rather than long press?", then "Yes, as recommended".
+- **Behaviour:**
+  - Two quick taps with a finger (within 350 ms and 30 px) on text, a picture or a blank spot open the menu, as two Pencil taps already did.
+  - Taps on links, buttons and form fields act as usual, so a double tap there opens nothing.
+  - A long press is left to the phone's own text selection, which then offers Comment as before.
+  - The browser's double-tap zoom is turned off for the document; pinch zoom still works.
+  - The help texts say "tap twice on a touch screen or with the Pencil".
+- **Checks:** the browser flow checks on a phone that a long press no longer opens the menu and that two quick taps do, inside the screen; the unit test for double taps stays.
