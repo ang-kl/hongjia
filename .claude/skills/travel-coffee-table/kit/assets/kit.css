@@ -872,3 +872,38 @@ html[data-view=gallery] .layout{display:block}
   .g-play{top:8px;left:8px;min-height:34px;padding:0 10px;font-size:.66rem}
   .g-play .g-by{display:none}
 }
+/* ==== The calendar (the owner, 7 November 2026): one column per day, each item at its time, with Add
+   to calendar per item (the ＋ in its corner) and per day. Columns scroll sideways inside the section on a
+   phone; the page never does. 88 px an hour, so a half-hour card has room for its time and title. ==== */
+#calendar{--hour:88px;--axis:52px}
+.cal-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;margin-top:18px;border:1px solid var(--rule);border-radius:var(--r);background:var(--paper);scroll-snap-type:x proximity;scroll-padding-left:var(--axis);max-width:100%}
+.cal-scroll:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.cal-grid{display:grid;grid-template-columns:var(--axis) repeat(var(--days),minmax(132px,1fr));min-width:min-content}
+.cal-axis{position:sticky;left:0;z-index:3;background:var(--paper);border-right:1px solid var(--rule)}
+.cal-day{border-right:1px solid var(--rule2);scroll-snap-align:start;min-width:0}
+.cal-day:last-child{border-right:0}
+.cal-dh{height:78px;box-sizing:border-box;padding:10px 8px 8px;border-bottom:1px solid var(--rule);display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;gap:6px}
+.cal-dh h3{margin:0;font:600 .86rem/1.2 var(--sans);color:var(--ink)}
+.cal-dh h3 a{color:inherit;text-decoration:none}
+.cal-dh h3 .mono{display:block;font-size:.58rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+.cal-track{position:relative;height:calc(var(--hours) * var(--hour));background:repeating-linear-gradient(to bottom,var(--rule2) 0,var(--rule2) 1px,transparent 1px,transparent var(--hour))}
+.cal-axis .cal-track{background:none}
+.cal-axis .cal-track span{position:absolute;right:8px;top:calc(var(--at) * var(--hour) + 3px);font:500 .62rem/1 var(--sans);color:var(--muted);font-variant-numeric:tabular-nums}
+.cal-ev{position:absolute;box-sizing:border-box;top:calc(var(--top) * var(--hour) + 2px);left:calc(4px + (100% - 8px) * var(--lane) / var(--lanes));width:calc((100% - 8px) / var(--lanes) - 3px);height:calc(var(--len) * var(--hour) - 4px);min-height:40px;padding:5px 36px 5px 8px;border-radius:10px;background:var(--accent-wash);border-left:3px solid var(--gold);overflow:hidden}
+.cal-loose{background:transparent;border:1px dashed var(--gold-soft);padding-right:8px}
+.cal-time{margin:0;font:500 .62rem/1.3 var(--sans);letter-spacing:.02em;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-loose .cal-time{text-transform:uppercase;letter-spacing:.08em}
+.cal-title{margin:0;font:600 .76rem/1.3 var(--sans);color:var(--ink);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--lines,2);line-clamp:var(--lines,2)}
+.cal-title a.pl{color:inherit}
+.cal-add{display:inline-flex;align-items:center;justify-content:center;gap:4px;border:1px solid var(--gold);background:var(--paper);color:var(--gold-ink);text-decoration:none;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+.cal-add:hover,.cal-add:focus-visible{background:var(--gold);color:#fff}
+.cal-add-one{position:absolute;top:5px;right:5px;width:28px;height:28px;border-radius:50%;font:600 1rem/1 var(--sans)}
+.cal-add-one::after{content:"";position:absolute;inset:-8px}
+.cal-add-day{min-height:28px;padding:0 9px;border-radius:999px;font:600 .62rem/1 var(--sans);letter-spacing:.03em}
+html.cal-offsite .cal-add{display:none}
+@media (max-width:760px){
+  #calendar{--axis:44px}
+  .cal-grid{grid-template-columns:var(--axis) repeat(var(--days),62vw)}  /* the next day shows at the edge */
+}
+@media print{.cal-add{display:none !important}.cal-scroll{overflow:visible;border:0}.cal-grid{grid-template-columns:40px repeat(var(--days),1fr)}.cal-ev{padding-right:8px}}
+html[data-mode=print] .cal-add{display:none}

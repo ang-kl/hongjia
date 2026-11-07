@@ -49,7 +49,7 @@ fn page(status: StatusCode, body: String) -> Response {
         .into_response()
 }
 
-fn see_other(path: &str) -> Response {
+pub(super) fn see_other(path: &str) -> Response {
     Redirect::to(path).into_response()
 }
 

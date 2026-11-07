@@ -3841,6 +3841,7 @@ async fn trip_pages_get_the_forecast_through_the_server(pool: PgPool) {
     );
     assert!(
         privacy.contains("Instagram or TikTok then sees")
+            && privacy.contains("Add to calendar buttons")
             && privacy.contains("Near me")
             && privacy.contains("not sent to the site"),
         "the privacy page covers Instagram panels and Near me"
@@ -3976,4 +3977,33 @@ async fn trip_maps_get_their_tiles_through_the_server(pool: PgPool) {
         privacy.contains("map pictures"),
         "the privacy page says what is fetched"
     );
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn add_to_calendar_gives_a_calendar_file_to_signed_in_readers(pool: PgPool) {
+    let port = start(pool, config()).await;
+    let link = "/calendar.ics?tz=%2B0800&name=Day%202&t0=Mandurah%20break&s0=20270321T1015&e0=20270321T1130&l0=Mandurah";
+    let mut stranger = Client::new(port);
+    let r = stranger.get(link).await;
+    assert_eq!(r.status, 303, "signed-in readers only");
+    assert_eq!(r.header("location"), Some("/"));
+    let mut o = owner(port).await;
+    let r = o.get(link).await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert_eq!(
+        r.header("content-type"),
+        Some("text/calendar; charset=utf-8")
+    );
+    assert_eq!(
+        r.header("content-disposition"),
+        Some("inline; filename=\"day-2.ics\"")
+    );
+    assert!(
+        r.body.contains("DTSTART:20270321T021500Z") && r.body.contains("SUMMARY:Mandurah break")
+    );
+    let bad = o
+        .get("/calendar.ics?tz=%2B0800&t0=A&s0=20270230T1015&e0=20270230T1130")
+        .await;
+    assert_eq!(bad.status, 400);
+    assert!(bad.body.contains("does not work"));
 }

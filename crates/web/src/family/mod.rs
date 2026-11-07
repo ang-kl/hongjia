@@ -3,6 +3,7 @@
 
 pub mod attach;
 pub mod auth;
+pub mod calendar;
 pub mod doccheck;
 pub mod documents;
 mod explore;
@@ -222,6 +223,7 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route("/api/search", get(explore::search))
         .route("/api/library", get(explore::library))
         .route("/api/weather", get(weather::forecast))
+        .route("/calendar.ics", get(calendar::file))
         .route("/api/tile-ticket", get(tiles::ticket))
         .route("/tiles/{z}/{x}/{file}", get(tiles::tile))
         .route(

@@ -490,6 +490,7 @@ pub fn privacy(owner: &str, journal_days: i32, location_days: i32) -> String {
 <p>Trip pages can show a weather forecast. The server then asks Open-Meteo for the trip's places, sending only their coordinates, rounded to about 1 km, and the dates. Your device, network address and documents are not sent. Weather data by <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0).</p>
 <p>Trip-page maps show map pictures that the server fetches from OpenStreetMap for the area on screen and keeps for at least a week. Your device, network address and documents are not sent. Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.</p>
 <p>Trip pages can show Instagram and TikTok posts, in a place's panel or in the Gallery view. Each loads from Instagram or TikTok only when you open that panel or tap that post, and Instagram or TikTok then sees your device's network address, as with any visit to them. Facebook posts are links that open Facebook.</p>
+<p>Trip pages can have Add to calendar buttons. The button opens a link on this site that holds the event's title, times, place and note; the site turns it into a calendar file for your device and keeps nothing.</p>
 <p>Trip pages have a Near me button. If you agree when the site asks, your device gives a rough location, used on that device only to sort the trip's places by distance. It is not sent to the site, passed to the trip page or kept.</p>
 <p>Questions or corrections: ask {owner}.</p>
 <p class="small"><a href="/">Back</a></p>"#,

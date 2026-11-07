@@ -120,6 +120,42 @@ const { chromium } = require('playwright');
 """
 
 
+CAL_JS = r'''
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const out = {};
+  for (const [name, w] of [['wide', 1180], ['phone', 390]]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 844 } });
+    await ctx.route(/^https?:/, r => r.abort());
+    const p = await ctx.newPage();
+    const errors = []; p.on('pageerror', e => errors.push(e.message));
+    await p.goto('file://' + process.argv[2], { waitUntil: 'load' });
+    await p.waitForTimeout(300);
+    out[name] = await p.evaluate(() => {
+      const sc = document.querySelector('.cal-scroll');
+      const cards = [...document.querySelectorAll('.cal-day .cal-ev')];
+      let overlap = 0;
+      for (const col of document.querySelectorAll('.cal-day')) {
+        const rs = [...col.querySelectorAll('.cal-ev')].map(e => e.getBoundingClientRect());
+        for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+          const a = rs[i], b = rs[j];
+          if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) overlap++;
+        }
+      }
+      return { wide: document.documentElement.scrollWidth > innerWidth + 1, scrolls: sc.scrollWidth > sc.clientWidth + 1,
+        off: !document.querySelector('.cal-off').hidden, adds: getComputedStyle(document.querySelector('.cal-add')).display,
+        cards: cards.length, overlap };
+    });
+    out[name].errors = errors;
+    await ctx.close();
+  }
+  await browser.close();
+  process.stdout.write(JSON.stringify(out));
+})().catch(e => { console.error(e); process.exit(1); });
+'''
+
+
 def find_browser():
     import shutil
     node = shutil.which('node')
@@ -1132,6 +1168,85 @@ class KitTest(unittest.TestCase):
             self.assertEqual(r['back'], {'view': None, 'overview': 'block'}, k)
             self.assertEqual(sorted(set(r['orig'])), ['idle none', 'live flex'] if len(r['orig']) > 2 else ['live flex'], k)
 
+
+    # ------------------------------------------------------------ the calendar (7 November 2026)
+    def test_calendar_times(self):
+        cases = {'09:15': (555, 585), '10:15 to 11:30': (615, 690), '11:25 → 16:35': (685, 995), 'Around 18:30': (1110, 1140),
+                 'From 14:00': (840, 870), 'By 15:00': (870, 900), '22:00 to 01:00': (1320, 1500)}
+        for t, want in cases.items():
+            self.assertEqual(build.clock_span(t), want, t)
+        for t in ('Morning', 'Late afternoon', 'Midway', '', None, '25:00', 'By 00:00'):
+            self.assertIsNone(build.clock_span(t), t)
+        self.assertEqual(build.tz_offset('UTC+8'), '+0800')
+        self.assertEqual(build.tz_offset('UTC-5:30'), '-0530')
+        self.assertEqual(build.tz_offset('UTC+0'), '+0000')
+        for bad in ('GMT+8', 'UTC+15', 'Perth', None):
+            self.assertIsNone(build.tz_offset(bad), bad)
+
+    def test_calendar_markup(self):
+        sec = find(self.root, 'section', id='calendar')
+        self.assertEqual(len(sec), 1)
+        self.assertTrue(find(self.root, 'a', href='#calendar'), 'the top bar links to the calendar')
+        cols = find(sec[0], 'section', 'cal-day')
+        self.assertEqual(len(cols), len(self.data['days']), 'one column per day')
+        timed = [t for d in self.data['days'] for t in d.get('timeline') or [] if build.clock_span(t.get('time'))]
+        adds = find(sec[0], 'a', 'cal-add-one')
+        self.assertEqual(len(adds), len(timed), 'an Add for every timed item')
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(adds[0].attrs['href']).query)
+        first = self.data['days'][0]
+        a, b = build.clock_span(first['timeline'][0]['time'])
+        ymd = first['iso'].replace('-', '')
+        self.assertEqual(q['tz'], [build.tz_offset(self.data['meta']['tz'])])
+        self.assertEqual(q['s0'], [f'{ymd}T{a // 60:02d}{a % 60:02d}'])
+        self.assertEqual(q['e0'], [f'{ymd}T{b // 60:02d}{b % 60:02d}'])
+        self.assertIn(self.data['meta']['status'], q['n0'][0], 'each event says the trip is not booked')
+        for a_ in find(sec[0], 'a', 'cal-add'):
+            self.assertTrue(a_.attrs['href'].startswith('/calendar.ics?'))
+            self.assertEqual(a_.attrs.get('target'), '_blank')
+            self.assertTrue(a_.attrs.get('aria-label', '').startswith('Add '))
+        days = find(sec[0], 'a', 'cal-add-day')
+        self.assertEqual(len(days), len(cols))
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(days[0].attrs['href']).query)
+        n = sum(1 for t in first['timeline'] if build.clock_span(t.get('time')))
+        self.assertIn(f't{n - 1}', q)
+        self.assertNotIn(f't{n}', q)
+        # An item with no set time is drawn in its place, dashed, and never added.
+        d = copy.deepcopy(self.data)
+        d['days'][0]['timeline'][1]['time'] = 'Morning'
+        r = build.parse_html(build.build(d))
+        loose = find(r, 'article', 'cal-loose')
+        self.assertEqual(len(loose), 1)
+        self.assertEqual(find(loose[0], 'a', 'cal-add'), [])
+        # No time zone, or no timed item: no calendar.
+        d = copy.deepcopy(self.data)
+        d['meta'].pop('tz', None)
+        self.assertNotIn('id="calendar"', build.build(d))
+        d = copy.deepcopy(self.data)
+        for day in d['days']:
+            for t in day.get('timeline') or []:
+                t['time'] = 'Morning'
+        self.assertNotIn('id="calendar"', build.build(d))
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_calendar_in_a_browser(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            script = os.path.join(tmp, 'cal.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(CAL_JS)
+            out = subprocess.run([NODE, script, page], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        for k, r in res.items():
+            self.assertEqual(r['errors'], [], k)
+            self.assertFalse(r['wide'], f'{k}: the page never scrolls sideways')
+            self.assertTrue(r['scrolls'] if k == 'phone' else True, f'{k}: the days scroll sideways inside the calendar')
+            self.assertEqual((r['off'], r['adds']), (True, 'none'), f'{k}: away from the family site, a note and no Add buttons')
+            self.assertGreater(r['cards'], 0, k)
+            self.assertEqual(r['overlap'], 0, f'{k}: cards never cover each other')
 
 if __name__ == '__main__':
     unittest.main(verbosity=1)

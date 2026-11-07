@@ -63,7 +63,7 @@ makes sense). Pictures may also be `data:image/…` URIs. Plain `http://` is ref
 | `lang` | **yes** | Page language, for example `en-GB`. |
 | `id` | | Short id used to remember the reader's plan and lens choices on their device. |
 | `description` | | Meta description. |
-| `trip`, `status`, `tz` | | Trip name, booking status ("Proposed, not booked"), time zone note. |
+| `trip`, `status`, `tz` | | Trip name, booking status ("Proposed, not booked"), time zone note. Written as `UTC+8` (or `UTC-5:30`), `tz` also turns on the Calendar section: every timeline time is read in it. |
 
 ### `masthead` (required)
 
@@ -388,7 +388,22 @@ Posts on a Plan B or Plan C stop come after the day's main plan, marked with the
 rains"), and a post shown twice in a day appears once. A playing post keeps a small link to the post itself,
 in case the service shows an error or a limit in place of the post.
 
-## Place panels, Share and Near me
+## The calendar
+
+With `meta.tz` written as `UTC+H` and at least one timeline item with a clock time, the page gets a
+**Calendar** section after Days: one column per day, each timeline item drawn at its time on an hour grid,
+side by side where items overlap. The columns scroll sideways inside the section on a phone; the page never
+does. Times are read from each item's `time`: `09:15` and `Around 18:30` or `From 14:00` (30 minutes from
+then), `By 15:00` (the 30 minutes before), and `10:15 to 11:30` or `11:25 → 16:35` (a span; one that ends
+past midnight ends the next day). Anything else ("Morning") has no set time: it is drawn dashed between its
+neighbours, labelled with its own words, and is never added to a calendar or given a time.
+
+Every timed item has **Add**, and each day **Add this day** (up to 12 events). Each opens the family site's
+`/calendar.ics` with the event in its address (title, local start and end, `tz`, place with its address,
+the item's text and `meta.status`); the site turns it into a calendar file for the reader's device and keeps
+nothing. On the site the link also names the trip page, so each event links back. Away from the site (a
+saved copy of the page) the buttons are hidden and a note says why. Optional `calendar`: `{kicker, title,
+intro, nav}`.
 
 Every place name on the page (stop cards, nearby alternatives, places of worship, meal choices, the
 day's extras, stay cards and `[[place:…]]`) is underlined and opens one panel inside the page: from

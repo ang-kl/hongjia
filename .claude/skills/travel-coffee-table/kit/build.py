@@ -53,10 +53,10 @@ CARTO_STYLES = ('voyager', 'light_all')
 TILE_KEY = re.compile(r'^[A-Za-z0-9._-]{4,200}$')
 
 
-SECTION_ORDER = ['overview', 'audience', 'plans', 'map', 'days', 'taste_shop', 'concierge', 'holidays', 'stays', 'transport',
+SECTION_ORDER = ['overview', 'audience', 'plans', 'map', 'days', 'calendar', 'taste_shop', 'concierge', 'holidays', 'stays', 'transport',
                  'backups', 'checklist', 'upgrades', 'credits', 'sources']
 PROSE = ('overview', 'holidays', 'stays', 'transport', 'backups', 'checklist')
-NAV_DEFAULT = {'overview': 'Overview', 'audience': 'Who', 'plans': 'Plans & weather', 'map': 'Map', 'days': 'Days', 'taste_shop': 'Taste & Shop',
+NAV_DEFAULT = {'overview': 'Overview', 'audience': 'Who', 'plans': 'Plans & weather', 'map': 'Map', 'days': 'Days', 'calendar': 'Calendar', 'taste_shop': 'Taste & Shop',
                'concierge': 'Concierge', 'holidays': 'Holidays', 'stays': 'Stays', 'transport': 'Transport',
                'backups': 'Backups', 'checklist': 'Checklist', 'upgrades': 'Upgrades', 'credits': 'Credits',
                'sources': 'Sources'}
@@ -176,8 +176,51 @@ LABELS.update({
     'gallery_intro': 'Photos with their credits, and posts from the official accounts. Posts load only when you tap them.',
     'g_play_ig': 'Instagram', 'g_play_tt': 'TikTok', 'g_open_fb': 'Facebook', 'g_from': 'From the official accounts',
     'g_open_post': 'Open the post on',
+    # The calendar (7 November 2026)
+    'cal_kicker': 'Calendar', 'cal_title': 'The trip in your *calendar*',
+    'cal_intro': 'Each day in its own column, at its time ({tz}). Tap ＋ to put one event in your calendar, or Add this day for all of that day\'s timed events.',
+    'cal_add': 'Add', 'cal_add_day': 'Add this day', 'cal_add_aria': 'Add {title} to your calendar',
+    'cal_add_day_aria': 'Add all of day {n}, {when}, to your calendar', 'cal_loose': 'No set time',
+    'cal_off': 'Add to calendar works when this page is opened on the family site.',
     'g_embed_note': 'Instagram and TikTok see your device\'s internet address when a post loads.',
 })
+# Times in a timeline item, for the calendar: "09:15", "10:15 to 11:30", "11:25 → 16:35", "Around 18:30",
+# "From 14:00" and "By 15:00". Anything else ("Morning") has no set time and is never given one.
+CLOCK = r'([01]?\d|2[0-3])[:.]([0-5]\d)'
+SPAN_RE = re.compile(rf'^{CLOCK}\s*(?:to|→|-|–)\s*{CLOCK}$', re.I)
+START_RE = re.compile(rf'^(?:(?:around|about|from|at)\s+)?{CLOCK}$', re.I)
+BY_RE = re.compile(rf'^by\s+{CLOCK}$', re.I)
+TZ_RE = re.compile(r'^UTC\s*([+-])(\d{1,2})(?::?([0-5]\d))?$')
+CAL_SHORT = 30          # minutes, for an item with only a start ("09:15") or only an end ("By 15:00")
+CAL_MAX_EVENTS = 12     # the site's limit for one link
+
+
+def clock_span(text):
+    """(start, end) in minutes from midnight for a timeline time, or None when it has no set time."""
+    t = re.sub(r'\s+', ' ', str(text or '')).strip()
+    m = SPAN_RE.match(t)
+    if m:
+        a, b = int(m[1]) * 60 + int(m[2]), int(m[3]) * 60 + int(m[4])
+        return (a, b if b > a else b + 1440)
+    m = START_RE.match(t)
+    if m:
+        a = int(m[1]) * 60 + int(m[2])
+        return (a, a + CAL_SHORT)
+    m = BY_RE.match(t)
+    if m:
+        b = int(m[1]) * 60 + int(m[2])
+        return (max(0, b - CAL_SHORT), b) if b > 0 else None
+    return None
+
+
+def tz_offset(tz):
+    """'UTC+8' as '+0800', or None."""
+    m = TZ_RE.match(str(tz or '').strip())
+    if not m or int(m[2]) > 14:
+        return None
+    return f'{m[1]}{int(m[2]):02d}{m[3] or "00"}'
+
+
 IG_POST = re.compile(r'^https://www\.instagram\.com/(p|reel)/([A-Za-z0-9_-]{5,40})/?$')
 TT_VIDEO = re.compile(r'^https://www\.tiktok\.com/@([A-Za-z0-9._]{1,40})/video/([0-9]{8,25})/?$')
 FB_URL = re.compile(r'^https://(?:www\.)?facebook\.com/[^\s"<>]{3,300}$')
@@ -1807,6 +1850,10 @@ class Page:
         for s in order:
             if s not in SECTION_ORDER:
                 raise KitError(f'page.order: unknown section {s}')
+            if s == 'calendar':
+                if self.cal_days():
+                    out.append(s)
+                continue
             if s in ('map', 'days', 'credits', 'sources') or self.d.get(s) or (s == 'concierge' and self.areas) or (s == 'stays' and self.d.get('worship')):
                 if s == 'upgrades' and not (self.d.get('upgrades') or {}).get('groups'):
                     continue
@@ -1870,6 +1917,149 @@ class Page:
     def days_section(self):
         s = self.d.get('days_section') or {}
         return f'<section id="days" class="sec">{self.head(s, "days_section")}' + ''.join(self.day_html(d, i) for i, d in enumerate(self.days)) + '</section>'
+
+    # ------------------------------------------------------------------ the calendar (7 November 2026)
+    def cal_days(self):
+        """Each day's timeline items, timed or not, for the calendar; empty when no item has a set time or
+        the trip's time zone is not given as UTC+H."""
+        if hasattr(self, '_cal'):
+            return self._cal
+        self._cal = []
+        tz = tz_offset(self.d['meta'].get('tz'))
+        if not tz:
+            return self._cal
+        days, timed = [], 0
+        for n, day in enumerate(self.days):
+            try:
+                date = datetime.date.fromisoformat(str(day.get('iso') or ''))
+            except ValueError:
+                date = None
+            items = []
+            for x in day.get('timeline') or []:
+                span = clock_span(x.get('time')) if date else None
+                timed += span is not None
+                items.append(dict(x=x, span=span))
+            days.append(dict(n=n + 1, day=day, date=date, items=items))
+        if timed:
+            self._cal = days
+        return self._cal
+
+    def cal_event(self, x, date, span):
+        """The link parameters of one event (without its index)."""
+        def stamp(minutes):
+            d = date + datetime.timedelta(days=minutes // 1440)
+            return f'{d:%Y%m%d}T{minutes % 1440 // 60:02d}{minutes % 60:02d}'
+        place = ''
+        if x.get('stop') in self.stops:
+            st = self.stops[x['stop']]
+            addr = next((it.get('label') for it in st.get('links') or [] if it.get('kind') == 'addr' and it.get('label')), '')
+            place = ', '.join(p for p in (self.plain(st.get('name')), self.plain(addr)) if p)
+        note = self.plain(x.get('text'))
+        if len(note) > 420:
+            note = note[:419].rsplit(' ', 1)[0] + '…'
+        status = self.plain(self.d['meta'].get('status'))
+        if status:
+            note = (note + ' ' if note else '') + status + ('' if status.endswith('.') else '.')
+        return [('t', self.unaccent(self.plain(x.get('title')))[:120]), ('s', stamp(span[0])), ('e', stamp(span[1])), ('l', place[:200]), ('n', note)]
+
+    def cal_href(self, name, events):
+        q = [('tz', tz_offset(self.d['meta'].get('tz'))), ('name', name)]
+        for i, ev in enumerate(events[:CAL_MAX_EVENTS]):
+            q += [(f'{k}{i}', v) for k, v in ev if v]
+        return '/calendar.ics?' + urllib.parse.urlencode(q, quote_via=urllib.parse.quote)
+
+    def calendar_section(self):
+        days = self.cal_days()
+        c = self.d.get('calendar') or {}
+        tz = str(self.d['meta'].get('tz'))
+        head = self.head(dict(kicker=c.get('kicker') or self.L['cal_kicker'], title=c.get('title') or self.L['cal_title'],
+                              intro=c.get('intro') or self.L['cal_intro'].format(tz=tz)), 'calendar')
+        # The hours shown: from the earliest start to the latest end of any timed item, whole hours.
+        spans = [it['span'] for d in days for it in d['items'] if it['span']]
+        first, last = min(a for a, _ in spans) // 60, -(-max(b for _, b in spans) // 60)
+        hours = max(1, last - first)
+        min_len = 0.5  # hours: the shortest card drawn (44 px at the calendar's 88 px hour)
+        axis = ''.join(f'<span style="--at:{h - first}">{h % 24:02d}:00</span>' for h in range(first, last + 1))
+        cols = []
+        for d in days:
+            cards, placed = [], []
+            timed_events = []
+            n_items = len(d['items'])
+            for k, it in enumerate(d['items']):
+                x = it['x']
+                title = self.unaccent(self.plain(x.get('title')))
+                if it['span']:
+                    a, b = it['span']
+                    top, length = a / 60 - first, (b - a) / 60
+                    ev = self.cal_event(x, d['date'], it['span'])
+                    timed_events.append(ev)
+                    label = self.L["cal_add_aria"].format(title=title)
+                    add = (f'<a class="cal-add cal-add-one" href="{E(self.cal_href(title, [ev]))}" target="_blank" rel="noopener" data-ics'
+                           f' aria-label="{E(label)}" title="{E(label)}"><span aria-hidden="true">＋</span></a>')
+                    loose = ''
+                else:
+                    # No set time: it sits between its neighbours in the day's order, drawn dashed, never added.
+                    prev_end = max((p[1] for p in placed), default=0.0)
+                    nxt = next((j['span'][0] / 60 - first for j in d['items'][k + 1:] if j['span']), None)
+                    top = prev_end
+                    length = max(min_len, (nxt - top) if nxt is not None and nxt - top > 0 else 1.0)
+                    add, loose = '', ' cal-loose'
+                vis_end = top + max(length, min_len)
+                placed.append((top, vis_end))
+                lines = max(1, int((max(length, min_len) * 88 - 26) // 16))  # title lines that fit the card
+                shown = str(x.get('time') or self.L['cal_loose'])
+                if it['span'] and SPAN_RE.match(re.sub(r'\s+', ' ', shown).strip()):
+                    a, b = it['span']
+                    shown = f'{a // 60:02d}:{a % 60:02d}-{b // 60 % 24:02d}:{b % 60:02d}'  # "09:00-09:30" fits a narrow column
+                cards.append(dict(top=top, end=vis_end, html=(
+                    f'<p class="cal-time" title="{E(x.get("time") or "")}">{E(shown)}</p>'
+                    f'<p class="cal-title" style="--lines:{lines}">{self.pl_text(x, title)}</p>{add}'), length=length, loose=loose))
+            # Side by side where cards overlap: each card takes the first free lane in its group.
+            groups, cur = [], []
+            for cd in sorted(cards, key=lambda c: c['top']):
+                if cur and cd['top'] >= max(c['end'] for c in cur) - 1e-9:
+                    groups.append(cur)
+                    cur = []
+                cur.append(cd)
+            if cur:
+                groups.append(cur)
+            html = []
+            for g in groups:
+                lanes = []
+                for cd in g:
+                    lane = next((i for i, end in enumerate(lanes) if end <= cd['top'] + 1e-9), None)
+                    if lane is None:
+                        lanes.append(cd['end'])
+                        lane = len(lanes) - 1
+                    else:
+                        lanes[lane] = cd['end']
+                    cd['lane'] = lane
+                for cd in g:
+                    html.append(f'<article class="cal-ev{cd["loose"]}" style="--top:{cd["top"]:.3f};--len:{cd["length"]:.3f};'
+                                f'--lane:{cd["lane"]};--lanes:{len(lanes)}">{cd["html"]}</article>')
+            day = d['day']
+            when = str(day.get('when') or '')
+            add_day = ''
+            if timed_events:
+                name = f'{self.L["day"]} {d["n"]} · {when}'
+                add_day = (f'<a class="cal-add cal-add-day" href="{E(self.cal_href(name, timed_events))}" target="_blank" rel="noopener" data-ics'
+                           f' aria-label="{E(self.L["cal_add_day_aria"].format(n=d["n"], when=when))}">＋ {E(self.L["cal_add_day"])}</a>')
+            cols.append(f'<section class="cal-day" aria-labelledby="cal-h-{d["n"]}"><header class="cal-dh">'
+                        f'<h3 id="cal-h-{d["n"]}"><a href="#day-{d["n"]}"><span class="mono">{E(self.L["day"])} {d["n"]}</span> {E(when)}</a></h3>{add_day}</header>'
+                        f'<div class="cal-track">{"".join(html)}</div></section>')
+        return (f'<section id="calendar" class="sec">{head}<p class="fine cal-off" hidden>{E(self.L["cal_off"])}</p>'
+                f'<div class="cal-scroll" tabindex="0" aria-label="{E(self.L["cal_kicker"])}" style="--hours:{hours}"><div class="cal-grid" style="--days:{len(days)}">'
+                f'<div class="cal-axis" aria-hidden="true"><div class="cal-dh"></div><div class="cal-track">{axis}</div></div>'
+                + ''.join(cols) + '</div></div></section>')
+
+    def pl_text(self, x, title):
+        """A timeline item's title, linked to its place's panel when it has a stop."""
+        if x.get('stop') in self.stops:
+            key = self.stops[x['stop']]['place']
+            pid = self.place_pid.get(key)
+            if pid and pid in self.panels:
+                return self.pl_link(pid, E(title), self.panels[pid]['anchor'])
+        return E(title)
 
     def concierge(self):
         c = self.d.get('concierge') or {}
@@ -2189,7 +2379,7 @@ class Page:
         present = self.present()
         css = read_asset('kit.css').replace('/*MAP-ROWS*/12', str(max(12, len(present) + 1)))
         js = read_asset('kit.js')
-        parts = {'map': self.map_section, 'days': self.days_section, 'taste_shop': self.taste_shop_section, 'concierge': self.concierge, 'audience': self.audience_section,
+        parts = {'map': self.map_section, 'days': self.days_section, 'calendar': self.calendar_section, 'taste_shop': self.taste_shop_section, 'concierge': self.concierge, 'audience': self.audience_section,
                  'plans': self.plans_section, 'upgrades': self.upgrades_section, 'credits': self.credits_section, 'sources': self.sources_section}
         body = ''.join(parts[s]() if s in parts else self.prose(s) for s in present)
         gallery = self.gallery_section()

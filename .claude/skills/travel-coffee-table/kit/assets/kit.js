@@ -938,4 +938,18 @@ if(gallery){
     var pb=e.target.closest&&e.target.closest('.g-tile button.g-play'); if(pb){ playTile(pb.closest('.g-tile')); }
   });
 }
+
+/* ==== Add to calendar (the owner, 7 November 2026): each Add opens the family site's /calendar.ics with
+   the event in its address. On the site, the link also names this trip page so the event links back;
+   anywhere else (a saved copy of the page) the buttons are hidden, with a note. ==== */
+(function(){
+  var links=$$('a[data-ics]'); if(!links.length){ return; }
+  var m=/^(\/documents\/[0-9]{4}-[0-9]{4}_[0-9]+)\/raw$/.exec(location.pathname||'');
+  if(!m || !/^https?:$/.test(location.protocol)){
+    root.classList.add('cal-offsite');
+    var off=$('.cal-off'); if(off){ off.hidden=false; }
+    return;
+  }
+  links.forEach(function(a){ a.setAttribute('href', a.getAttribute('href')+'&u='+encodeURIComponent(m[1])); });
+})();
 })();
