@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.07 (5)";
+pub const VERSION: &str = "2026.11.07 (6)";
 
-pub const SYNOPSIS: &str = "This version fixes the date bar of trip pages in the Gallery view: it now marks the Gallery day you are looking at, instead of the last day of the trip, and marks no reading section while the Gallery is shown. In the reading view, its section links (Days, Calendar and the rest) are marked again as you read: since the Gallery arrived, the hidden Gallery had counted as the part being read. A link to one part of a trip page now lands just below the date bar on wide screens too, where the Instagram drawers opening on the way used to leave it short, inside the day before. Trip pages keep the script they were built with, so a trip page has these fixes once a version built after this one is uploaded.";
+pub const SYNOPSIS: &str = "This version replaces the template that builds the family's trip pages with a fresh one, built from the current trip page (edition v15) at the owner's request, ready for the next family holiday's briefing note. The old template, its two-day sample and its design notes are gone; the new one carries everything v15 has, a made-up eight-day sample with two bases, checklists for each kind of trip rebuilt from v15, and fresh notes. Nothing on the site itself looks or works differently, and trip pages already on the site are unchanged.";

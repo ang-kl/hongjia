@@ -2419,7 +2419,7 @@ class Page:
                 '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<meta name="color-scheme" content="light">\n'
                 f'<title>{E(meta["title"])}</title>\n'
                 + (f'<meta name="description" content="{E(meta["description"])}">\n' if meta.get('description') else '')
-                + f'<meta name="generator" content="travel-coffee-table kit">\n<link rel="stylesheet" href="{E(fonts)}">\n'
+                + f'<meta name="generator" content="holiday-coffee-table kit">\n<link rel="stylesheet" href="{E(fonts)}">\n'
                 '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">\n'
                 f'<style>{css}</style>\n</head>\n<body>\n<a class="skip" href="#days">{E(self.L["skip"])}</a>\n'
                 f'{self.opener_html()}\n{self.masthead()}\n{self.topnav(present)}\n<main class="layout">\n{body}\n{self.footer()}\n</main>\n'

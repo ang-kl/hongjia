@@ -1,0 +1,127 @@
+# H1: Holiday coffee-table template
+
+Version 1, 7 November 2026. Replaces the first travel template and its notes (T1, 6 to 7 November 2026), which
+the owner asked to remove. Trip details stay out of this public repository, so the family's current trip is
+called "v15" here.
+
+## Owner requests and decisions
+
+- **Request (7 November 2026):** "now remove the old template that i mentioned yesterday about itinerary/travel
+  and create a fresh construct template based on v15. because i will give you a briefing note about the next
+  family holiday and you are to do the similar like v15 / ask me till you understood".
+- **Decisions, from the questions asked:**
+  - Which template: the travel skill in the repository (instructions, page-building engine, sample, checklists).
+  - How: "Delete all, rebuild new". The old folder is deleted; the new one, `.claude/skills/holiday-coffee-table/`,
+    carries the same engine as v15 (only its generator tag renamed), with new instructions, sample, checklists and tests.
+  - Where: in the repository, with every real trip detail stripped.
+  - Contents: "Everything v15 has".
+  - Name: `holiday-coffee-table`.
+  - Sample: a made-up trip shaped like v15.
+  - Old notes: "Remove them too" (T1 is deleted; these notes replace it).
+  - Kinds of trip: "Rebuild them from v15".
+  - Keeping a trip's private data file: "Attach it on hongjia.org", as a `.txt` attachment on the trip's document,
+    after the owner's APPROVE for each upload.
+- **Earlier decisions carried forward** (from T1, 6 and 7 November 2026):
+  - "Super-luxury" and "wow" mean both the look and the content.
+  - The document's owner decides whether a page is for one travelling group (`party`) or switchable kinds of
+    traveller (`lenses`).
+  - Weather from free Open-Meteo, through the site. Map pictures through the site ("server map").
+  - A place panel inside the page rather than new windows; "link only" when a day or part is shared.
+  - Instagram first for stays, worship and main stops; one photo spot per place, from official sources only.
+  - "Food for meals should have 4 choices each": every meal, the planned place counted.
+  - Food, snacks and shopping matter most: Taste & Shop, awards instead of star ratings, a Gallery of official
+    accounts' posts. Live Google picks: "Later".
+  - The Calendar: one column per day, Add for each timed item and for the day, through the site's `/calendar.ics`.
+  - The tour folds the site's right-hand buttons into a 🔭; the plain "Near me" button is removed; "Hungry?" and
+    "Shop nearby" stay.
+  - A # link beside every section, day and Gallery day; the Gallery shows each picture and post once a day; the
+    date bar follows the day being read or looked at.
+  - No brand or chain accounts in place of a venue's own; no age-restricted accounts.
+
+## The template (`.claude/skills/holiday-coffee-table/`)
+
+- **`SKILL.md`:** when to use it (a briefing note or upload whose intention is a holiday or trip), what v15 has so
+  every page has it, the workflow (intake and questions, the owner's choices, sourced research, the data file,
+  render, check, a look in a local copy of the site, the owner's APPROVE, the live check, keeping the data file),
+  versions, the quality bar, the page's limits, the site's services, Plan A/B/C, and privacy.
+- **`kit/build.py`** (Python 3 standard library only) renders one data file into one self-contained page and checks
+  pages (`--check`): no blank picture holders, a credit on every photo, a source for every fact, no plain `http://`,
+  addresses on Google Maps, social links on their own platforms, four choices per meal where asked. Text from the
+  data file is escaped; rich fields allow only a short list of tokens.
+- **`kit/assets/kit.js`** builds the page with `textContent`, never `innerHTML`, and talks to the site only by
+  messages; **`kit/assets/kit.css`** is the Atelier design.
+- **`kit/example/trip.json`:** a made-up eight-day trip (Example Bay and Example Ridge), shaped like v15: two bases,
+  two transfer days with a midway break, three meals a day with four choices, Taste & Shop for both areas, posts
+  for the Gallery, a holiday alert, places of worship near both bases. Its pictures are CC0 illustrations made for it.
+- **`kit/schema.md`:** every field of the data file.
+- **`reference/subtypes.md`:** "Every trip (the v15 standard)", road trip and countryside (complete, proven on v15),
+  and starters for city and culture, nature and wildlife, food and wine, cruise, faith and heritage, young family,
+  gentle travel for seniors, and celebration.
+- **Proof:** v15's private data file, rendered by the new template, gives the page now on the site, byte for byte,
+  apart from the renamed generator tag.
+
+## The site's services for trip pages
+
+A trip page runs in the site's locked frame (an opaque origin: no same-origin access, no downloads, scripts only
+from four pinned CDNs). It talks to the site by `postMessage`, and the site checks every field.
+
+- **Weather:** the page names up to 12 places (key, latitude, longitude, first and last date) in `hj:weather-want`.
+  The signed-in server asks Open-Meteo once per place, with coordinates rounded to two decimals, cut to the forecast
+  window (yesterday to 15 days ahead), keeps answers for an hour (up to 500), at most 60 calls a minute, and passes on
+  only the daily readings within plausible ranges. Further ahead the answer is `available: false` with the day the
+  forecast first reaches the trip; after the trip, `past: true`; in both cases Open-Meteo is not asked. Setting:
+  `HONGJIA_WEATHER_URL` (plain http only off Railway, for the tests).
+- **Map pictures:** OpenStreetMap refuses requests without a Referer, and the locked frame sends none. The page sends
+  `hj:tiles-want`; the site answers `hj:tiles` with a 12-hour ticket signed with its internal key; tiles load from
+  `/tiles/{z}/{x}/{y}.png?t=ticket`. The relay identifies itself ("hongjia.org family site map relay
+  (+https://hongjia.org/privacy)", Referer `https://hongjia.org/`), keeps each tile at least 7 days (at most 3,000),
+  makes at most 120 requests a minute, never prefetches, serves a stale copy if OpenStreetMap is down, and sends
+  `Cross-Origin-Resource-Policy: cross-origin`. The page shows "© OpenStreetMap contributors". Setting:
+  `HONGJIA_TILES_URL`. Open point for the owner: OpenStreetMap asks for a contactable User-Agent; a contact email
+  would follow its policy more closely, if the owner agrees to publish one.
+- **Share:** `hj:share-want` shares a place (its name, a line and an https link) or the document by its address on the
+  site only, optionally with a part name after a # (a letter, then up to 60 letters, digits, `_` or `-`). The site
+  opens the device's share menu, or offers Share or Copy link in its own bar. A # that names nothing on the site's own
+  page is passed to the frame, so a shared link opens at that part.
+- **Hungry? and Shop nearby:** `hj:near-want` names up to 200 places. The site asks the person in its own words, takes
+  one low-accuracy reading on the device, and answers `hj:near` with the 20 nearest keys and distances to the nearest
+  half kilometre. Coordinates never go into the frame or to the server.
+- **The tour:** `hj:tour` (open or closed) folds the site's right-hand buttons into the 🔭 while the tour is open.
+- **Add to calendar:** `/calendar.ics` (signed-in only) turns the event or events in the link into an RFC 5545 file
+  (escaped text, lines folded at 75 bytes, stable identifiers, times as UTC), linking back only to trip-page paths.
+  Nothing is stored.
+- **Privacy page:** names Open-Meteo, OpenStreetMap, Instagram and TikTok panels and posts, Hungry? and Shop nearby,
+  and what a calendar link holds.
+
+## Outside services (decision record, facts checked 5 November 2026)
+
+| Service | Decision | Why |
+|---|---|---|
+| Claude API | Phase 2, the only AI | Reads PDFs and pictures; would run the same template; needs the owner's APPROVE for an account, a key and a spend limit, and a privacy line |
+| Open-Meteo | Weather | Free for private, non-commercial sites, with no key; 16-day forecast; CC BY 4.0 |
+| Google Weather API | Backup, not used | Needs billing, a key and Google's attribution |
+| Google Places API (New) | No | Ratings must be fetched live with Google's attribution and may not be stored or shown with a non-Google map |
+| OpenAI API or Codex | No, at runtime | A second AI would add keys, bills and failure points with no new capability |
+| X.com API | No; links only | Pay per use, with no free tier for new developers |
+| Bureau of Meteorology | No | No public forecast API; feeds are for personal use |
+
+**Phase 2 (not started):** the site would build a trip page from an upload itself, with the Claude API.
+
+## Privacy
+
+- No family names, travellers' details, destinations, dates, flights or bookings in the repository: not in the
+  template, a commit message, a test or a pull request.
+- Real trip data files and pages live outside the repository, reach the family only as uploads to the private site
+  after the owner's approval, and are kept as private attachments on the trip's document.
+
+## Checks
+
+- **Template tests** (`kit/test_kit.py`, 51, run by the GitHub checks in the browser-js job): every component on the
+  sample, the data rules, escaping, no `innerHTML`, pinned libraries and page weight, credits on every picture, both
+  audience modes, the map relay protocol in a browser, the place panel, Taste & Shop, awards, the Gallery (each picture
+  and post once a day, one Facebook link per account a day), the Calendar, the tour message, # links, and the date bar
+  in the Gallery and in reading, at desktop and phone widths.
+- **Site tests:** the message checks (`web/test/doc-view.test.mjs`), the weather, tiles and calendar unit and
+  database tests, and the release browser walk (`tests/browser/p1-flow.mjs`), unchanged by this replacement.
+- **This replacement:** the template's tests pass on the new sample; v15's data renders to the page on the site apart
+  from the generator tag.
