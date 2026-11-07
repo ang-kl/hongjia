@@ -3842,7 +3842,7 @@ async fn trip_pages_get_the_forecast_through_the_server(pool: PgPool) {
     assert!(
         privacy.contains("Instagram or TikTok then sees")
             && privacy.contains("Add to calendar buttons")
-            && privacy.contains("Near me")
+            && privacy.contains("Hungry? and Shop nearby")
             && privacy.contains("not sent to the site"),
         "the privacy page covers Instagram panels and Near me"
     );

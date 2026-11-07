@@ -978,6 +978,8 @@ class KitTest(unittest.TestCase):
         self.assertTrue(find(sheet, 'button', 'sheet-x', data_sheet_close=True))
         self.assertTrue(find(self.root, 'p', 'toast', role='status'))
         self.assertTrue(find(self.root, 'button', 'near-me', data_near_me=True))
+        self.assertEqual([b for b in find(self.root, 'button', 'near-me') if not b.attrs.get('data-near-me')], [],
+                         'no plain Near me button (the owner, 7 November 2026); only Hungry? and Shop nearby')
         self.assertEqual(len(find(self.root, 'button', 'share-day')), len(self.data['days']))
 
     def test_meals_have_their_choices(self):

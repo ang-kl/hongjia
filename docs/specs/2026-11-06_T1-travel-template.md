@@ -243,3 +243,5 @@ The skill and kit live in `.claude/skills/travel-coffee-table/`, so a Claude ses
   - Only trip pages built with this kit or later send the message. Older documents (such as the first Perth document, 2026-1105_#1) keep their buttons as before.
 - **Checks:** a kit browser test that the tour sends open, then closed; a message test; a browser check in the flow that the buttons fold, unfold with 🔭, and return when the tour closes.
 - **Also:** the flow's "Near me asks in the site's words first" check read the site's question bar before it was shown, and failed every time on this branch. It now waits for the bar to show; the site itself already asked correctly.
+
+- **Near me removed (7 November 2026):** the owner: "remove near me", then "ignore my decision to remove \"near me\". continue", then "remove near me" again. Taken as final: the plain "📍 Near me" button is gone from trip pages. Hungry? and Shop nearby, approved with Taste & Shop, stay, with the same site question and rough reading. The privacy page now names them instead.

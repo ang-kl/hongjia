@@ -417,7 +417,8 @@ or a tap outside closes it, and the reader is back where they were.
   (`hj:share-want`): a place by its public facts and an https link; a day only by the document's
   link on the site (the owner, 6 November 2026: "link only"). Opened elsewhere, it uses the
   browser's share menu or copies the link.
-- **Near me**: on the family site the site asks the person in its own words, takes a rough reading
+- **Hungry? and Shop nearby** (the plain "📍 Near me" button was removed, the owner, 7 November 2026):
+  on the family site the site asks the person in its own words, takes a rough reading
   (never high accuracy) and sends back only the nearest places' keys and distances to the nearest
   half kilometre (`hj:near-want` and `hj:near`); the page never receives coordinates.
 - **Motion** uses the Web Animations API through one helper, and none at all when the reader asks

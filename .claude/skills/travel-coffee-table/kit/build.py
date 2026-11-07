@@ -1902,7 +1902,7 @@ class Page:
                 f'<button type="button" role="tab" id="tab-dir" aria-controls="panel-dir" aria-selected="false" tabindex="-1">{E(self.L["tab_dir"])}</button></div>'
                 f'<div class="panel" id="panel-route" role="tabpanel" aria-labelledby="tab-route"><div class="mc-tools">'
                 f'<button type="button" id="fly" class="btn-gold">{E(self.L["fly"])}</button>'
-                f'<button type="button" class="btn-ghost near-me" data-near-me><span aria-hidden="true">📍</span> {E(self.L["near_me"])}</button>'
+                # No plain "📍 Near me" (the owner, 7 November 2026: "remove near me"); Hungry? and Shop nearby stay.
                 + self.near_buttons()
                 + (f'<label class="check"><input type="checkbox" id="mc-safety"> {E(m.get("safety_label") or self.L["safety"])}</label>' if self.d.get('safety') else '')
                 + (f'<label class="check"><input type="checkbox" id="mc-nearby"> {E(self.L["nearby_pins"])}</label>' if self.nearby_pins() else '')
