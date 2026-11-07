@@ -987,7 +987,9 @@ parent.postMessage({ type: 'hj:weather-want', places: [
   }
   await raw().click('#near-me');
   const ask = page.locator('.doc-ask');
-  const askText = await ask.textContent({ timeout: 4000 }).catch(() => '');
+  // The bar is always on the page, hidden and empty until asked: wait for it to show its words.
+  const askText = await page.waitForFunction(() => { const b = document.querySelector('.doc-ask'); return b && !b.hidden && b.textContent; }, null, { timeout: 4000 })
+    .then(h => h.jsonValue()).catch(() => '');
   if (!/not sent to the site/.test(askText)) failures.push(`Near me asks in the site's words first: "${askText}"`);
   await page.locator('.doc-ask button[data-ask="yes"]').click({ timeout: 4000 }).catch(() => failures.push('no "Use my location" in the bar'));
   const nearby = await raw().waitForFunction(() => document.getElementById('nearby').textContent !== 'waiting', null, { timeout: 8000 }).then(() => raw().textContent('#nearby'), () => 'no answer');
@@ -1263,6 +1265,49 @@ for (const scheme of ['light', 'dark']) {
       await context.close();
     }
   }
+}
+// The globe on a slow connection (an iPhone on 4G, 7 November 2026): taps while the document list is
+// still loading must not draw a second globe; before the fix, three taps drew three, stacked.
+{
+  const slow = await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: state });
+  const p = await slow.newPage();
+  await slow.route('**/api/library', async r => { await new Promise(res => setTimeout(res, 1500)); await r.continue(); });
+  await p.goto(base + '/documents');
+  for (let i = 0; i < 3; i++) {
+    await p.click('[data-fab-globe]');
+    await p.waitForTimeout(350);
+    if (i < 2) await p.click('.globe-x').catch(() => {});
+    await p.waitForTimeout(100);
+  }
+  await p.waitForTimeout(2500);
+  const globes = await p.evaluate(() => document.querySelectorAll('.globe-canvas').length);
+  console.log(`${globes === 1 ? 'ok  ' : 'FAIL'} globe on a slow connection: ${globes} drawn`);
+  if (globes !== 1) failures.push(`globe on a slow connection: ${globes} drawn, not 1`);
+  await slow.close();
+}
+// While a trip page plays its tour, the 🛰️ globe 📁 buttons fold into 🔭 (the owner, 7 November 2026).
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: state });
+  const p = await ctx.newPage();
+  await p.goto(base + docPath);
+  await p.waitForTimeout(1500);
+  const frame = p.frames().find(f => f.url().includes('/raw'));
+  const seen = async () => p.evaluate(() => ({
+    group: getComputedStyle(document.querySelector('[data-fab-group]')).display !== 'none',
+    scope: getComputedStyle(document.querySelector('[data-fab-scope]')).display !== 'none' }));
+  const before = await seen();
+  await frame.evaluate(() => parent.postMessage({ type: 'hj:tour', open: true }, '*'));
+  await p.waitForTimeout(300);
+  const playing = await seen();
+  await p.click('[data-fab-scope]');
+  const peek = await seen();
+  await frame.evaluate(() => parent.postMessage({ type: 'hj:tour', open: false }, '*'));
+  await p.waitForTimeout(300);
+  const after = await seen();
+  const ok = before.group && !before.scope && !playing.group && playing.scope && peek.group && peek.scope && after.group && !after.scope;
+  console.log(`${ok ? 'ok  ' : 'FAIL'} tour folds the buttons into 🔭: ${JSON.stringify({ before, playing, peek, after })}`);
+  if (!ok) failures.push('tour fold of the right-hand buttons');
+  await ctx.close();
 }
 await browser.close();
 server.kill('SIGTERM');

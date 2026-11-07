@@ -57,8 +57,11 @@ function setup() {
     return loading;
   }
 
-  // The globe is built once, from the library.
+  // The globe is built once, from the library. Taps that arrive while the library is still loading (a
+  // slow phone connection) all wait for the same load, so only the first one builds; before this,
+  // each built its own globe and they stacked on the page (seen on an iPhone, 7 November 2026).
   function build() {
+    if (svg) return;
     const layout = placeGlobe(buildIslands(library));
     svg = el('svg', { class: 'globe-canvas', viewBox: '-50 -50 700 700', width: 600, height: 600, role: 'group', tabindex: 0, 'aria-describedby': 'globe-help', 'aria-label': 'Globe of the family documents. Each island is a hashtag; each pin is a document.' });
     const defs = el('defs', {}, svg);
@@ -510,6 +513,13 @@ function setup() {
     if (reduceMotion) { open(); return; }
     fab.classList.add('is-lit');
     setTimeout(() => { fab.classList.remove('is-lit'); open(); }, 220);
+  });
+  // While a trip page plays its tour, the three buttons fold into 🔭 (the owner, 7 November 2026);
+  // 🔭 unfolds them and folds them again. The document viewer sets html.tour-on.
+  const scope = document.querySelector('[data-fab-scope]');
+  scope?.addEventListener('click', () => {
+    const peek = document.documentElement.classList.toggle('fabs-peek');
+    scope.setAttribute('aria-expanded', String(peek));
   });
   satellite.addEventListener('click', () => showField(fabForm.hidden));
   search.addEventListener('input', () => { if (dialog.hidden || !svg) return; clearTimeout(typing); typing = setTimeout(() => runSearch(false), 250); });

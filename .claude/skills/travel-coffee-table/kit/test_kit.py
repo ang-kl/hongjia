@@ -156,6 +156,26 @@ const { chromium } = require('playwright');
 '''
 
 
+TOUR_JS = r'''
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+  await ctx.route(/^https?:/, r => r.abort());
+  const p = await ctx.newPage();
+  await p.goto('file://' + process.argv[2], { waitUntil: 'load' });
+  await p.waitForTimeout(500);
+  const f = p.frames().find(x => x.url().endsWith('page.html'));
+  await f.click('#play-trip');
+  await p.waitForTimeout(400);
+  await f.click('#tour .tour-close');
+  await p.waitForTimeout(300);
+  process.stdout.write(JSON.stringify(await p.evaluate(() => window.__msgs)));
+  await browser.close();
+})().catch(e => { console.error(e); process.exit(1); });
+'''
+
+
 def find_browser():
     import shutil
     node = shutil.which('node')
@@ -1247,6 +1267,27 @@ class KitTest(unittest.TestCase):
             self.assertEqual((r['off'], r['adds']), (True, 'none'), f'{k}: away from the family site, a note and no Add buttons')
             self.assertGreater(r['cards'], 0, k)
             self.assertEqual(r['overlap'], 0, f'{k}: cards never cover each other')
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_tour_tells_the_site(self):
+        """Inside the family site's frame, the tour says when it opens and closes (7 November 2026), so the
+        site can fold its own buttons away while it plays."""
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            with open(os.path.join(tmp, 'host.html'), 'w', encoding='utf-8') as f:
+                f.write('<!doctype html><script>window.__msgs=[];addEventListener("message",function(e){window.__msgs.push(e.data);});</script>'
+                        '<iframe src="page.html" style="width:1000px;height:800px"></iframe>')
+            script = os.path.join(tmp, 'tour.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(TOUR_JS)
+            out = subprocess.run([NODE, script, os.path.join(tmp, 'host.html')], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            msgs = json.loads(out.stdout)
+        tours = [m for m in msgs if isinstance(m, dict) and m.get('type') == 'hj:tour']
+        self.assertEqual(tours, [{'type': 'hj:tour', 'open': True}, {'type': 'hj:tour', 'open': False}])
 
 if __name__ == '__main__':
     unittest.main(verbosity=1)

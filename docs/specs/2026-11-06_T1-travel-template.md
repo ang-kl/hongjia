@@ -228,3 +228,18 @@ The skill and kit live in `.claude/skills/travel-coffee-table/`, so a Claude ses
 - **Kit:** `clock_span` and `tz_offset` read the times; the Calendar section is built after Days when `meta.tz` is `UTC±H` and an item has a clock time. The page script adds the trip page to each link on the site, and hides the buttons elsewhere.
 - **Site:** `calendar.rs` builds the file (RFC 5545: escaped text, lines folded at 75 bytes, stable identifiers so adding twice updates); only trip-page paths are linked back; the privacy page says what the link holds.
 - **Checks:** kit tests for the times, the markup and links, items with no set time, and a browser test at desktop and phone widths (no sideways page scroll, no overlapping cards, the note away from the site). Site unit tests for offsets, dates, the file, escaping and folding, bad links and links back; a database test for signed-in access, the file's headers and a bad link.
+
+## Follow-up T6: the tour folds the site's buttons; the globe on a slow phone (7 November 2026)
+
+- **Owner report and request:** "The FAB-Globe isnt working on iphone." and "if I am playing the trip, hide all right 3 FAB to a tiny glow blue border circle with 🔭".
+- **The globe:**
+  - On an iPhone over 4G the globe showed three copies, stacked.
+  - Cause: every tap on the globe button while the document list was still loading built its own globe. Reproduced locally: three taps during a 2-second load drew three.
+  - Fix: the globe is built once, whatever arrives while it loads. A browser check in the flow (`p1-flow.mjs`, slow connection) now expects exactly one.
+- **The 🔭:**
+  - While a trip page's tour is open (playing or paused), the page says so to the site (`hj:tour` with `open` true or false, a message the site checks).
+  - The site folds the 🛰️ globe 📁 buttons into one small circle with a soft blue glow and 🔭, just above the tour's own buttons. Tapping 🔭 unfolds them, and tapping again folds them.
+  - Closing the tour, or loading another page in the frame, brings them back. The ☰ menu on the left is unchanged.
+  - Only trip pages built with this kit or later send the message. Older documents (such as the first Perth document, 2026-1105_#1) keep their buttons as before.
+- **Checks:** a kit browser test that the tour sends open, then closed; a message test; a browser check in the flow that the buttons fold, unfold with 🔭, and return when the tour closes.
+- **Also:** the flow's "Near me asks in the site's words first" check read the site's question bar before it was shown, and failed every time on this branch. It now waits for the bar to show; the site itself already asked correctly.

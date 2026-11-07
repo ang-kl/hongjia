@@ -115,6 +115,12 @@ test('Near me: a trip page names its places, and never receives a position', () 
   assert.equal(validMessage({ type: 'hj:near', places: [] }), null, 'answers only ever go into the frame');
 });
 
+test('a trip page says when its tour opens and closes, and nothing else', () => {
+  assert.deepEqual(validMessage({ type: 'hj:tour', open: true, extra: 'x' }), { type: 'hj:tour', open: true });
+  assert.deepEqual(validMessage({ type: 'hj:tour', open: false }), { type: 'hj:tour', open: false });
+  for (const open of [undefined, 'true', 1, null]) assert.equal(validMessage({ type: 'hj:tour', open }), null, String(open));
+});
+
 test('Near me sorts by distance and gives rough distances only', () => {
   const here = { lat: 51.5007, lon: -0.1246 };
   const places = [

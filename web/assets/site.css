@@ -521,7 +521,35 @@ html.globe-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .fab-globe::before, .fab-globe, .fab-satellite, .fab-folder { transition: none !important; }
 }
-@media print { .fab-group, .globe-dialog { display: none !important; } }
+@media print { .fab-group, .globe-dialog, .fab-scope { display: none !important; } }
+
+/* While a trip page plays its tour (the owner, 7 November 2026): the 🛰️ globe 📁 buttons fold into
+   a small 🔭 with a soft blue glow, just above the tour's own buttons, so nothing covers the tour.
+   🔭 unfolds them and folds them again; they come back when the tour closes. */
+.fab-scope { display: none; }
+html.tour-on .fab-scope {
+  display: inline-flex; align-items: center; justify-content: center;
+  position: fixed; z-index: 61;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + 76px);
+  width: 36px; height: 36px; min-height: 0; padding: 0;
+  border-radius: 50%; border: 2px solid #4b9be8;
+  background: rgb(255 255 255 / 0.88);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  box-shadow: 0 0 0 3px rgb(75 155 232 / 0.18), 0 0 14px rgb(75 155 232 / 0.55);
+  font-size: 1.05rem; line-height: 1; cursor: pointer;
+  animation: scope-glow 2.6s ease-in-out infinite;
+}
+html.tour-on .fab-scope::after { content: ""; position: absolute; inset: -6px; }
+html.tour-on .fab-scope:focus-visible { outline: 2px solid var(--globe-accent); outline-offset: 3px; }
+html.tour-on.fabs-peek .fab-scope { animation: none; background: #e9f3fd; }
+html.tour-on:not(.fabs-peek) .fab-group { display: none; }
+@keyframes scope-glow {
+  0%, 100% { box-shadow: 0 0 0 3px rgb(75 155 232 / 0.18), 0 0 10px rgb(75 155 232 / 0.4); }
+  50% { box-shadow: 0 0 0 3px rgb(75 155 232 / 0.28), 0 0 18px rgb(75 155 232 / 0.75); }
+}
+@media (prefers-reduced-motion: reduce) { html.tour-on .fab-scope { animation: none; } }
+@media (prefers-color-scheme: dark) { html.tour-on .fab-scope { background: rgb(20 30 34 / 0.85); } }
 
 /* Annotations and saved fields (P2b C). */
 button.pill {
