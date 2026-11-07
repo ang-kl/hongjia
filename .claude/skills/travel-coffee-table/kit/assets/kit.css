@@ -907,3 +907,12 @@ html.cal-offsite .cal-add{display:none}
 }
 @media print{.cal-add{display:none !important}.cal-scroll{overflow:visible;border:0}.cal-grid{grid-template-columns:40px repeat(var(--days),1fr)}.cal-ev{padding-right:8px}}
 html[data-mode=print] .cal-add{display:none}
+/* ==== # links beside headings (7 November 2026): a tap shares a link to that part of the page.
+   The # is drawn here so the heading's own words stay the same for the site's contents list. ==== */
+.sec-link{display:inline-grid;place-items:center;width:34px;height:34px;margin-left:.35em;vertical-align:middle;border-radius:50%;border:1px solid var(--gold-soft);color:var(--gold-ink);font-family:var(--mono);font-size:.82rem;font-weight:500;font-style:normal;letter-spacing:0;text-decoration:none;line-height:1;opacity:.7;transition:opacity .2s,background-color .2s}
+.sec-link::before{content:"#"}
+.sec-link:hover,.sec-link:focus-visible{opacity:1;background:var(--rule2)}
+.day-h.has-band .sec-link{color:#fff;border-color:rgba(255,255,255,.65)}
+.day-h.has-band .sec-link:hover,.day-h.has-band .sec-link:focus-visible{background:rgba(255,255,255,.18)}
+html[data-mode=print] .sec-link{display:none}
+@media print{.sec-link{display:none !important}}

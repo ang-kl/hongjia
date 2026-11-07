@@ -13,6 +13,7 @@ pub mod markdown;
 mod pages;
 pub mod picture;
 pub mod redact;
+pub mod release;
 mod review;
 pub mod signature;
 pub mod store;
@@ -211,6 +212,7 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         )
         .route("/home", get(handlers::home))
         .route("/about", get(handlers::about))
+        .route("/version", get(handlers::version))
         .route("/journal", get(handlers::journal))
         .route("/owner", get(handlers::owner_page))
         .route("/owner/end-sessions", post(handlers::owner_end_sessions))
@@ -246,6 +248,8 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             )),
         )
         .route("/documents/{key}/delete", post(documents::delete))
+        .route("/documents/{key}/hide", post(documents::hide))
+        .route("/documents/{key}/unhide", post(documents::unhide))
         .route("/documents/{key}/fields", post(review::save_field))
         .route("/documents/{key}/fields-mode", post(review::set_mode))
         .route(

@@ -377,6 +377,28 @@ pub async fn about(State(state): State<FamilyState>, headers: HeaderMap) -> Resu
     ))
 }
 
+/// ☰ Settings, Version: the program's version and one paragraph on what changed in it.
+pub async fn version(State(state): State<FamilyState>, headers: HeaderMap) -> Result {
+    let Some(session) = current(&state, &headers).await? else {
+        return Ok(see_other("/"));
+    };
+    let commit = state
+        .health
+        .split("\"commit\":\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .unwrap_or("unknown");
+    Ok(page(
+        StatusCode::OK,
+        pages::version(
+            &nav(&session),
+            super::release::VERSION,
+            super::release::SYNOPSIS,
+            commit,
+        ),
+    ))
+}
+
 pub async fn journal(State(state): State<FamilyState>, headers: HeaderMap) -> Result {
     let Some(session) = current(&state, &headers).await? else {
         return Ok(see_other("/"));

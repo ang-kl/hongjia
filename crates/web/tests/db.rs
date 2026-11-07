@@ -4007,3 +4007,104 @@ async fn add_to_calendar_gives_a_calendar_file_to_signed_in_readers(pool: PgPool
     assert_eq!(bad.status, 400);
     assert!(bad.body.contains("does not work"));
 }
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn documents_can_be_hidden_and_shown_again(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let r = upload(
+        &mut o,
+        &csrf,
+        "Trip one",
+        Some(("trip-v13-final.html", SAMPLE)),
+    )
+    .await;
+    let doc = r.header("location").unwrap().to_string();
+    let key = doc.trim_start_matches("/documents/").to_string();
+    // The header shows the file's own version beside the filing number.
+    let view = o.get(&doc).await.body;
+    assert!(view.contains(r#"<span class="doc-v""#) && view.contains("· v.13</span>"));
+    assert!(
+        view.find(r#"id="manage""#) < view.find("<dt>Filing number</dt>"),
+        "Manage comes first"
+    );
+    // Another member may read it but not hide it, and sees no ⋯ for it.
+    let mut b = member(port, "beta").await;
+    let bcsrf = b.csrf().await;
+    let refused = b.post(&format!("{doc}/hide"), &[("csrf", &bcsrf)]).await;
+    assert_ne!(refused.status, 303);
+    assert!(
+        !b.get("/documents")
+            .await
+            .body
+            .contains(&format!("/documents/{key}/hide"))
+    );
+    // The one who added it (here the owner) hides it from the list, the globe, search and the landing.
+    assert!(
+        o.get("/documents")
+            .await
+            .body
+            .contains(&format!(r#"action="/documents/{key}/hide""#))
+    );
+    let r = o
+        .post(&format!("{doc}/hide"), &[("csrf", &csrf), ("back", "list")])
+        .await;
+    assert_eq!(r.header("location"), Some("/documents"));
+    let list = b.get("/documents").await.body;
+    assert!(!list.contains("Trip one"), "hidden from everyone's list");
+    assert!(list.contains("Show hidden (1)"));
+    assert!(
+        !b.get("/api/library").await.body.contains("Trip one"),
+        "and from the globe and the menu"
+    );
+    assert!(
+        !b.get("/api/search?q=Sample")
+            .await
+            .body
+            .contains("Trip one"),
+        "and from search"
+    );
+    assert_ne!(
+        b.get("/documents/latest").await.header("location"),
+        Some(doc.as_str())
+    );
+    let shown = b.get("/documents?hidden=1").await.body;
+    assert!(
+        shown.contains("Trip one") && shown.contains(r#"<span class="row-hidden">Hidden</span>"#)
+    );
+    // Still readable by its link, saying it is hidden; the owner unhides it.
+    assert!(
+        b.get(&doc)
+            .await
+            .body
+            .contains("This document is hidden from the family's lists.")
+    );
+    let r = o
+        .post(
+            &format!("{doc}/unhide"),
+            &[("csrf", &csrf), ("back", "list")],
+        )
+        .await;
+    assert_eq!(r.header("location"), Some("/documents?hidden=1"));
+    assert!(b.get("/documents").await.body.contains("Trip one"));
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn settings_has_the_version_page(pool: PgPool) {
+    let port = start(pool, config()).await;
+    let mut o = owner(port).await;
+    assert!(
+        o.get("/about")
+            .await
+            .body
+            .contains(r#"<a class="menu-sub" href="/version">Version</a>"#)
+    );
+    let page = o.get("/version").await.body;
+    assert!(page.contains(&format!("<h1>Version {}</h1>", family::release::VERSION)));
+    assert!(page.contains("Build abc1234."));
+    assert_eq!(
+        Client::new(port).get("/version").await.header("location"),
+        Some("/")
+    );
+}

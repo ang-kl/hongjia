@@ -139,6 +139,7 @@ CAT_ALIASES = {'dining': 'food'}  # the first legend had one Dining category
 SOCIAL_HOSTS = {'ig': 'instagram.com', 'fb': 'facebook.com', 'tt': 'tiktok.com', 'yt': 'youtube.com'}
 PHONE_TEXT = re.compile(r'\+?[\d(][\d\s().-]{4,}')  # a phone number as people write it
 TZ_NAME = re.compile(r'^[A-Za-z]+(?:/[A-Za-z0-9_+-]+){1,2}$|^UTC$')
+ID_OK = re.compile(r'^[A-Za-z][A-Za-z0-9_-]{0,60}$')  # an anchor the family site will pass on (doc-view.mjs)
 EMOJI.update({'ig': '📷', 'addr': '📍', 'hours': '⏰'})
 LINK_LABELS.update({'addr': 'Address', 'hours': 'Hours'})
 LABELS.update({
@@ -161,6 +162,7 @@ LABELS.update({
     'meals': 'Meals', 'meals_aria': 'Meals for day {n}', 'meal_choices': '{n} choices',
     'meal_breakfast': 'Breakfast', 'meal_brunch': 'Brunch', 'meal_lunch': 'Lunch', 'meal_dinner': 'Dinner', 'meal_snack': 'Snack',
     'share': 'Share', 'share_day': 'Share this day', 'shared': 'Shared.', 'copied': 'Link copied.',
+    'sec_link': 'Share a link to this part',
     'near_me': 'Near me', 'near_title': 'Nearest to you', 'near_wait': 'Waiting for your answer…',
     'near_note': 'Straight-line distances, to the nearest half kilometre. Your location stays on your device.',
     'near_declined': 'Nothing was shared.', 'near_denied': 'Location is turned off for this page in your browser settings.',
@@ -1387,7 +1389,7 @@ class Page:
                 break
         out = (f'<article class="day" id="day-{n}" data-day="{n - 1}"{chosen}>'
                f'<header class="day-h{" has-band" if band else ""}">{band}<div class="day-num"><span class="mono">{E(self.L["day"])}</span><b>{n:02d}</b></div>'
-               f'<div class="day-t"><p class="mono kicker">{kicker}</p><h3>{self.accent(day["title"])}</h3>'
+               f'<div class="day-t"><p class="mono kicker">{kicker}</p><h3>{self.accent(day["title"])}{self.sec_link(f"day-{n}")}</h3>'
                + (f'<p class="dek">{E(day["sub"])}</p>' if day.get('sub') else '')
                + (f'<p class="day-meta">{meta}</p>' if meta else '')
                + f'<button type="button" class="btn-ghost share-day" data-share-day="{n}" hidden><span aria-hidden="true">↗</span> {E(self.L["share_day"])}</button>'
@@ -1434,7 +1436,7 @@ class Page:
     def taste_shop_section(self):
         """Taste & Shop: by area, what to taste, sweet stops, markets on the family's day, shopping, and what to bring home."""
         ts = self.d.get('taste_shop') or {}
-        out = f'<section id="taste_shop" class="sec ts-sec" data-cats="food snacks shopping">{self.head(ts, "taste_shop")}{self.near_buttons()}'
+        out = f'<section id="taste_shop" class="sec ts-sec" data-cats="food snacks shopping">{self.head(ts, "taste_shop", "taste_shop")}{self.near_buttons()}'
         for ai, a in enumerate(ts.get('areas') or []):
             w = f'taste_shop.areas[{ai}]'
             title = a.get('title') or (self.areas.get(a.get('area')) or {}).get('name') or a.get('area') or ''
@@ -1666,9 +1668,18 @@ class Page:
             return self.emergency()
         raise KitError(f'{w}: unknown block type {t!r}')
 
-    def head(self, s, w):
+    def sec_link(self, anchor):
+        """A small # beside a heading that shares a link to that part of the page (the owner, 7 November 2026:
+        "every section of the page have a HTML hyperlink #hashtag that I can share"). The # itself is drawn by the
+        style sheet, so the heading's own words stay unchanged for the site's contents list."""
+        if not ID_OK.match(anchor):
+            raise KitError(f'section link {anchor!r}: not a usable anchor')
+        return (f'<a class="sec-link" href="#{anchor}" data-sec-link="{anchor}" title="{E(self.L["sec_link"])}" '
+                f'aria-label="{E(self.L["sec_link"])}"></a>')
+
+    def head(self, s, w, anchor=None):
         out = f'<p class="mono kicker">{E(s["kicker"])}</p>' if s.get('kicker') else ''
-        out += f'<h2>{self.accent(s["title"])}</h2>' if s.get('title') else ''
+        out += f'<h2>{self.accent(s["title"])}{self.sec_link(anchor) if anchor else ""}</h2>' if s.get('title') else ''
         cls = ' class="fine"' if s.get('intro_style') == 'fine' else ''
         out += ''.join(f'<p{cls}>{self.rich(p, w + ".intro")}</p>' for p in as_list(s.get('intro')))
         return out
@@ -1681,7 +1692,7 @@ class Page:
         alert = self.block(dict(s['alert'], type='alert'), sid + '.alert') if s.get('alert') else ''
         cats = norm_cats(s.get('cat') or {'stays': 'stays', 'transport': 'transport', 'holidays': 'weather'}.get(sid), sid + '.cat')
         extra = self.worship_block() if sid == 'stays' else ''
-        return f'<section id="{sid}" class="sec"{self.cats_attr(cats)}>{alert}{self.head(s, sid)}{self.blocks(s.get("blocks"), sid + ".blocks")}{extra}</section>'
+        return f'<section id="{sid}" class="sec"{self.cats_attr(cats)}>{alert}{self.head(s, sid, sid)}{self.blocks(s.get("blocks"), sid + ".blocks")}{extra}</section>'
 
     # ------------------------------------------------------------------ the opener
     def first_role(self, sid):
@@ -1916,7 +1927,7 @@ class Page:
 
     def days_section(self):
         s = self.d.get('days_section') or {}
-        return f'<section id="days" class="sec">{self.head(s, "days_section")}' + ''.join(self.day_html(d, i) for i, d in enumerate(self.days)) + '</section>'
+        return f'<section id="days" class="sec">{self.head(s, "days_section", "days")}' + ''.join(self.day_html(d, i) for i, d in enumerate(self.days)) + '</section>'
 
     # ------------------------------------------------------------------ the calendar (7 November 2026)
     def cal_days(self):
@@ -1973,7 +1984,7 @@ class Page:
         c = self.d.get('calendar') or {}
         tz = str(self.d['meta'].get('tz'))
         head = self.head(dict(kicker=c.get('kicker') or self.L['cal_kicker'], title=c.get('title') or self.L['cal_title'],
-                              intro=c.get('intro') or self.L['cal_intro'].format(tz=tz)), 'calendar')
+                              intro=c.get('intro') or self.L['cal_intro'].format(tz=tz)), 'calendar', 'calendar')
         # The hours shown: from the earliest start to the latest end of any timed item, whole hours.
         spans = [it['span'] for d in days for it in d['items'] if it['span']]
         first, last = min(a for a, _ in spans) // 60, -(-max(b for _, b in spans) // 60)
@@ -2066,13 +2077,13 @@ class Page:
         order = self.area_order()
         notes = ''.join(f'<li>{self.rich(x, "concierge.notes")}</li>' for x in c.get('notes') or [])
         chips = ''.join(f'<a class="chip" href="#pc-{E(a)}">{E(self.areas[a]["name"])}</a>' for a in order)
-        return (f'<section id="concierge" class="sec">{self.head(c, "concierge")}{self.emergency()}'
+        return (f'<section id="concierge" class="sec">{self.head(c, "concierge", "concierge")}{self.emergency()}'
                 + (f'<ul class="mini">{notes}</ul>' if notes else '')
                 + f'<nav class="chips" aria-label="{E(self.L["areas"])}">{chips}</nav>' + ''.join(self.area_full(a) for a in order) + '</section>')
 
     def audience_section(self):
         a = self.audience
-        out = f'<section id="audience" class="sec" data-audience="{a["mode"]}">{self.head(a, "audience")}'
+        out = f'<section id="audience" class="sec" data-audience="{a["mode"]}">{self.head(a, "audience", "audience")}'
         if a['mode'] == 'party':
             out += '<div class="party">' + ''.join(
                 f'<article class="traveller"><span class="mono">{E(t.get("label"))}</span>' + (f'<h3>{E(t["name"])}</h3>' if t.get('name') else '')
@@ -2100,7 +2111,7 @@ class Page:
         keys = ''.join(f'<article><p class="mono kicker">{E(self.fmt("plan", p=k.upper()))}</p><h3>{E(self.plan_label(k))}</h3><p>{self.rich((p.get("explain") or {}).get(k), "plans.explain")}</p></article>'
                        for k in PLANS)
         rules = ''.join(f'<li>{E(r["text"])}</li>' for r in p.get('rules') or [])
-        out = f'<section id="plans" class="sec">{self.head(p, "plans")}<div class="three plan-keys">{keys}</div>'
+        out = f'<section id="plans" class="sec">{self.head(p, "plans", "plans")}<div class="three plan-keys">{keys}</div>'
         if rules:
             out += f'<h3 class="h-rule">{E(p.get("rules_title") or self.L["plans_rules"])}</h3><ol class="mini rules">{rules}</ol>'
         wx = self.weather
@@ -2115,7 +2126,7 @@ class Page:
 
     def upgrades_section(self):
         u = self.d['upgrades']
-        out = f'<section id="upgrades" class="sec">{self.head(u, "upgrades")}<p class="upg-note" role="note">{E(u.get("note") or self.L["upg_note"])}</p>'
+        out = f'<section id="upgrades" class="sec">{self.head(u, "upgrades", "upgrades")}<p class="upg-note" role="note">{E(u.get("note") or self.L["upg_note"])}</p>'
         for gi, g in enumerate(u.get('groups') or []):
             title = g.get('title') or (self.areas.get(g.get('area')) or {}).get('name') or g.get('area') or ''
             cards = []
@@ -2159,7 +2170,7 @@ class Page:
             globe = (f'<p class="fine globe-credit">{E(self.L["globe_credit"])} '
                      f'<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> · '
                      f'<a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a></p>')
-        return f'<section id="credits" class="sec">{self.head(c, "credits")}<ul class="credits">{"".join(rows)}</ul>{globe}</section>'
+        return f'<section id="credits" class="sec">{self.head(c, "credits", "credits")}<ul class="credits">{"".join(rows)}</ul>{globe}</section>'
 
     def sources_section(self):
         s = self.d.get('sources_page') or {}
@@ -2174,7 +2185,7 @@ class Page:
             else:
                 when = f' <span class="mono">opened {E(x["opened"])}</span>' if x.get('opened') else ''
                 rows.append(f'<li>{self.ext_link(u, x.get("title") or x["label"])}{when}</li>')
-        out = f'<section id="sources" class="sec">{self.head(s, "sources_page")}<ol class="srclist">{"".join(rows)}</ol>'
+        out = f'<section id="sources" class="sec">{self.head(s, "sources_page", "sources")}<ol class="srclist">{"".join(rows)}</ol>'
         if carried:
             out += f'<details><summary>{E(s.get("carried_summary") or self.L["carried_summary"])}</summary><ul class="srclist">{"".join(carried)}</ul></details>'
         return out + self.blocks(s.get('blocks'), 'sources_page.blocks') + '</section>'
@@ -2250,50 +2261,65 @@ class Page:
         total = 0
         for i, day in enumerate(self.days):
             n = i + 1
-            tiles, band, seen = [], None, set()
+            # One tile per picture and per post in a day (the owner, 7 November 2026: three tiles of the same
+            # photo of one place, from three Facebook links of the same account): a photo shows
+            # once a day, a Facebook account gets one link tile a day, the same post shows once a day, and a
+            # post with no unused photo left shows plain.
+            tiles, band, seen, used, fb = [], None, set(), set(), set()
+
+            def poster_for(candidates):
+                for ph in candidates:
+                    if ph['src'] not in used:
+                        used.add(ph['src'])
+                        return ph
+                return None
+
+            def social_tiles(sid, x, line, candidates, plan=None):
+                if x['url'] in seen:
+                    return
+                if x['kind'] == 'facebook':
+                    who = (x.get('by') or '').lower()
+                    if who in fb:
+                        return
+                    fb.add(who)
+                seen.add(x['url'])
+                _, shape = self.social_embed(x)
+                poster = poster_for(candidates)
+                tiles.append(self.gallery_tile(shape, poster, sid, line, self.credit(poster, original=False) if poster else '',
+                                               social=x, plan=plan))
+
             for j, it in enumerate(day['stops']):
                 sid = it['stop']
                 st = self.stops[sid]
                 line = st.get('line') or it.get('role') or self.first_role(sid)
                 allp = [self.photo(x, f'stops.{sid}.photos') for x in (st.get('photos') or [])]
-                photos = allp[:2]
+                photos = [ph for ph in allp if ph['src'] not in used][:2]
                 if photos and band is None:
                     band = photos[0]
                 for k, ph in enumerate(photos):
+                    used.add(ph['src'])
                     shape = ('g-wide' if j % 2 == 0 else 'g-port') if k == 0 else 'g-sq'
                     tiles.append(self.gallery_tile(shape, ph, sid, line if k == 0 else '', self.credit(ph, original=False)))
-                for q, x in enumerate(st.get('social') or []):
-                    if x['url'] in seen:
-                        continue
-                    seen.add(x['url'])
-                    _, shape = self.social_embed(x)
-                    spare = allp[2:] or allp
-                    poster = spare[q % len(spare)] if spare else None
-                    tiles.append(self.gallery_tile(shape, poster, sid, line, self.credit(poster, original=False) if poster else '', social=x))
+                for x in st.get('social') or []:
+                    social_tiles(sid, x, line, allp[2:] + allp[:2])
             # posts curated for a Plan B or Plan C stop are shown too, after the main plan and marked with their plan
             for plan in ('plan_b', 'plan_c'):
                 for it in day.get(plan) or []:
                     sid = it['stop']
                     st = self.stops[sid]
                     allp = [self.photo(x, f'stops.{sid}.photos') for x in (st.get('photos') or [])]
-                    for q, x in enumerate(st.get('social') or []):
-                        if x['url'] in seen:
-                            continue
-                        seen.add(x['url'])
-                        _, shape = self.social_embed(x)
-                        poster = allp[q % len(allp)] if allp else None
-                        tiles.append(self.gallery_tile(shape, poster, sid, it.get('role') or '', self.credit(poster, original=False) if poster else '',
-                                                       social=x, plan=plan))
+                    for x in st.get('social') or []:
+                        social_tiles(sid, x, it.get('role') or '', allp, plan=plan)
             if not tiles:
                 continue
             total += len(tiles)
             head = (f'<header class="g-day-h"><p class="mono kicker">{E(self.L["day"])} {n:02d} · {E(day["when"])}</p>'
-                    f'<h3>{self.accent(day["title"])}</h3></header>')
+                    f'<h3>{self.accent(day["title"])}{self.sec_link(f"g-day-{n}")}</h3></header>')
             days.append(f'<div class="g-day" id="g-day-{n}">{head}<div class="g-grid">{"".join(tiles)}</div></div>')
         if not total:
             return ''
         return (f'<section id="gallery" class="gallery" aria-label="{E(self.L["gallery_title"])}">'
-                f'<p class="mono kicker">{E(self.L["view_gallery"])}</p><h2>{E(self.L["gallery_title"])}</h2>'
+                f'<p class="mono kicker">{E(self.L["view_gallery"])}</p><h2>{E(self.L["gallery_title"])}{self.sec_link("gallery")}</h2>'
                 f'<p class="fine">{E(self.L["gallery_intro"])} {E(self.L["g_embed_note"])}</p>{"".join(days)}</section>')
 
     def view_switch(self):

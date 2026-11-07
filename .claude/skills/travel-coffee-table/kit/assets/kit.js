@@ -787,9 +787,17 @@ function sharePlace(p){
   localShare({title:p.name,text:text,url:url});
 }
 function shareDay(n){
-  var d=D.days[n-1]||{}, title=String((D.trip||'')+' · '+(d.label||'')).slice(0,120);
-  if(inFrame){ try{ window.parent.postMessage({type:'hj:share-want',kind:'doc',title:title},'*'); }catch(e){} return; }
-  if(/^https:/.test(location.href)){ localShare({title:title,url:location.href.split('#')[0]+'#day-'+n}); }
+  var d=D.days[n-1]||{};
+  shareAnchor('day-'+n,String((D.trip||'')+' · '+(d.label||'')).slice(0,120));
+}
+/* A link to one part of the page (the owner, 7 November 2026). On the family site the site shares its own
+   address for this document with the part's # at the end; the frame sends only the title and that #. */
+var ANCHOR_OK=/^[A-Za-z][A-Za-z0-9_-]{0,60}$/;
+function shareAnchor(id,title){
+  if(!ANCHOR_OK.test(id||'')){ return false; }
+  if(inFrame){ try{ window.parent.postMessage({type:'hj:share-want',kind:'doc',title:title,hash:id},'*'); }catch(e){} return true; }
+  if(/^https:/.test(location.href)&&canShare()){ localShare({title:title,url:location.href.split('#')[0]+'#'+id}); return true; }
+  return false;
 }
 function placeOpen(pid,from){
   var p=P[pid]; if(!p||!sheet){ return false; }
@@ -941,6 +949,27 @@ if(gallery){
     var pb=e.target.closest&&e.target.closest('.g-tile button.g-play'); if(pb){ playTile(pb.closest('.g-tile')); }
   });
 }
+
+/* ==== # links beside headings (the owner, 7 November 2026: "every section of the page have a HTML hyperlink
+   #hashtag that I can share"). A tap shares a link to that part; where the page cannot share (a saved copy
+   opened from the device) the # is an ordinary link, so the address bar shows it. A link that names a part of
+   the Gallery opens the Gallery there; any other part opens the reading view. ==== */
+document.addEventListener('click',function(e){
+  var a=e.target.closest&&e.target.closest('a[data-sec-link]'); if(!a||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey){ return; }
+  var h=a.parentNode, words=String((h&&h.textContent)||'').replace(/\s+/g,' ').trim();
+  if(shareAnchor(a.getAttribute('data-sec-link'),String((D.trip||'')+(words?' · '+words:'')).slice(0,120))){ e.preventDefault(); }
+});
+function goToHash(){
+  var id=decodeURIComponent(String(location.hash||'').slice(1));
+  if(!ANCHOR_OK.test(id)){ return; }
+  var target=document.getElementById(id); if(!target){ return; }
+  if(gallery){ setView(gallery.contains(target)?'gallery':'read'); }
+  // the days bar stays at the top while reading, so the part starts just below it
+  var bar=$('.topnav'), over=bar&&getComputedStyle(bar).position==='sticky'?bar.getBoundingClientRect().height:0;
+  window.scrollTo(0,Math.max(0,target.getBoundingClientRect().top+window.scrollY-over-12));
+}
+window.addEventListener('hashchange',goToHash);
+if(location.hash){ if(document.readyState==='complete'){ goToHash(); } else { window.addEventListener('load',goToHash); } }
 
 /* ==== Add to calendar (the owner, 7 November 2026): each Add opens the family site's /calendar.ics with
    the event in its address. On the site, the link also names this trip page so the event links back;

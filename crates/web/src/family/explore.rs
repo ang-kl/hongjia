@@ -90,7 +90,7 @@ pub async fn search(
                     ts_rank(to_tsvector('simple', d.title || ' ' || l.text_content), plainto_tsquery('simple', $1)) AS rank,
                     strpos(lower(l.text_content), lower($4)) AS at
              FROM documents d JOIN latest l ON l.document_id = d.id
-             WHERE d.deleted_at IS NULL
+             WHERE d.deleted_at IS NULL AND d.hidden_at IS NULL
          )
          SELECT key, title,
                 COALESCE((SELECT array_agg(t.tag ORDER BY t.pos, t.tag) FROM document_tags t WHERE t.document_id = hits.id), '{}') AS tags,
