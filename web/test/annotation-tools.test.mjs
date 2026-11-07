@@ -6,8 +6,8 @@ import { validMessage, placeMenu, mentionPieces, mentionQuery, COLORS, STAMPS, M
 
 const source = await readFile(new URL('../assets/frame-helper.js', import.meta.url), 'utf8');
 const pure = source.slice(source.indexOf('/* PURE START'), source.indexOf('/* PURE END'));
-const { anchorPathOf, resolvePath, findPoint, isDoubleTap, isLongPress, clamp } =
-  new Function(`${pure}; return { anchorPathOf, resolvePath, findPoint, isDoubleTap, isLongPress, clamp };`)();
+const { anchorPathOf, resolvePath, findPoint, isDoubleTap, clamp } =
+  new Function(`${pure}; return { anchorPathOf, resolvePath, findPoint, isDoubleTap, clamp };`)();
 
 // A tiny element tree with only the properties the helpers use.
 function tree(spec, parent = null) {
@@ -47,15 +47,12 @@ test('insertion points are found from the words around them', () => {
   assert.equal(findPoint(text, 'nowhere', 'else'), -1);
 });
 
-test('double taps and long presses', () => {
+test('double taps', () => {
   const first = { x: 100, y: 100, t: 1000 };
   assert.equal(isDoubleTap(first, { x: 110, y: 95, t: 1300 }, 350, 30), true);
   assert.equal(isDoubleTap(first, { x: 110, y: 95, t: 1400 }, 350, 30), false, 'too slow');
   assert.equal(isDoubleTap(first, { x: 150, y: 100, t: 1100 }, 350, 30), false, 'too far');
   assert.equal(isDoubleTap(null, first, 350, 30), false);
-  assert.equal(isLongPress({ t: 0 }, 560, 4, 550, 10), true);
-  assert.equal(isLongPress({ t: 0 }, 300, 0, 550, 10), false, 'too short');
-  assert.equal(isLongPress({ t: 0 }, 900, 25, 550, 10), false, 'moved: a scroll, not a press');
   assert.equal(clamp(5, 0, 1), 1);
   assert.equal(clamp(-1, 0, 1), 0);
 });

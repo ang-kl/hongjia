@@ -28,14 +28,14 @@ const LIBRARY_CONTENTS: &str = r#"<p class="fab-contents-head">All documents</p>
 /// the michi order, with the search field, the contents list and the globe they open.
 fn explorer(contents: &str) -> String {
     format!(
-        r##"<div class="fab-group" data-fab-group>
+        r##"<div class="fab-group" id="fab-group" data-fab-group>
 <form class="fab-search glass" id="fab-search" role="search" data-fab-search hidden><label><span class="visually-hidden">Search all documents</span><input type="search" data-fab-input placeholder="Search titles, hashtags and text" autocomplete="off" spellcheck="false" maxlength="100"></label><button type="submit" aria-label="Search">→</button></form>
 <div class="fab-contents glass" id="fab-contents" role="region" aria-label="Contents" data-fab-contents hidden>{contents}</div>
 <button type="button" class="fab-satellite" data-fab-satellite aria-expanded="false" aria-controls="fab-search" title="Search all documents" disabled><span aria-hidden="true">🛰️</span><span class="visually-hidden">Search all documents</span></button>
 <button type="button" class="fab-globe" data-fab-globe aria-haspopup="dialog" aria-controls="globe" aria-expanded="false" title="Explore the documents" disabled><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><defs><radialGradient id="fab-g" cx="38%" cy="32%" r="70%"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset=".6" stop-color="#eef3fa" stop-opacity=".9"/><stop offset="1" stop-color="#c9d7ea" stop-opacity=".9"/></radialGradient></defs><circle cx="24" cy="24" r="19" fill="url(#fab-g)" stroke="#7f9bc4" stroke-opacity=".9" stroke-width="1.4"/><path d="M12 18c3-4 8-4 10-1s6 1 9-2c3 3 3 8 1 11s-7 2-9 0-6 1-9 3c-3-3-4-7-2-11z" fill="#d7e3f3" stroke="#9fb6d6" stroke-width=".8"/><circle cx="16" cy="19" r="2.2" fill="#f0b8a2"/><circle cx="31" cy="15" r="2.2" fill="#a8c8f0"/><circle cx="33" cy="30" r="2.2" fill="#f3d58b"/><circle cx="20" cy="33" r="2.2" fill="#b9e0c6"/></svg><span class="visually-hidden">Explore the documents</span></button>
 <button type="button" class="fab-folder" data-fab-folder aria-expanded="false" aria-controls="fab-contents" title="Contents" disabled><span aria-hidden="true">📁</span><span class="visually-hidden">Contents</span></button>
 </div>
-<button type="button" class="fab-scope" data-fab-scope aria-expanded="false" title="Show the search, globe and contents buttons"><span aria-hidden="true">🔭</span><span class="visually-hidden">Show the search, globe and contents buttons</span></button>
+<button type="button" class="fab-scope" data-fab-scope aria-expanded="false" aria-controls="fab-group" title="Show the search, globe and contents buttons"><span aria-hidden="true">🔭</span><span class="visually-hidden">Show the search, globe and contents buttons</span></button>
 <div class="globe-dialog" id="globe" role="dialog" aria-modal="true" aria-label="Globe of the family documents" data-globe hidden>
 <div class="globe-backdrop" data-globe-close></div>
 <p class="visually-hidden" role="status" aria-live="polite" data-globe-status></p>
@@ -302,7 +302,7 @@ pub fn about(nav: &Nav, device: &str, mentioned: &[MentionRow]) -> String {
             r#"<h1>Hello, {handle}</h1>
 <p>You are signed in on {device}.</p>
 {mentions}
-<p>Open the <a href="/documents">documents</a> or <a href="/documents/new">add one</a>. To mark up a document, right-click it (press and hold on a touch screen, or tap twice with the Pencil). You can also see the <a href="/journal">login journal</a>, change <a href="/consent">this device's settings</a>, or read <a href="/privacy">what we collect</a>.</p>
+<p>Open the <a href="/documents">documents</a> or <a href="/documents/new">add one</a>. To mark up a document, right-click it (tap twice on a touch screen or with the Pencil). You can also see the <a href="/journal">login journal</a>, change <a href="/consent">this device's settings</a>, or read <a href="/privacy">what we collect</a>.</p>
 <form method="post" action="/signout-everywhere"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="secondary">Sign out on all devices</button></form>"#,
             handle = escape(nav.handle),
             device = escape(device),
@@ -898,7 +898,7 @@ fn annotations_section(key: &str, csrf: &str, review: &Review) -> String {
     let empty = if marks.is_empty() { "" } else { " hidden" };
     format!(
         r#"<section class="panel-section" id="annotations"><div class="section-head"><h2>Annotations</h2><span class="count" data-annotation-count>{n}</span></div>
-<p class="small">Right-click the document (press and hold on a touch screen, or tap twice with the Pencil) to highlight, underline, strike through, insert or replace text, add a note, a text box, a stamp or your signature, or draw: Draw, Sketch (rough circles, boxes, lines and arrows become clean shapes), Shapes and Eraser. Loupe magnifies. Or select text and press Comment. Type @ and a name to mention someone. Everyone can mark up; you can edit, move and delete your own.</p>
+<p class="small">Right-click the document (tap twice on a touch screen or with the Pencil) to highlight, underline, strike through, insert or replace text, add a note, a text box, a stamp or your signature, or draw: Draw, Sketch (rough circles, boxes, lines and arrows become clean shapes), Shapes and Eraser. Loupe magnifies. Or select text and press Comment. Type @ and a name to mention someone. Everyone can mark up; you can edit, move and delete your own.</p>
 <ol class="annotations" data-annotations>{items}</ol><p class="small" data-annotations-empty{empty}>No annotations yet.</p>
 <form method="post" action="/documents/{key}/annotations" class="stack composer" data-composer><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="quote" value=""><input type="hidden" name="prefix" value=""><input type="hidden" name="suffix" value=""><input type="hidden" name="field_key" value=""><input type="hidden" name="field_label" value="">
 <p class="composer-target" data-composer-target hidden></p>
@@ -950,7 +950,7 @@ fn redactions_section(key: &str, csrf: &str, review: &Review, doc: &DocumentRow)
         r#"<p class="small">Pictures cannot be redacted yet. Upload an edited picture as a new version instead.</p>"#.to_string()
     } else if review.can_redact {
         format!(
-            r#"<p class="small">To black out words for good, select them in the document, right-click (press and hold on a touch screen, or tap twice with the Pencil) and choose Redact. Marked words show as black boxes until the redactions are applied.</p>
+            r#"<p class="small">To black out words for good, select them in the document, right-click (tap twice on a touch screen or with the Pencil) and choose Redact. Marked words show as black boxes until the redactions are applied.</p>
 <form method="post" action="/documents/{key}/redactions/apply" class="stack danger-zone" data-redact-apply><input type="hidden" name="csrf" value="{csrf}"><p class="small">Applying makes a new version with every marked passage blacked out (█) and deletes every earlier version for good. There are no backups. Other marks keep their place; the blacked-out words are removed from what they saved.</p><label>Type {word} to confirm <input type="text" name="confirm" autocomplete="off" required pattern="{word}" placeholder="{word}"></label><button type="submit" class="danger">Apply redactions permanently</button></form>"#,
             word = REDACT_WORD,
         )
@@ -967,7 +967,7 @@ fn attachments_section(key: &str, csrf: &str, review: &Review) -> String {
     let (n, list) = kind_list(key, csrf, review, "attachment", "No files attached yet.");
     format!(
         r#"<section class="panel-section" id="attachments"><div class="section-head"><h2>Attachments</h2><span class="count" data-mark-count="attachment">{n}</span></div>
-<p class="small">Right-click the document where a file belongs (press and hold on a touch screen, or tap twice with the Pencil) and choose Attach file. Pictures (JPEG, PNG, WebP), PDF, Word, Excel, PowerPoint, plain text and CSV, up to 10 MB. Files are only ever downloaded, never opened in the site.</p>
+<p class="small">Right-click the document where a file belongs (tap twice on a touch screen or with the Pencil) and choose Attach file. Pictures (JPEG, PNG, WebP), PDF, Word, Excel, PowerPoint, plain text and CSV, up to 10 MB. Files are only ever downloaded, never opened in the site.</p>
 {list}<input type="file" hidden data-attach-input accept="{accept}"><p class="small" role="status" data-attach-status></p></section>"#,
         accept = attach::ACCEPT,
     )

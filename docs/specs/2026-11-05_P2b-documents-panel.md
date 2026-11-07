@@ -239,3 +239,15 @@ Owner request in chat: "add logout button".
 - **Place:** Sign out *name* moves out of Settings to the foot of the ☰ menu, below a thin line, so it is in sight as soon as the menu opens on every signed-in page, documents included. Settings now folds open to About and, for the owner, Owner. "Sign out on all devices" stays on About.
 - **Behaviour:** unchanged. The button posts to `/signout` with the page's CSRF token and ends this device's session only.
 - **Checks:** the menu unit test checks that Sign out comes after the Settings group, not inside it. `tests/browser/p1-flow.mjs` checks, on every device class, that Sign out is visible as soon as the menu opens and names who is signed in.
+
+
+### Amendment (7 November 2026): the 🛰️ globe 📁 buttons always fold into 🔭
+
+- **Owner decisions:** "all three Right-FABs is collapse into 🔭 . upon clicking this 🔭, the 3 right FAB will appear", then "Always folded" (over "Only during the tour" and "Folded on phones only").
+- **Behaviour:**
+  - On every signed-in page, the three buttons fold into one small 🔭 with a soft blue glow at the bottom right.
+  - Tapping 🔭 unfolds them to its left; tapping again folds them. Each page opens folded.
+  - While a trip page plays its tour, the 🔭 sits just above the tour's own buttons and glows gently.
+  - The fold is set by the page script, so without it the buttons simply show.
+- **Phones:** the search field and the contents list open full width above the buttons, reaching back over the 🔭 so they stay inside the screen.
+- **Checks:** `tests/browser/p1-flow.mjs` checks on every page and device class that the buttons start folded, that 🔭 is inside the window and at least 36 px (its touch area is larger), that 🔭 unfolds them without overlapping, and then the full walk as before.

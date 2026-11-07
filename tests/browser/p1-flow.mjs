@@ -409,7 +409,8 @@ if (shots) {
   await page.keyboard.press('Escape');
   await page.screenshot({ path: `${shots}/notebook-markup-marks.png` });
 }
-// A long press on a touch screen, and two quick taps with a Pencil, open the menu too.
+// Two quick taps with a finger (the owner, 7 November 2026), and two with a Pencil, open the menu too;
+// a long press is left to the phone's own text selection.
 {
   const touch = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, storageState: await setup.storageState() });
   const tp = await touch.newPage();
@@ -417,15 +418,25 @@ if (shots) {
   await tp.waitForTimeout(500);
   const at = await textPoint(tp, 'cedar');
   const cdp = await touch.newCDPSession(tp);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }] });
-  await tp.waitForTimeout(750);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  const touchAt = async hold => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }] });
+    await tp.waitForTimeout(hold);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  await touchAt(750);
+  await tp.waitForTimeout(400);
+  if (await menuOpen(tp)) failures.push('a long press opened the menu (it is the phone\'s own now)');
+  await tp.keyboard.press('Escape');
+  await tp.waitForTimeout(700);
+  await touchAt(40);
+  await tp.waitForTimeout(120);
+  await touchAt(40);
   await tp.waitForTimeout(300);
-  if (!(await menuOpen(tp))) failures.push('a long press did not open the menu');
+  if (!(await menuOpen(tp))) failures.push('two quick taps did not open the menu');
   else {
     const m = await tp.locator('.anno-menu').boundingBox();
-    if (m.x < 0 || m.y < 0 || m.x + m.width > 390 + 1 || m.y + m.height > 844 + 1) failures.push('the long-press menu runs outside the phone screen');
-    if (shots) await tp.screenshot({ path: `${shots}/phone-long-press-menu.png` });
+    if (m.x < 0 || m.y < 0 || m.x + m.width > 390 + 1 || m.y + m.height > 844 + 1) failures.push('the double-tap menu runs outside the phone screen');
+    if (shots) await tp.screenshot({ path: `${shots}/phone-double-tap-menu.png` });
   }
   await touch.close();
   const pen = await browser.newContext({ viewport: { width: 1180, height: 820 }, storageState: await setup.storageState() });
@@ -1026,9 +1037,19 @@ const CLASSES = [
 // returns to the globe button, and 📁 lists all documents or moves the frame to a heading.
 async function checkFabs(p, label, width, height, problems, shot) {
   const box = sel => p.locator(sel).first().boundingBox();
+  // Folded into 🔭 on every page (the owner, 7 November 2026: "Always folded"); 🔭 unfolds them.
+  const shown = sel => p.$eval(sel, el => getComputedStyle(el).display !== 'none').catch(() => false);
+  if (await shown('[data-fab-group]')) problems.push('the right-hand buttons are not folded into 🔭');
+  const scope = await box('[data-fab-scope]');
+  if (!scope) { problems.push('🔭 missing'); return; }
+  if (scope.x + scope.width > width + 1 || scope.y + scope.height > height + 1 || scope.x < 0) problems.push('🔭 outside the window');
+  if (scope.width < 36 || scope.height < 36) problems.push(`🔭 smaller than 36px (${Math.round(scope.width)})`);
+  await p.click('[data-fab-scope]');
+  if (!(await shown('[data-fab-group]'))) problems.push('🔭 did not unfold the buttons');
   const sat = await box('[data-fab-satellite]'), globe = await box('[data-fab-globe]'), folder = await box('[data-fab-folder]');
   if (!sat || !globe || !folder) { problems.push('buttons missing'); return; }
   if (!(sat.x < globe.x && globe.x < folder.x)) problems.push('button order is not satellite, globe, folder');
+  if (folder.x + folder.width > scope.x + 1) problems.push('the unfolded buttons overlap 🔭');
   if (folder.x + folder.width > width + 1 || globe.y + globe.height > height + 1) problems.push('buttons outside the window');
   for (const b of [sat, globe, folder]) if (b.width < 44 || b.height < 44) problems.push(`button smaller than 44px (${Math.round(b.width)}x${Math.round(b.height)})`);
   if (await p.isDisabled('[data-fab-globe]')) problems.push('buttons not enabled');
@@ -1273,6 +1294,7 @@ for (const scheme of ['light', 'dark']) {
   const p = await slow.newPage();
   await slow.route('**/api/library', async r => { await new Promise(res => setTimeout(res, 1500)); await r.continue(); });
   await p.goto(base + '/documents');
+  await p.click('[data-fab-scope]');
   for (let i = 0; i < 3; i++) {
     await p.click('[data-fab-globe]');
     await p.waitForTimeout(350);
@@ -1304,7 +1326,8 @@ for (const scheme of ['light', 'dark']) {
   await frame.evaluate(() => parent.postMessage({ type: 'hj:tour', open: false }, '*'));
   await p.waitForTimeout(300);
   const after = await seen();
-  const ok = before.group && !before.scope && !playing.group && playing.scope && peek.group && peek.scope && after.group && !after.scope;
+  // Folded on every page; the tour keeps them folded (🔭 moves above the tour's buttons); 🔭 unfolds them.
+  const ok = !before.group && before.scope && !playing.group && playing.scope && peek.group && peek.scope && !after.group && after.scope;
   console.log(`${ok ? 'ok  ' : 'FAIL'} tour folds the buttons into 🔭: ${JSON.stringify({ before, playing, peek, after })}`);
   if (!ok) failures.push('tour fold of the right-hand buttons');
   await ctx.close();
