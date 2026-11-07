@@ -100,6 +100,8 @@ pub struct DocumentRow {
     /// A new version, a comment, or a shared saved field counts; personal answers and a page's own
     /// browser storage do not.
     pub changed: String,
+    /// Hidden from the family's lists, the globe, search and the landing page (the owner, 7 November 2026).
+    pub hidden: bool,
 }
 
 #[derive(Debug, FromRow)]
@@ -123,7 +125,13 @@ pub struct VersionRow {
     pub image_height: Option<i32>,
 }
 
+/// The documents the family sees in lists, the globe and the menu: hidden ones left out.
 pub(super) async fn list(pool: &PgPool) -> sqlx::Result<Vec<DocumentRow>> {
+    list_with(pool, false).await
+}
+
+/// Every document, hidden ones included when `with_hidden` (All documents, Show hidden).
+pub(super) async fn list_with(pool: &PgPool, with_hidden: bool) -> sqlx::Result<Vec<DocumentRow>> {
     sqlx::query_as(
         "SELECT d.id, to_char(d.filed_on, 'YYYY-MMDD') || '_' || d.day_no AS key,
                 to_char(d.filed_on, 'FMMonth YYYY') AS month, d.title, d.created_by, c.handle AS added_by,
@@ -135,14 +143,16 @@ pub(super) async fn list(pool: &PgPool) -> sqlx::Result<Vec<DocumentRow>> {
                     COALESCE((SELECT max(a.created_at) FROM annotations a WHERE a.document_id = d.id), v.uploaded_at),
                     COALESCE((SELECT max(f.updated_at) FROM document_fields f
                               WHERE f.document_id = d.id AND f.scope_profile_id IS NULL AND f.kind = 'field'), v.uploaded_at))
-                    AT TIME ZONE 'Asia/Singapore', 'HH12:MIAM DD-MM') AS changed
+                    AT TIME ZONE 'Asia/Singapore', 'HH12:MIAM DD-MM') AS changed,
+                d.hidden_at IS NOT NULL AS hidden
          FROM documents d
          JOIN LATERAL (SELECT * FROM document_versions WHERE document_id = d.id ORDER BY version_no DESC LIMIT 1) v ON TRUE
          LEFT JOIN profiles p ON p.id = v.uploaded_by
          LEFT JOIN profiles c ON c.id = d.created_by
-         WHERE d.deleted_at IS NULL
+         WHERE d.deleted_at IS NULL AND (d.hidden_at IS NULL OR $1)
          ORDER BY d.filed_on DESC, d.day_no DESC",
     )
+    .bind(with_hidden)
     .fetch_all(pool)
     .await
 }
@@ -159,7 +169,8 @@ async fn find(pool: &PgPool, filing: &Filing) -> sqlx::Result<Option<DocumentRow
                     COALESCE((SELECT max(a.created_at) FROM annotations a WHERE a.document_id = d.id), v.uploaded_at),
                     COALESCE((SELECT max(f.updated_at) FROM document_fields f
                               WHERE f.document_id = d.id AND f.scope_profile_id IS NULL AND f.kind = 'field'), v.uploaded_at))
-                    AT TIME ZONE 'Asia/Singapore', 'HH12:MIAM DD-MM') AS changed
+                    AT TIME ZONE 'Asia/Singapore', 'HH12:MIAM DD-MM') AS changed,
+                d.hidden_at IS NOT NULL AS hidden
          FROM documents d
          JOIN LATERAL (SELECT * FROM document_versions WHERE document_id = d.id ORDER BY version_no DESC LIMIT 1) v ON TRUE
          LEFT JOIN profiles p ON p.id = v.uploaded_by
@@ -539,14 +550,22 @@ pub(super) async fn resolve(
 pub async fn index(
     State(state): State<FamilyState>,
     headers: HeaderMap,
+    uri: Uri,
 ) -> Result<Response, super::handlers::Fail> {
     let Some(session) = signed_in(&state, &headers).await? else {
         return Ok(see_other("/"));
     };
-    let rows = list(&state.pool).await?;
+    let show_hidden = web::query_param(uri.query(), "hidden").as_deref() == Some("1");
+    let rows = list_with(&state.pool, show_hidden).await?;
+    let hidden: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM documents WHERE deleted_at IS NULL AND hidden_at IS NOT NULL",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    let manageable = |d: &DocumentRow| can_manage(&session, d);
     Ok(page(
         StatusCode::OK,
-        pages::documents(&nav(&session), &rows),
+        pages::documents(&nav(&session), &rows, &manageable, show_hidden, hidden),
     ))
 }
 
@@ -562,7 +581,7 @@ pub async fn latest(
     // becomes the landing page (the owner's choice, 5 November 2026); otherwise the newest of any kind.
     let key: Option<String> = sqlx::query_scalar(
         "SELECT to_char(d.filed_on, 'YYYY-MMDD') || '_' || d.day_no FROM documents d
-         WHERE d.deleted_at IS NULL
+         WHERE d.deleted_at IS NULL AND d.hidden_at IS NULL
          ORDER BY COALESCE((SELECT v.kind FROM document_versions v WHERE v.document_id = d.id
                             ORDER BY v.version_no DESC LIMIT 1) = 'html', FALSE) DESC,
                   d.filed_on DESC, d.day_no DESC
@@ -1103,6 +1122,75 @@ pub async fn new_version(
     )
     .await?;
     Ok(back_to_panel(&doc))
+}
+
+#[derive(Deserialize)]
+pub struct HideForm {
+    csrf: String,
+    /// "list" when sent from All documents, so the answer goes back there.
+    #[serde(default)]
+    back: String,
+}
+
+/// Hides a document from the family's lists, the globe, search and the landing page, or shows it
+/// again (the owner, 7 November 2026). It is kept, and whoever added it or the owner can undo it.
+async fn set_hidden(
+    state: &FamilyState,
+    headers: &HeaderMap,
+    key: &str,
+    form: &HideForm,
+    hide: bool,
+) -> Result<Response, super::handlers::Fail> {
+    let (session, doc) = match for_change(state, headers, key, &form.csrf).await? {
+        Ok(found) => found,
+        Err(response) => return Ok(response),
+    };
+    sqlx::query(
+        "UPDATE documents SET hidden_at = CASE WHEN $2 THEN now() END, hidden_by = CASE WHEN $2 THEN $3 END WHERE id = $1",
+    )
+    .bind(doc.id)
+    .bind(hide)
+    .bind(session.profile_id)
+    .execute(&state.pool)
+    .await?;
+    store::audit(
+        &state.pool,
+        Some(session.profile_id),
+        if hide {
+            "document hidden"
+        } else {
+            "document shown again"
+        },
+        &doccheck::filing_label(&doc.key),
+    )
+    .await?;
+    Ok(if form.back == "list" {
+        see_other(if hide {
+            "/documents"
+        } else {
+            "/documents?hidden=1"
+        })
+    } else {
+        back_to_panel(&doc)
+    })
+}
+
+pub async fn hide(
+    State(state): State<FamilyState>,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+    Form(form): Form<HideForm>,
+) -> Result<Response, super::handlers::Fail> {
+    set_hidden(&state, &headers, &key, &form, true).await
+}
+
+pub async fn unhide(
+    State(state): State<FamilyState>,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+    Form(form): Form<HideForm>,
+) -> Result<Response, super::handlers::Fail> {
+    set_hidden(&state, &headers, &key, &form, false).await
 }
 
 #[derive(Deserialize)]

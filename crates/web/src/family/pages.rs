@@ -69,7 +69,7 @@ fn menu(nav: &Nav, viewer: bool) -> String {
 {sidebar}
 <details class="menu-group" data-menu-documents><summary class="menu-item">Documents</summary><div class="menu-list" data-menu-docs><a class="menu-sub" href="/documents">All documents</a></div></details>
 <a class="menu-item" href="/journal">Journal</a>
-<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list"><a class="menu-sub" href="/consent">This device</a><a class="menu-sub" href="/about">About</a>{owner}</div></details>
+<details class="menu-group"><summary class="menu-item">Settings</summary><div class="menu-list"><a class="menu-sub" href="/consent">This device</a><a class="menu-sub" href="/about">About</a><a class="menu-sub" href="/version">Version</a>{owner}</div></details>
 <form method="post" action="/signout" class="menu-signout"><input type="hidden" name="csrf" value="{csrf}"><button type="submit" class="menu-item" data-signout>Sign out {handle}</button></form>
 </div></details></nav>"#,
         csrf = escape(nav.csrf),
@@ -521,7 +521,47 @@ fn kilobytes(bytes: i32) -> i32 {
 
 /// The documents list in the owner's Style D: grouped by the month filed, serif section headers
 /// with count badges, hairline rows.
-pub fn documents(nav: &Nav, rows: &[DocumentRow]) -> String {
+/// The version a document page shows beside its filing number (the owner, 7 November 2026:
+/// "2026-1106_#1 · v.##"): the number in the file's own name, such as the 13 in
+/// `Trip-Coffee-Table-v13-final.html`, or else its version on this site.
+pub fn version_tag(filename: &str, version_no: i32) -> String {
+    let stem = filename.rsplit_once('.').map_or(filename, |(stem, _)| stem);
+    let from_name = stem
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter_map(|word| {
+            let digits = word.strip_prefix('v').or_else(|| word.strip_prefix('V'))?;
+            (!digits.is_empty() && digits.len() <= 3 && digits.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| digits.parse::<i32>().ok())
+                .flatten()
+        })
+        .next_back();
+    format!("v.{:02}", from_name.unwrap_or(version_no))
+}
+
+/// ☰ Settings, Version: the program's version and one paragraph on what changed in it.
+pub fn version(nav: &Nav, version: &str, synopsis: &str, commit: &str) -> String {
+    layout(
+        "Version",
+        Some(nav),
+        "",
+        &format!(
+            r#"<h1>Version {version}</h1>
+<p>{synopsis}</p>
+<p class="small">Build {commit}. Numbered by the date it went live in Singapore, with the count of releases that day.</p>"#,
+            version = escape(version),
+            synopsis = escape(synopsis),
+            commit = escape(commit),
+        ),
+    )
+}
+
+pub fn documents(
+    nav: &Nav,
+    rows: &[DocumentRow],
+    manageable: &dyn Fn(&DocumentRow) -> bool,
+    show_hidden: bool,
+    hidden: i64,
+) -> String {
     let mut groups: Vec<(&str, Vec<&DocumentRow>)> = Vec::new();
     for row in rows {
         match groups.last_mut() {
@@ -529,6 +569,14 @@ pub fn documents(nav: &Nav, rows: &[DocumentRow]) -> String {
             _ => groups.push((&row.month, vec![row])),
         }
     }
+    // Hidden documents are listed only on asking (the owner, 7 November 2026).
+    let switch = match (show_hidden, hidden) {
+        (true, _) => r#"<p class="small list-switch">Showing hidden documents too. <a href="/documents">Hide them</a></p>"#.to_string(),
+        (false, 0) => String::new(),
+        (false, n) => format!(
+            r#"<p class="small list-switch"><a href="/documents?hidden=1">Show hidden ({n})</a></p>"#
+        ),
+    };
     let body: String = if rows.is_empty() {
         r#"<p>No documents yet.</p>"#.to_string()
     } else {
@@ -543,8 +591,23 @@ pub fn documents(nav: &Nav, rows: &[DocumentRow]) -> String {
                         } else {
                             format!(r#"<span class="row-tags">{}</span>"#, hashtags(&d.tags))
                         };
+                        // Hide and Delete for whoever added it and for the owner (the owner, 7 November
+                        // 2026). Delete opens the document's Manage section, where DELETE is typed.
+                        let more = if manageable(d) {
+                            let (action, word) = if d.hidden { ("unhide", "Unhide") } else { ("hide", "Hide") };
+                            format!(
+                                r#"<details class="row-more"><summary title="More for {title}"><span aria-hidden="true">⋯</span><span class="visually-hidden">More for {title}</span></summary><div class="row-menu"><form method="post" action="/documents/{key}/{action}"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="back" value="list"><button type="submit" class="link">{word}</button></form><a href="/documents/{key}#panel">Delete…</a></div></details>"#,
+                                title = escape(&d.title),
+                                key = escape(&d.key),
+                                csrf = escape(nav.csrf),
+                            )
+                        } else {
+                            String::new()
+                        };
+                        let flag = if d.hidden { r#"<span class="row-hidden">Hidden</span>"# } else { "" };
                         format!(
-                            r#"<li class="row"><span class="filing">{label}</span><a class="row-title" href="/documents/{key}">{title}</a><span class="row-meta">{kind} · v{v} · {by}</span>{tags}</li>"#,
+                            r#"<li class="row{hidden_class}"><span class="filing">{label}</span><a class="row-title" href="/documents/{key}">{title}</a>{flag}<span class="row-meta">{kind} · v{v} · {by}</span>{tags}{more}</li>"#,
+                            hidden_class = if d.hidden { " is-hidden" } else { "" },
                             label = escape(&filing_label(&d.key)),
                             key = escape(&d.key),
                             title = escape(&d.title),
@@ -567,7 +630,7 @@ pub fn documents(nav: &Nav, rows: &[DocumentRow]) -> String {
         Some(nav),
         &format!(r#" data-csrf="{}""#, escape(nav.csrf)),
         &format!(
-            r#"<div class="list-head"><h1>Documents</h1><a class="pill solid" href="/documents/new">Add a document</a></div>{body}"#
+            r#"<div class="list-head"><h1>Documents</h1><a class="pill solid" href="/documents/new">Add a document</a></div>{switch}{body}"#
         ),
     )
 }
@@ -1111,12 +1174,26 @@ pub fn document_view(
         Some(versions.len()),
         &format!(r#"<ul class="versions">{version_items}</ul>{redaction_note}{version_form}"#),
     );
+    let (hide_action, hide_word, hide_note) = if doc.hidden {
+        (
+            "unhide",
+            "Unhide",
+            "Hidden from the family's lists, the globe, search and the landing page. Unhide lists it again.",
+        )
+    } else {
+        (
+            "hide",
+            "Hide",
+            "Hiding takes it off the family's lists, the globe, search and the landing page; it is kept, and can be unhidden.",
+        )
+    };
     let manage = if can_manage {
         section(
             "Manage",
             None,
             &format!(
-                r#"<form method="post" action="/documents/{key}/rename" class="stack"><input type="hidden" name="csrf" value="{csrf}"><label>Title <input type="text" name="title" maxlength="120" value="{title}" required></label><button type="submit" class="secondary">Rename</button></form>
+                r#"<div id="manage"></div><form method="post" action="/documents/{key}/rename" class="stack"><input type="hidden" name="csrf" value="{csrf}"><label>Title <input type="text" name="title" maxlength="120" value="{title}" required></label><button type="submit" class="secondary">Rename</button></form>
+<form method="post" action="/documents/{key}/{hide_action}" class="stack"><input type="hidden" name="csrf" value="{csrf}"><p class="small">{hide_note}</p><button type="submit" class="secondary">{hide_word}</button></form>
 <form method="post" action="/documents/{key}/delete" class="stack danger-zone"><input type="hidden" name="csrf" value="{csrf}"><p class="small">Deleting removes every version and the hashtags for good. There are no backups.</p><label>Type {word} to confirm <input type="text" name="confirm" autocomplete="off" required pattern="{word}" placeholder="{word}"></label><button type="submit" class="danger">Delete permanently</button></form>"#,
                 title = escape(&doc.title),
                 word = DELETE_WORD,
@@ -1131,19 +1208,31 @@ pub fn document_view(
         format!(r#"<p class="small">Only {who} can change or delete this document.</p>"#)
     };
     let latest = versions.iter().find(|v| v.version_no == doc.version_no);
+    let v_title = escape(&format!(
+        "{} · version {} on this site",
+        doc.filename, doc.version_no
+    ));
+    let hidden_notice = if doc.hidden {
+        r#"<p class="notice">This document is hidden from the family's lists. Unhide it in Manage.</p>"#
+    } else {
+        ""
+    };
     let main = format!(
         r##"<div class="viewer-doc">
-<div class="doc-bar"><span class="filing">{label}</span><h1 class="doc-title">{title}</h1><button type="button" class="pill comment-open" data-comment hidden>Comment</button></div>
-{notice}
+<div class="doc-bar"><span class="filing">{label}</span><span class="doc-v" title="{v_title}">· {v_tag}</span><h1 class="doc-title">{title}</h1><button type="button" class="pill comment-open" data-comment hidden>Comment</button></div>
+{notice}{hidden_notice}
 <div class="doc-stage" data-doc-stage><iframe class="doc-frame" src="/documents/{key}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe><div class="doc-overlay" data-doc-overlay aria-hidden="true"></div></div>
 </div>
 <aside class="panel" id="panel" aria-label="Manage this document">
 <div class="panel-head"><span class="panel-title">This document</span><a class="panel-close" href="#doc" data-sidebar-close title="Close the sidebar"><span aria-hidden="true">×</span><span class="visually-hidden">Close the sidebar</span></a></div>
-{details}{annotations}{redactions}{attachments}{fields}{tags}{version_section}{check}{manage}
+{manage_top}{details}{annotations}{redactions}{attachments}{fields}{tags}{version_section}{check}{manage_foot}
 </aside>
 <script type="module" src="/assets/doc-view.mjs"></script>"##,
         title = escape(&doc.title),
         notice = notice(message),
+        v_tag = version_tag(&doc.filename, doc.version_no),
+        manage_top = if can_manage { manage.as_str() } else { "" },
+        manage_foot = if can_manage { "" } else { manage.as_str() },
         sandbox = IFRAME_SANDBOX,
         check = check_section(latest),
         annotations = annotations_section(&key, &csrf, review),
@@ -1196,6 +1285,24 @@ mod tests {
         assert_eq!(active_time(0), "under a minute");
         assert_eq!(active_time(89), "about 1 min");
         assert_eq!(active_time(3725), "about 1 h 2 min");
+    }
+
+    #[test]
+    fn version_tag_reads_the_file_name_first() {
+        assert_eq!(version_tag("Trip-Coffee-Table-v13-final.html", 5), "v.13");
+        assert_eq!(version_tag("trip_V2.html", 7), "v.02");
+        assert_eq!(version_tag("sources.md", 3), "v.03");
+        assert_eq!(
+            version_tag("visit-v2024.html", 1),
+            "v.01",
+            "four digits are not a version"
+        );
+        assert_eq!(version_tag("overview.html", 12), "v.12");
+        assert_eq!(
+            version_tag("v8 then v9.html", 1),
+            "v.09",
+            "the last one counts"
+        );
     }
 
     #[test]

@@ -251,3 +251,10 @@ Owner request in chat: "add logout button".
   - The fold is set by the page script, so without it the buttons simply show.
 - **Phones:** the search field and the contents list open full width above the buttons, reaching back over the 🔭 so they stay inside the screen.
 - **Checks:** `tests/browser/p1-flow.mjs` checks on every page and device class that the buttons start folded, that 🔭 is inside the window and at least 36 px (its touch area is larger), that 🔭 unfolds them without overlapping, and then the full walk as before.
+
+
+### Amendment (7 November 2026): Manage first, and Settings → Version
+
+- **Manage first:** for whoever added the document and for the owner, Manage (rename, hide or unhide, delete) is now the first part of the side panel, above the details; others see it at the foot as before, with who can change the document.
+- **Version page:** the owner: "version of this program, place in the setting include change version synposis in one para". ☰ Settings lists Version after About. The page shows the version, numbered by the date it went live in Singapore with the count of releases that day (2026.11.07 (4)), one paragraph on what changed, and the build's short commit. It is for signed-in people only.
+- **Checks:** a database test that Settings links to Version and the page shows the number, the paragraph and the build.

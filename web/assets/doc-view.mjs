@@ -26,6 +26,8 @@ export const NEAR_ANSWERS = 20;
 export const SHARE_LIMITS = { title: 120, text: 300, url: 2000 };
 const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 const PLACE_KEY = /^[a-z0-9][a-z0-9-]{0,29}$/;
+/// One part of a trip page, named after the # at the end of a link to it (7 November 2026).
+export const PART_ID = /^[A-Za-z][A-Za-z0-9_-]{0,60}$/;
 /// Loupe magnifications (D3): 0 is closed.
 export const LOUPE_ZOOMS = [0, 2, 3];
 const INPUTS = new Set(['mouse', 'touch', 'pen', 'keyboard']);
@@ -129,7 +131,9 @@ export function validMessage(data) {
       // owner, 6 November 2026: "link only"), so trip details never leave in the message.
       if (data.kind === 'doc') {
         if (!isText(data.title ?? '', SHARE_LIMITS.title)) return null;
-        return { type: data.type, kind: 'doc', title: data.title ?? '' };
+        // A link to one part of the page carries only that part's name after a # (the owner, 7 November 2026).
+        if (data.hash !== undefined && data.hash !== '' && (typeof data.hash !== 'string' || !PART_ID.test(data.hash))) return null;
+        return { type: data.type, kind: 'doc', title: data.title ?? '', ...(data.hash ? { hash: data.hash } : {}) };
       }
       if (data.kind !== 'place' || !isText(data.title, SHARE_LIMITS.title) || !data.title.trim()) return null;
       if (!isText(data.text ?? '', SHARE_LIMITS.text) || !shareUrl(data.url)) return null;
@@ -350,6 +354,19 @@ function start() {
   const { csrf, docKey } = body.dataset;
   if (!frame || !csrf || !docKey) return;
   const base = `/documents/${encodeURIComponent(docKey)}`;
+  // A link to one part of a document (/documents/<key>#day-3, 7 November 2026) opens the document at
+  // that part: a # that names nothing on this page is passed on to the document in the frame.
+  const openPart = () => {
+    let id = '';
+    try { id = decodeURIComponent(location.hash.slice(1)); } catch { return; }
+    if (!PART_ID.test(id) || document.getElementById(id)) return;
+    const raw = new URL(frame.getAttribute('src') || `${base}/raw`, location.href);
+    if (raw.origin !== location.origin) return;
+    raw.hash = id;
+    frame.src = `${raw.pathname}${raw.search}${raw.hash}`;
+  };
+  openPart();
+  window.addEventListener('hashchange', openPart);
   const list = document.querySelector('[data-annotations]');
   const count = document.querySelector('[data-annotation-count]');
   const empty = document.querySelector('[data-annotations-empty]');
@@ -477,7 +494,7 @@ function start() {
   const shareFrom = async message => {
     if (sharing || !allowShare(Date.now())) return;
     const data = message.kind === 'doc'
-      ? { title: message.title || document.title, url: `${location.origin}${base}` }
+      ? { title: message.title || document.title, url: `${location.origin}${base}${message.hash ? `#${message.hash}` : ''}` }
       : { title: message.title, ...(message.text ? { text: message.text } : {}), url: message.url };
     // A trip page shares outside places only; this site's own addresses are shared as the document.
     if (message.kind === 'place' && new URL(data.url).origin === location.origin) return;
@@ -489,7 +506,9 @@ function start() {
       // the person taps Share in this page's own bar instead.
       if (can) how = await systemShare(data);
       if (how === 'refused') {
-        const what = message.kind === 'doc' ? 'the link to this document (family sign-in needed)' : `“${data.title}”`;
+        const what = message.kind === 'doc'
+          ? `the link to this ${message.hash ? 'part of the document' : 'document'} (family sign-in needed)`
+          : `“${data.title}”`;
         const choice = await ask('Share', `Share ${what}?`, [
           ...(can ? [['share', 'Share…', true]] : []), ['copy', 'Copy link', !can], ['no', 'Cancel', false]
         ]);

@@ -217,7 +217,7 @@ a.pill:hover::before, a.pill:focus-visible::before { clip-path: inset(0 0 0 0 ro
 .rows { list-style: none; margin: 0; padding: 0; }
 .row {
   display: grid;
-  grid-template-columns: minmax(8.5rem, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(8.5rem, auto) minmax(0, 1fr) auto auto;
   align-items: baseline;
   gap: 2px 16px;
   padding: 8px 10px;
@@ -226,6 +226,24 @@ a.pill:hover::before, a.pill:focus-visible::before { clip-path: inset(0 0 0 0 ro
   transition: background-color 150ms var(--ease);
 }
 .row:hover { background: var(--soft); }
+/* Document controls on the list (the owner, 7 November 2026): a ⋯ with Hide and Delete for whoever
+   added the document and for the owner; hidden documents show only on asking, marked Hidden. */
+.row { position: relative; }
+.row-more { grid-column: 4; grid-row: 1; justify-self: end; position: relative; }
+.row-more > summary { list-style: none; cursor: pointer; min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--muted); font-size: 1.2rem; line-height: 1; }
+.row-more > summary::-webkit-details-marker { display: none; }
+.row-more > summary:hover, .row-more[open] > summary { background: var(--soft); color: var(--ink); }
+.row-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; min-width: 150px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper, #fff); box-shadow: 0 10px 28px rgb(0 0 0 / 0.12); }
+.row-menu form { margin: 0; }
+.row-menu button.link, .row-menu a { display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font: inherit; min-height: 0; background: none; border: 0; cursor: pointer; }
+.row-menu button.link:hover, .row-menu a:hover { background: var(--soft); }
+.row-hidden { grid-column: 2; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.row.is-hidden .row-title { color: var(--muted); }
+.list-switch { margin: -6px 0 12px; }
+[data-form-factor="phone"] .row-more { grid-column: auto; grid-row: 1; position: absolute; right: 6px; top: 6px; }
+[data-form-factor="phone"] .row:has(.row-more) { padding-right: 46px; }
+/* The version beside the filing number on a document page: "2026-1106_#1 · v.13". */
+.doc-v { font: 600 0.85rem/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); white-space: nowrap; margin-left: -4px; }
 .page .row-title { display: inline; min-height: 0; font-weight: 600; overflow-wrap: anywhere; }
 .row-meta { grid-column: 3; grid-row: 1; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
 .row-tags { grid-column: 2; color: var(--muted); font-size: 0.88rem; overflow-wrap: anywhere; }

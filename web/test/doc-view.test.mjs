@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validMessage, rateLimiter, targetText, LIMITS, MAX_WEATHER_PLACES, MAX_NEAR_PLACES, NEAR_ANSWERS, SHARE_LIMITS, shareUrl, distanceKm, roughKm, nearest } from '../assets/doc-view.mjs';
+import { validMessage, rateLimiter, targetText, LIMITS, MAX_WEATHER_PLACES, MAX_NEAR_PLACES, NEAR_ANSWERS, SHARE_LIMITS, PART_ID, shareUrl, distanceKm, roughKm, nearest } from '../assets/doc-view.mjs';
 
 test('only known messages with bounded strings are accepted', () => {
   assert.deepEqual(validMessage({ type: 'hj:ready', extra: 1 }), { type: 'hj:ready' });
@@ -97,6 +97,16 @@ test('a trip page may share the document only by its link: no text and no addres
   assert.deepEqual(validMessage({ type: 'hj:share-want', kind: 'doc' }), { type: 'hj:share-want', kind: 'doc', title: '' });
   assert.equal(validMessage({ type: 'hj:share-want', kind: 'doc', title: 't'.repeat(SHARE_LIMITS.title + 1) }), null);
   assert.equal(validMessage({ type: 'hj:shared', ok: true }), null, 'answers only ever go into the frame');
+});
+
+test('a link to one part of a trip page carries only that part\'s name after the #', () => {
+  assert.deepEqual(validMessage({ type: 'hj:share-want', kind: 'doc', title: 'Trip · Day 3', hash: 'day-3' }), { type: 'hj:share-want', kind: 'doc', title: 'Trip · Day 3', hash: 'day-3' });
+  assert.deepEqual(validMessage({ type: 'hj:share-want', kind: 'doc', title: 'Gallery', hash: 'g-day-2' }).hash, 'g-day-2');
+  assert.deepEqual(validMessage({ type: 'hj:share-want', kind: 'doc', title: 'x', hash: '' }), { type: 'hj:share-want', kind: 'doc', title: 'x' });
+  for (const hash of ['3-day', 'day 3', 'day-3?x=1', '#day-3', 'a/b', 'https://evil.example/', 'x'.repeat(62), 5, null]) {
+    assert.equal(validMessage({ type: 'hj:share-want', kind: 'doc', title: 'x', hash }), null, String(hash));
+  }
+  assert.equal(PART_ID.test('taste_shop'), true);
 });
 
 test('Near me: a trip page names its places, and never receives a position', () => {

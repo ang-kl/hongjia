@@ -111,7 +111,22 @@ const { chromium } = require('playwright');
     await p.click('.viewsw button[data-view="read"]');
     await p.waitForTimeout(200);
     const back = await p.evaluate(() => ({ view: document.documentElement.getAttribute('data-view'), overview: getComputedStyle(document.getElementById('overview')).display }));
-    out[name] = Object.assign(g, { before, live, back, errors, orig });
+    // a link to a part of the Gallery opens the Gallery there; a link to any other part opens the reading view
+    const q = await ctx.newPage(); q.on('pageerror', e => errors.push(e.message));
+    await q.goto('file://' + process.argv[2] + '#g-day-1', { waitUntil: 'load' });
+    await q.waitForTimeout(400);
+    const hashed = await q.evaluate(() => ({ view: document.documentElement.getAttribute('data-view'),
+      top: Math.round(document.getElementById('g-day-1').getBoundingClientRect().top) }));
+    await q.evaluate(() => { location.hash = 'day-2'; });
+    await q.waitForTimeout(400);
+    hashed.after = await q.evaluate(() => document.documentElement.getAttribute('data-view'));
+    // a saved copy cannot share, so the # is an ordinary link to that part
+    await q.click('#days > h2 .sec-link');
+    await q.waitForTimeout(200);
+    hashed.clicked = await q.evaluate(() => location.hash);
+    hashed.links = await q.evaluate(() => [...document.querySelectorAll('.sec-link')].filter(a => a.getClientRects().length)
+      .map(a => { const r = a.getBoundingClientRect(); return [a.getAttribute('data-sec-link'), Math.round(r.width), Math.round(r.right) <= innerWidth]; }));
+    out[name] = Object.assign(g, { before, live, back, errors, orig, hashed });
     await ctx.close();
   }
   await browser.close();
@@ -1046,7 +1061,8 @@ class KitTest(unittest.TestCase):
         js = open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read()
         compact = re.sub(r'\s+', '', js)
         self.assertIn("window.parent.postMessage({type:'hj:share-want',kind:'place',title:String(p.name).slice(0,120),text:text,url:url},'*');", compact)
-        self.assertIn("window.parent.postMessage({type:'hj:share-want',kind:'doc',title:title},'*');", compact, 'a day is shared by its link only')
+        self.assertIn("window.parent.postMessage({type:'hj:share-want',kind:'doc',title:title,hash:id},'*');", compact, 'a day is shared by its link only')
+        self.assertIn("if(!ANCHOR_OK.test(id||'')){returnfalse;}", compact, 'only a plain part name goes after the #')
         self.assertIn("window.parent.postMessage({type:'hj:near-want',places:places},'*');", compact)
         panel = compact[compact.index('/*====placepanels'):]
         self.assertIn("if(event.source!==window.parent){return;}", panel)
@@ -1166,6 +1182,48 @@ class KitTest(unittest.TestCase):
         css = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read())
         self.assertIn('html[data-view=gallery]main.layout>:not(#gallery){display:none}', css)
 
+    def test_gallery_shows_each_picture_and_post_once_a_day(self):
+        # the owner, 7 November 2026: the same photo three times, from three Facebook links of one account
+        d = copy.deepcopy(self.data)
+        lh = d['stops']['lighthouse']
+        lh['social'] = [{'kind': 'facebook', 'url': f'https://www.facebook.com/examplebaytourism/posts/{i}', 'by': 'examplebaytourism'} for i in (7, 8, 9)]
+        lh['social'] += [{'kind': 'tiktok', 'url': 'https://www.tiktok.com/@examplebay/video/7300000000000000005', 'by': 'examplebay'}] * 2
+        r = build.parse_html(build.build(d))
+        for day in find(find(r, 'section', id='gallery')[0], 'div', 'g-day'):
+            tiles = find(day, 'figure', 'g-tile')
+            srcs = [find(t, 'img')[0].attrs['src'] for t in tiles if find(t, 'img')]
+            self.assertEqual(len(srcs), len(set(srcs)), f'{day.attrs["id"]}: a picture shows once')
+            fbs = [find(t, 'a', 'g-fb')[0].attrs['href'] for t in tiles if t.attrs.get('data-kind') == 'facebook']
+            self.assertLessEqual(len([u for u in fbs if '/examplebaytourism/' in u]), 1, f'{day.attrs["id"]}: one Facebook tile per account')
+            embeds = [t.attrs['data-embed'] for t in tiles if t.attrs.get('data-embed')]
+            self.assertEqual(len(embeds), len(set(embeds)), f'{day.attrs["id"]}: a post shows once')
+
+    def test_section_links(self):
+        # the owner, 7 November 2026: "every section of the page have a HTML hyperlink #hashtag that I can share"
+        main = find(self.root, 'main')[0]
+        secs = [s for s in find(main, 'section', 'sec') if s.attrs.get('id') and find(s, 'h2')]
+        self.assertGreater(len(secs), 6)
+        parts = [(s.attrs['id'], find(s, 'h2')[0]) for s in secs]
+        parts += [(a.attrs['id'], find(a, 'h3')[0]) for a in find(main, 'article', 'day')]
+        parts += [(g.attrs['id'], find(g, 'h3')[0]) for g in find(main, 'div', 'g-day')]
+        parts.append(('gallery', find(find(main, 'section', id='gallery')[0], 'h2')[0]))
+        self.assertIn('day-1', [p for p, _ in parts])
+        for pid, h in parts:
+            links = find(h, 'a', 'sec-link')
+            self.assertEqual(len(links), 1, pid)
+            a = links[0]
+            self.assertEqual((a.attrs.get('href'), a.attrs.get('data-sec-link')), ('#' + pid, pid), pid)
+            self.assertEqual(a.text().strip(), '', f'{pid}: the # is drawn by the style sheet, so the heading reads the same in the contents list')
+            self.assertTrue(a.attrs.get('aria-label'), pid)
+        ids = [n.attrs['id'] for n in self.root.iter() if n.attrs.get('id')]
+        for _, h in parts:
+            self.assertIn(find(h, 'a', 'sec-link')[0].attrs['data-sec-link'], ids)
+        css = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read())
+        self.assertIn('.sec-link::before{content:"#"}', css)
+        self.assertIn('@mediaprint{.sec-link{display:none!important}}', css)
+        with self.assertRaises(build.KitError):
+            build.Page(copy.deepcopy(self.data)).sec_link('1 bad"id')
+
     @unittest.skipUnless(BROWSER, 'needs node and Playwright')
     def test_gallery_in_a_browser(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1189,6 +1247,15 @@ class KitTest(unittest.TestCase):
                                                           'https://www.instagram.com/reel/C0ExampleReel/embed/captioned/')), k)
             self.assertEqual(r['back'], {'view': None, 'overview': 'block'}, k)
             self.assertEqual(sorted(set(r['orig'])), ['idle none', 'live flex'] if len(r['orig']) > 2 else ['live flex'], k)
+            h = r['hashed']
+            self.assertEqual(h['view'], 'gallery', f'{k}: #g-day-1 opens the Gallery')
+            self.assertLess(abs(h['top']), 120, f'{k}: at that day')
+            self.assertIsNone(h['after'], f'{k}: #day-2 goes back to reading')
+            self.assertEqual(h['clicked'], '#days', k)
+            self.assertTrue(h['links'], k)
+            for lid, width, inside in h['links']:
+                self.assertGreaterEqual(width, 32, f'{k}: {lid} is big enough to tap')
+                self.assertTrue(inside, f'{k}: {lid} stays on the screen')
 
 
     # ------------------------------------------------------------ the calendar (7 November 2026)
