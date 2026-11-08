@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.08 (4)";
+pub const VERSION: &str = "2026.11.08 (5)";
 
-pub const SYNOPSIS: &str = "This version lets a trip page offer the family's own swaps at each stop, as the owner asked. Under a stop's name, Plan B (hiking and nature), Plan C (shopping) and Plan D (very early, night or overnight) each open their own card: the place with its photo and credit, a walk's length, time and grade with their source, when, how to get there, a check-in time and where and when everyone meets again. Choosing B and C together means the family splits up and meets later. The choice is remembered on each phone or iPad, the day's map shows the chosen places, and the timeline says what was swapped. The Calendar shows each day from at least 8am to 8pm and stretches earlier, later or past midnight when a chosen swap needs it. The weather swaps stay, now called \"If it rains\" and \"If it's hot\" without a letter. Trip pages already on the site are unchanged until a new version is uploaded.";
+pub const SYNOPSIS: &str = "This version brings back the v15 opening screen on a trip page, as the owner asked, in today's type: the photo fills the first screen, with the trip's title, dates, countdown and the Play the trip and Start reading buttons centred on it, and the photo's credit at the top right. Under Can't-miss, day by day, each day now also shows its Plan B, Plan C and Plan D, one of each at most, each with its photo and credit and a link named Plan B, Plan C or Plan D; the link goes to that stop and opens the swap there, as its own button does.";

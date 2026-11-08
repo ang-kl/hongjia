@@ -27,11 +27,14 @@ The renderer, its style sheet and its script are generic and stay in this folder
 
 The owner chose "Everything v15 has". A new page leaves a part out only on the owner's word.
 
-- **Opener:** the trip's title and dates on paper beside the photo slideshow (the credit under the
-  photo), the trip in three lines, alert chips (a public holiday goes here), **Where we stay** cards,
-  **Can't-miss, day by day** (one row per day in date order; a day with nothing marked says what the
-  day is), a countdown and local time, the globe from home to the destination, and **Play the trip**
-  (the tour). While the tour plays, the family site folds its right-hand buttons into a 🔭.
+- **Opener:** the v15 opening screen in today's type (the owner, 8 November 2026: "I prefer the v15
+  landing screen", then "v15 layout, today's type"): the photo slideshow fills the screen, with the
+  trip's title, the water line, the dates, a countdown and local time and **Play the trip** (the tour)
+  on it, and the credit at the top right. Then the trip in three lines, alert chips (a public holiday
+  goes here), **Where we stay** cards, **Can't-miss, day by day** (one row per day in date order; a day
+  with nothing marked says what the day is; under each day's picks, its Plan B, C and D, one of each
+  at most, each with its photo and credit and a "Plan B" link that opens that swap at its stop), and
+  the globe from home to the destination. While the tour plays, the family site folds its right-hand buttons into a 🔭.
 - **Legend** that lights up places on the page and the map by category (stays, transport, weather,
   food, drinks, snacks, shopping, fun, sights, worship).
 - **Days**, one article each: the day's photo band, route line with every place linked, badges,
@@ -120,7 +123,8 @@ The owner wants both the look and the content to be super-luxury and to "wow".
 
 - **Look:** Direction A, "River". The family's name, 洪, means "flood; big, vast" and is written
   with the water element, so one fine water line is the only ornament (under the trip's title) and
-  the river teal is the one colour. Text sits on paper, never on a darkened photo. The site's two
+  the river teal is the one colour. Text sits on paper; the one exception is the opening screen,
+  where the title sits on the full-screen photo with the v15 soft shade (the owner's choice). The site's two
   typefaces (Source Serif 4 for headings, Source Sans 3 for everything else), four heading sizes
   that differ at a glance (the trip's title, sections, days, places), labels in plain words (no
   capitals, no labels above section titles), photos above their words with the credit under the
@@ -160,7 +164,7 @@ answers each one.
 
 | Tell (the owner's list) | How the page answers it |
 | --- | --- |
-| Layer 1: dark gradient hero | A light opening: words on paper beside the photo. |
+| Layer 1: dark gradient hero | The owner chose the v15 full-screen photo for the opening (8 November 2026). Its soft shade is the only one on the page, and its words are in today's type and plain lettering. |
 | Layer 1: dotted eyebrow headings | No label above a section's title; the title says it. A line above a day's or a card's title only when it carries facts (the date and route), in plain words, never capitals. |
 | Layer 1: uniform float-up animations | Nothing moves on scroll. |
 | Layer 1: pet words, inflated prose | The writing rules above, and `--check`. |

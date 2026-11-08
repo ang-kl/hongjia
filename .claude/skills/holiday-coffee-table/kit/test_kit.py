@@ -252,7 +252,15 @@ const { chromium } = require('playwright');
     await page.evaluate(() => { location.hash = 'd1-harbour-d'; });
     await page.waitForTimeout(300);
     const viaHash = await page.evaluate(() => !document.getElementById('d1-harbour-d').hidden);
-    res[w] = { on, kept, off, viaHash, calBC, calD, errors };
+    // "Plan B" under Can't-miss opens Plan B at its stop and brings it into view; closed there, a second tap opens it again
+    const cm = async () => { await page.click('#cm-day-1 .cm-swap[data-swap="b"] .cm-swap-t a'); await page.waitForTimeout(500);
+      return page.evaluate(() => { const s = document.getElementById('d1-harbour-b'), r = s.getBoundingClientRect();
+        return { open: !s.hidden, seen: r.top < innerHeight && r.bottom > 0, swaps: document.getElementById('d1-harbour').getAttribute('data-swaps') }; }); };
+    const viaCm = await cm();
+    await page.click('#d1-harbour .swap-btn[data-swap="b"]');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const viaCm2 = await cm();
+    res[w] = { on, kept, off, viaHash, viaCm, viaCm2, calBC, calD, errors };
     await ctx.close();
   }
   console.log(JSON.stringify(res));
@@ -1074,6 +1082,8 @@ class KitTest(unittest.TestCase):
             self.assertEqual(r['kept'], 'b c', f'{w}: remembered on this device')
             self.assertEqual(r['off'], {'swaps': '', 'open': 0, 'rest': False, 'tl': 0, 'pins': 0}, f'{w}: and undone')
             self.assertTrue(r['viaHash'], f'{w}: a link to a swap opens it')
+            for k in ('viaCm', 'viaCm2'):
+                self.assertTrue(r[k]['open'] and r[k]['seen'] and 'b' in r[k]['swaps'].split(), f'{w}: "Plan B" under Can\'t-miss opens it ({k}: {r[k]})')
             bc, dd = r['calBC'], r['calD']
             self.assertEqual(sorted(x.split(':')[0] for x in bc['shown']), ['b', 'c'], f'{w}: the Calendar shows the chosen swaps')
             self.assertTrue(all(int(x.split(':')[1]) >= 2 for x in bc['shown']), f'{w}: beside Plan A, sharing the width')
@@ -1109,6 +1119,31 @@ class KitTest(unittest.TestCase):
         with self.assertRaises(build.KitError):
             build.build(d)
 
+    def test_cant_miss_swaps(self):
+        op = find(self.root, 'section', id='opener')[0]
+        hl = self.data['opener']['highlights']
+        for i, (row, day) in enumerate(zip(find(op, 'div', 'cm-day'), self.data['days'])):
+            n = i + 1
+            want = []
+            for p in 'bcd':
+                items = [it for it in day['stops'] if (it.get('swaps') or {}).get(p)]
+                if items:
+                    it = sorted(items, key=lambda x: x['stop'] not in hl)[0]
+                    want.append((p, f'#d{n}-{it["stop"]}-{p}', it['swaps'][p]['stop']))
+            cards = find(row, 'article', 'cm-swap')
+            self.assertEqual([(c.attrs['data-swap'], find(c, 'a')[-1].attrs['href']) for c in cards], [(p, h) for p, h, _ in want],
+                             'one Plan B, C and D a day at most, a Can\'t-miss stop\'s own first')
+            for c, (p, href, sid) in zip(cards, want):
+                link = find(find(c, 'p', 'cm-swap-t')[0], 'a')[0]
+                self.assertTrue(link.text().strip().split(',')[0].endswith(f'Plan {p.upper()}'), 'the link reads "Plan B"')
+                self.assertTrue(find(self.root, 'section', id=href[1:]), 'the link names the swap at its stop')
+                if self.data['stops'][sid].get('photos'):
+                    self.assertTrue(find(c, 'img'))
+                    self.assertTrue(find(c, 'span', 'credit'), 'every swap picture carries its credit')
+                self.assertEqual(find(c, 'p', 'cm-swap-n')[0].text().strip(), self.data['stops'][sid]['name'])
+            self.assertEqual(bool(find(row, 'div', 'cm-swaps')), bool(want))
+        self.assertTrue(find(op, 'article', 'cm-swap'), 'the sample shows the swaps under Can\'t-miss')
+
     def test_no_eyebrow_labels(self):
         # An eyebrow is a small label sitting right above a section's title. A label that is the only
         # name of a small part (Meals, More nearby) is that part's heading, and stays.
@@ -1137,7 +1172,14 @@ class KitTest(unittest.TestCase):
         self.assertIn("--serif:'SourceSerif4'", css)
         self.assertIn("--sans:'SourceSans3'", css)
         self.assertIn('.ocards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))', css, 'at most four cards a row')
-        self.assertIn('.hero::after{display:none;content:none}', css, 'no darkened photo behind the title')
+        # the opening is the v15 screen, a photo filling it with the words on it, in today's type
+        self.assertNotIn('.hero::after{display:none', css)
+        self.assertNotIn('.hero{min-height:0', css)
+        self.assertIn('.hero{position:relative;min-height:100vh;min-height:100svh', css)
+        self.assertIn('.hero-t::after{content:"";display:block;width:120px;height:8px;margin:14pxauto0;background:no-repeatcenter/120px8pxvar(--river-light)}', css,
+                      'the one water line, in white under the title')
+        self.assertIn('.hero-slideimg{animation:none!important;transform:none!important}', css, 'the photos stay still')
+        self.assertNotIn('hero-k', self.html.split('<section id="opener"')[1].split('</section>')[0], 'no small-capitals line')
         # a single Can't-miss pick lies on its side on an iPad too, and stacks only on a phone
         self.assertIn('@media(max-width:560px){.cm-one.ocard{display:flex}', css)
         self.assertNotIn('@media(max-width:800px){.cm-day{grid-template-columns:minmax(0,1fr)}.cm-one', css)

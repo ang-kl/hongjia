@@ -927,7 +927,8 @@ html[data-mode=print] .sec-link{display:none}
   --mono:'Source Sans 3',system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;--r:8px;--r-sm:6px;
   --lift:0 1px 2px rgba(20,30,28,.06);
   --t1:clamp(2.25rem,1.55rem + 2.2vw,3rem);--t2:clamp(1.625rem,1.3rem + 1vw,2rem);--t3:clamp(1.25rem,1.1rem + .6vw,1.5rem);--t4:1.125rem;--tb:1.0625rem;--ts:.8125rem;
-  --river:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 8'%3E%3Cpath d='M0 4 C10 1 20 7 30 4 S50 1 60 4 S80 7 90 4 S110 1 120 4' fill='none' stroke='%231d6a6c' stroke-width='1.5'/%3E%3C/svg%3E")}
+  --river:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 8'%3E%3Cpath d='M0 4 C10 1 20 7 30 4 S50 1 60 4 S80 7 90 4 S110 1 120 4' fill='none' stroke='%231d6a6c' stroke-width='1.5'/%3E%3C/svg%3E");
+  --river-light:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 8'%3E%3Cpath d='M0 4 C10 1 20 7 30 4 S50 1 60 4 S80 7 90 4 S110 1 120 4' fill='none' stroke='%23ffffff' stroke-width='1.5'/%3E%3C/svg%3E")}
 html,body{background:var(--paper)}
 body{font:400 var(--tb)/1.6 var(--sans);font-feature-settings:normal}
 /* one size per rank */
@@ -955,26 +956,17 @@ p,li{font-size:var(--tb)}
 @media (min-width:1600px){.layout{grid-template-columns:minmax(0,1fr) 520px}}
 .sec{padding:32px 0 24px}
 .sec>p,.dek,.stop p,.tldr li{max-width:72ch}
-/* the opening: words on paper beside the photo; the photo's credit under it */
-.hero{min-height:0;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:28px;align-items:center;max-width:1680px;margin:0 auto;padding:28px 28px 8px;color:var(--ink);background:var(--paper)}
-.hero::after{display:none;content:none}
-.hero-slides{position:relative;order:2;aspect-ratio:3/2;width:100%;height:auto;inset:auto;border-radius:var(--r);overflow:hidden}
-.hero-slide{position:absolute;inset:0;display:flex;flex-direction:column;margin:0}
-.hero-slide img{flex:1;min-height:0;width:100%;object-fit:cover;animation:none !important;transform:none !important}
-.hero-slide figcaption{position:static;max-width:none;text-align:left;color:var(--muted);text-shadow:none;background:var(--paper);padding:6px 0 0}
-.hero-slide figcaption a{color:var(--muted)}
-.hero-in{order:1;position:static;text-align:left;align-items:flex-start;padding:0;margin:0;color:var(--ink)}
-.hero-t{color:var(--ink);text-shadow:none;max-width:18ch;margin:0 0 .3em}
-.hero-t::after{content:"";display:block;width:120px;height:8px;margin-top:12px;background:no-repeat left center/120px 8px var(--river)}
-.hero-dates{font-family:var(--sans);font-weight:600;color:var(--ink);font-size:1.125rem}
-.hero-live{justify-content:flex-start}
-.hero-live span{color:var(--ink2);background:var(--paper);border:1px solid var(--rule);border-radius:6px;font-size:.875rem;-webkit-backdrop-filter:none;backdrop-filter:none}
-.hero-live .cd{background:var(--gold);border-color:var(--gold);color:#fff}
-.hero-ctas{justify-content:flex-start}
-.btn-hero{min-height:46px;border-radius:6px;font-size:1rem;font-weight:650;box-shadow:none;padding:0 20px}
-.btn-hero2{min-height:46px;border-radius:6px;border-color:var(--rule);color:var(--ink);font-size:1rem;font-weight:600;padding:0 18px}
-.btn-hero2:hover{background:var(--accent-wash)}
-@media (max-width:860px){.hero{grid-template-columns:minmax(0,1fr);padding:20px 16px 4px}.hero-slides{order:2}}
+/* the opening: the v15 screen, the photo filling it and the words on it, in today's type and plain lettering (the
+   owner, 8 November 2026: "I prefer the v15 landing screen", then "v15 layout, today's type"). The soft shade on
+   the photo is the v15 one, there so the words stay readable. The photos stay still, as everywhere in Direction A
+   (no breathing photos), and the one water line sits under the title, in white. */
+.hero-slide img{animation:none !important;transform:none !important}
+.hero-t::after{content:"";display:block;width:120px;height:8px;margin:14px auto 0;background:no-repeat center/120px 8px var(--river-light)}
+.hero-t{font-size:clamp(2.75rem,1.5rem + 4.4vw,5.25rem);line-height:1.06;font-weight:650;letter-spacing:-.01em;max-width:16ch;margin:0 auto .25em;text-shadow:0 2px 24px rgba(0,0,0,.3)}
+.hero-dates{font-family:var(--sans);font-weight:600;font-size:clamp(1.0625rem,.95rem + .5vw,1.375rem);letter-spacing:0}
+.hero-live span{font-size:.9375rem;font-weight:600;border-radius:6px;padding:7px 14px}
+.btn-hero{min-height:50px;border-radius:6px;font-size:1.0625rem;font-weight:650;padding:0 24px}
+.btn-hero2{min-height:50px;border-radius:6px;font-size:1.0625rem;font-weight:600;padding:0 22px}
 /* cards: the photo, then the words under it; four a row at most */
 .ocards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
 @media (max-width:1100px){.ocards{grid-template-columns:repeat(3,minmax(0,1fr))}}
@@ -1017,6 +1009,20 @@ p,li{font-size:var(--tb)}
 @media (max-width:800px){.cm-day{grid-template-columns:minmax(0,1fr)}}
 /* a single pick stays on its side down to phone width, so an iPad does not show one very large photo */
 @media (max-width:560px){.cm-one .ocard{display:flex}.cm-day .ocards.cm-one{max-width:none}}
+/* the day's Plan B, C and D under its picks, dashed like a swap everywhere else (the owner, 8 November 2026) */
+.cm-swaps{grid-column:2;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 16px}
+.cm-swap{display:flex;flex-direction:column;background:#fff;border:1px dashed var(--gold);border-radius:var(--r);overflow:hidden}
+.cm-swap-ph{margin:0}
+.cm-swap-ph > a{display:block;aspect-ratio:3/2;overflow:hidden}
+.cm-swap-ph img{display:block;width:100%;height:100%;object-fit:cover}
+.cm-swap-ph figcaption{padding:6px 12px 0;color:var(--muted);line-height:1.35}
+.cm-swap-ph figcaption a{color:var(--muted)}
+.cm-swap-t{margin:0;padding:8px 12px 0;font-weight:650}
+.cm-swap-t a{color:var(--gold-ink);text-decoration:underline;text-underline-offset:3px}
+.cm-swap-n{margin:0;padding:2px 12px 12px;color:var(--ink2);font-size:.9375rem;line-height:1.35}
+@media (max-width:1100px){.cm-swaps{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:800px){.cm-swaps{grid-column:auto}}
+@media (max-width:560px){.cm-swaps{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}
 /* a day's photo sits above its words, never behind them */
 .day-h.has-band{display:grid;grid-template-columns:auto minmax(0,1fr);min-height:0;color:var(--ink);padding:0;isolation:auto;border-radius:0;overflow:visible;margin-bottom:18px}
 .day-band{position:static;inset:auto;z-index:auto;grid-column:1 / -1;margin:0 0 14px;border-radius:var(--r);overflow:hidden;aspect-ratio:21/8}
