@@ -1127,6 +1127,13 @@ button.chip[aria-pressed="true"] { border-color: var(--river); color: var(--rive
 .doc-tabs button { min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); font: 500 0.9375rem/1 var(--sans); }
 .doc-tabs button[aria-pressed="true"] { border-color: var(--river); color: var(--river); font-weight: 650; }
 .doc-tabs .count { margin-left: 4px; padding: 2px 6px; font-size: 0.6875rem; }
+/* On a phone the tabs keep to one row under the title and slide sideways, so the document starts higher
+   (the owner, 8 November 2026: "Fix both"). */
+@media (max-width: 760px) {
+  .doc-tabs { flex: 1 1 100%; flex-wrap: nowrap; margin-left: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .doc-tabs::-webkit-scrollbar { display: none; }
+  .doc-tabs button { flex: 0 0 auto; }
+}
 body[data-tab="details"] .panel [data-group]:not([data-group="details"]),
 body[data-tab="versions"] .panel [data-group]:not([data-group="versions"]),
 body[data-tab="notes"] .panel [data-group]:not([data-group="notes"]),
