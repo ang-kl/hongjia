@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.08 (6)";
+pub const VERSION: &str = "2026.11.08 (7)";
 
-pub const SYNOPSIS: &str = "This version gives every key point of a trip page its own link, as the owner asked: besides each section and day, each stop, each Plan B, C and D, each Can't-miss day, the opening's three parts and every titled part inside a section now has a small # beside its title. A tap shares the full address of that point on the family site, or offers Copy link; opening the address after signing in lands on that point, and a Plan B, C or D opens there too.";
+pub const SYNOPSIS: &str = "This version keeps the trip template up to date with what the owner learned while putting a trip on the site: Wikimedia pictures now load from its newer thumbnail address, which the kit uses by itself and the page check asks for; a trip's data file is pinned on the lower part of the opening photo, where it covers nothing on an iPad or a phone; a walk taken alone needs a formed, signed path, or the owner's agreement and a check-in; and the check after each upload now covers the family's swaps, the # links and the data pins.";

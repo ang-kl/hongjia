@@ -85,6 +85,10 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
    - **Photos** need an author and a licence (open-licence libraries such as Wikimedia Commons, or
      the venue's own pictures from its website, credited to it). Never a picture without a credit,
      never an empty frame, never the same photo twice in a day's Gallery.
+   - **Wikimedia thumbnails** load from `thumb.wikimedia.org`. Wikimedia limits the older
+     `upload.wikimedia.org/…/thumb/` address (seven pictures of a real trip came back "too many
+     requests" on 8 November 2026), so the kit moves those addresses by itself and `--check` flags any
+     left. Before an upload, fetch every picture once, slowly, and fix any that fail.
    - **Social accounts** are only the venue's own, linked from its own website or official listing.
      No chain or brand accounts in place of the venue (the owner: "drop the five brand"). No
      age-restricted accounts (alcohol venues), which do not show to people who are not logged in.
@@ -108,11 +112,20 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
    next version of the trip's document, after checking the version count first. Sign in with the
    family password from the environment only, and sign out after every live check.
 9. **Live check** after uploading: the version tag in the header, the map pictures through the site,
-   the forecast, a place panel, Share, a # link, the Gallery and the Calendar, then sign out.
+   the forecast, a place panel, Share, a # link, the Gallery and the Calendar. With the family's swaps,
+   also: a "Plan B" under Can't-miss opens its swap in view (then close it again, so no choice is left
+   on the owner's profile), a stop's # gives the full address (Copy link), and a swap's own address
+   opens it. Look at the opening screen and the data pins on an iPad and a phone, then sign out.
 10. **Keep the data file safe** (the owner, 7 November 2026: "Attach it on hongjia.org"). The data
     file is private and lives outside the repository. After the owner's APPROVE for it, attach it to
     the trip's document on the family site as a `.txt` file (visible to signed-in family only), so
     the next version can start from it in a new session.
+    - **Where the pin goes** (the owner, 8 November 2026): on the lower part of the opening photo, about
+      30% across and 86% down, with older data pins under it (about 91% and 97% down). A pin keeps its
+      place as a share of what it is pinned to, so a pin beside a heading's words that fits on an iPad
+      covers them, or the heading's #, on a phone; the opening photo has room on every screen, clear of
+      the title, the buttons and the site's ☰ and 🔭. Show the owner the spot (a preview at iPad and
+      phone size) before pinning or moving anything, and check it on both after.
 
 ## Versions
 
@@ -228,7 +241,10 @@ accepts answers only from `window.parent`. The site checks every message's field
   - The owner's rules so far (ask again for another trip): with one car, the car goes with the
     shoppers, so a Plan B walk is reachable on foot or by taxi; someone walking alone gets only short,
     busy, well-marked walks, each with a check-in time; Plan D never drives country roads at dusk or at
-    night. Who each swap is for goes in the private data file (`plans.family`), never in this folder.
+    night. "Well-marked" includes a formed path with information signs. A walk with no waymarkers stays
+    only when it is flat and busy and the owner agrees: its `trail` says `marked: false`, so the page
+    shows "not marked", with a check-in time (the owner, 8 November 2026). Ask the owner about every
+    walk taken alone before the upload. Who each swap is for goes in the private data file (`plans.family`), never in this folder.
   - Every swap is a researched place with its own photo, credit, links, hours on that date (public
     holidays checked) and, for a walk, its `trail` facts with their source. Where nothing fits, the
     stop has no swap for that plan: never force one.

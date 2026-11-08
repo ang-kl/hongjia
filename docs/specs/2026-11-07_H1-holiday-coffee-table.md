@@ -198,3 +198,12 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
   full address of that point (`https://` the site, the document, `#d1-harbour`), or offers Copy link, and opening
   it after signing in lands on the point. A swap's address also opens the swap. A titled part's ID is `p-` and its
   title in plain letters, so it lasts as long as the title does.
+- **The afternoon's lessons** (the owner, 8 November 2026: "update the template"; they chose all four):
+  - Wikimedia thumbnails load from `thumb.wikimedia.org`: the kit moves `upload.wikimedia.org/…/thumb/` addresses there
+    by itself (Wikimedia limits the older address), and `--check` flags any left.
+  - The trip's data file is pinned on the lower part of the opening photo, older data pins under it, shown to the owner
+    first: a pin beside a heading that fits on an iPad covers the words or the # on a phone.
+  - The walk rules: a formed path with information signs counts as well-marked; a walk with no waymarkers stays only
+    when flat, busy and agreed by the owner, shown as "not marked", with a check-in.
+  - The live check also opens a swap from Can't-miss, copies a stop's # address, opens a swap's own address, and looks
+    at the opening screen and the data pins on an iPad and a phone.

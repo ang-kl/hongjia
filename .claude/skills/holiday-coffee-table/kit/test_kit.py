@@ -1511,6 +1511,19 @@ class KitTest(unittest.TestCase):
         with self.assertRaises(build.KitError):
             build.Page(copy.deepcopy(self.data)).sec_link('1 bad"id')
 
+    def test_wikimedia_thumbnail_address(self):
+        d = example()
+        pid = next(iter(d['photos']))
+        d['photos'][pid]['src'] = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Example.jpg/960px-Example.jpg'
+        html = build.build(d)
+        self.assertNotIn(build.OLD_THUMBS, html, 'the kit moves Wikimedia thumbnails to their newer address')
+        self.assertIn('https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Example.jpg/960px-Example.jpg', html)
+        self.assertEqual(build.wm_thumb('https://upload.wikimedia.org/wikipedia/commons/a/ab/Example.jpg'),
+                         'https://upload.wikimedia.org/wikipedia/commons/a/ab/Example.jpg', 'an original file stays where it is')
+        old = html.replace('https://thumb.wikimedia.org/wikipedia/commons/thumb/', build.OLD_THUMBS)
+        self.assertIn('old photo address', [k for k, _ in build.check_html(old)])
+        self.assertNotIn('old photo address', [k for k, _ in build.check_html(html)])
+
     def test_key_point_links(self):
         # the owner, 8 November 2026: every key point should have a link on an ID, "to share the link, to create jump
         # easily"; they chose "Places, plans and parts"
