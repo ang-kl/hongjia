@@ -119,7 +119,7 @@ LABELS = {
     'swap_b': 'Hiking & nature', 'swap_c': 'Shopping', 'swap_d': 'Early or late',
     'swap_icon_b': '🥾', 'swap_icon_c': '🛍️', 'swap_icon_d': '🌙', 'swap_who_b': '', 'swap_who_c': '', 'swap_who_d': '',
     'swaps_aria': 'Swaps for {name}', 'swap_when': 'When', 'swap_go': 'Getting there', 'swap_checkin': 'Check in',
-    'swap_meet': 'Meet again', 'swap_rest': 'Everyone else carries on as planned.', 'swapped': 'Swapped: {plans}',
+    'swap_meet': 'Meet up', 'swap_rest': 'Everyone else carries on as planned.', 'swapped': 'Swapped: {plans}',
     'trail_grade_easy': 'easy', 'trail_grade_moderate': 'moderate', 'trail_grade_hard': 'hard',
     'trail_marked': 'marked trail', 'trail_unmarked': 'not marked', 'trail_busy': 'busy: {why}', 'trail_phone': 'phone: {x}',
     'trail_shade': 'shade: {x}', 'trail_toilets': 'toilets: {x}', 'trail_aria': 'The walk',
@@ -535,8 +535,9 @@ class Page:
                     ww = f'{w}.stops[{j}].swaps.{p}'
                     if not isinstance(x, dict) or x.get('stop') not in self.stops:
                         raise KitError(f'{ww}: unknown stop {(x or {}).get("stop")!r}')
-                    if x['stop'] == it['stop']:
-                        raise KitError(f'{ww}: a swap is another place, not the stop itself')
+                    if x['stop'] == it['stop'] and p != 'd':
+                        # Plan D may be the same place early or late (sunset at the same jetty); B and C go somewhere else.
+                        raise KitError(f'{ww}: a Plan B or C swap is another place, not the stop itself')
                     m = x.get('meet')
                     if m is not None and (not isinstance(m, dict) or not m.get('time') or not m.get('place')):
                         raise KitError(f'{ww}.meet: give a time and a place')

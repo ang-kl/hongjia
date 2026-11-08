@@ -1000,7 +1000,7 @@ class KitTest(unittest.TestCase):
         self.assertIn('data-fact', trail.attrs)
         self.assertTrue(find(trail, 'a', 'src'), "a walk's length and grade carry their source")
         self.assertIn('2.4 km', trail.text())
-        self.assertEqual([x.text() for x in find(b, 'dt')], ['When', 'Getting there', 'Check in', 'Meet again'])
+        self.assertEqual([x.text() for x in find(b, 'dt')], ['When', 'Getting there', 'Check in', 'Meet up'])
         meet = find(b, 'dd')[-1]
         self.assertIn('12:00', meet.text())
         self.assertTrue(find(meet, 'a', 'pl'), 'the meeting place opens its own panel')
@@ -1031,6 +1031,9 @@ class KitTest(unittest.TestCase):
         broken(lambda d: sw(d).update(e={'stop': 'coastpath'}))
         broken(lambda d: sw(d)['b'].update(stop='nowhere'))
         broken(lambda d: sw(d)['b'].update(stop='harbour'))
+        d = copy.deepcopy(self.data)
+        sw(d)['d'].update(stop='harbour')
+        self.assertIn('d1-harbour-d', build.build(d), 'Plan D may be the same place, early or late')
         broken(lambda d: sw(d)['b']['meet'].pop('place'))
         broken(lambda d: d['stops']['coastpath']['trail'].pop('source'))
         broken(lambda d: d['stops']['coastpath']['trail'].update(grade='steep'))
