@@ -169,9 +169,9 @@
   ]
  },
  "plans": {
-  "kicker": "Plan A, B and C",
-  "title": "Weather decides; you choose.",
-  "intro": "Each day has Plan A. Plan B is for rain; Plan C is for heat, strong wind or storms. The forecast highlights a plan; it never hides one.",
+  "kicker": "Plans",
+  "title": "Weather swaps, and our own.",
+  "intro": "Each day has Plan A. If it rains, or if it's hot, windy or stormy, the day has a swap for the weather; the forecast highlights it and never hides another. At many stops we can also swap: Plan B for walks and nature, Plan C for shopping, Plan D for early or late. Choosing B and C together means we split up and meet again.",
   "explain": {
    "a": "The day as written.",
    "b": "Covered and indoor alternatives, close to the base.",
@@ -183,8 +183,8 @@
     "metric": "rain_pct",
     "op": ">=",
     "value": 60,
-    "text": "Rain chance 60% or more: Plan B",
-    "short": "rain 60%+ → B"
+    "text": "Rain chance 60% or more: the rain swap",
+    "short": "rain 60%+"
    },
    {
     "plan": "c",
@@ -195,26 +195,34 @@
      96,
      99
     ],
-    "text": "Thunderstorm forecast: Plan C",
-    "short": "storm → C"
+    "text": "Thunderstorm forecast: the heat swap",
+    "short": "storm"
    },
    {
     "plan": "c",
     "metric": "tmax",
     "op": ">=",
     "value": 32,
-    "text": "Maximum 32°C or more: Plan C",
-    "short": "32°C+ → C"
+    "text": "Maximum 32°C or more: the heat swap",
+    "short": "32°C+"
    },
    {
     "plan": "c",
     "metric": "gust_kmh",
     "op": ">=",
     "value": 55,
-    "text": "Wind gusts 55 km/h or more: Plan C",
-    "short": "gusts 55+ km/h → C"
+    "text": "Wind gusts 55 km/h or more: the heat swap",
+    "short": "gusts 55+ km/h"
    }
-  ]
+  ],
+  "family": {
+   "b": {
+    "who": "The walker"
+   },
+   "c": {
+    "who": "The shopper"
+   }
+  }
  },
  "weather": {
   "title": "Live forecast",
@@ -292,7 +300,47 @@
     },
     {
      "stop": "harbour",
-     "role": "Morning photos on the quay."
+     "role": "Morning photos on the quay.",
+     "swaps": {
+      "b": {
+       "stop": "coastpath",
+       "role": "One of us walks the coast path to the lighthouse.",
+       "start": "10:30",
+       "end": "11:45",
+       "go": "Walk 3 min from the Harbour Steps to the start of the path.",
+       "checkin": "Message the family at 11:15.",
+       "meet": {
+        "time": "12:00",
+        "place": "the lighthouse gate",
+        "stop": "lighthouse"
+       }
+      },
+      "c": {
+       "stop": "quaylane",
+       "role": "One of us browses the lane behind the quay, with the car.",
+       "start": "10:30",
+       "end": "11:45",
+       "go": "A 2 min drive, or 5 min on foot.",
+       "meet": {
+        "time": "12:00",
+        "place": "the lighthouse gate",
+        "stop": "lighthouse"
+       }
+      },
+      "d": {
+       "stop": "breakwater",
+       "role": "Sunrise from the breakwater before breakfast.",
+       "when": "06:45 (fictional sunrise)",
+       "go": "Walk 8 min from the hotel.",
+       "meet": {
+        "time": "08:00",
+        "place": "breakfast at the hotel",
+        "stop": "hotel"
+       },
+       "start": "06:30",
+       "end": "07:30"
+      }
+     }
     },
     {
      "stop": "lighthouse",
@@ -3190,6 +3238,27 @@
    "lat": 0.052,
    "lng": 0.087,
    "q": "The Tide Gardens, Example Coast (fictional)"
+  },
+  "coastpath": {
+   "name": "Lantern Point coast path",
+   "lat": 0.064,
+   "lng": 0.118,
+   "q": "Lantern Point coast path Example Bay",
+   "note": "Invented place"
+  },
+  "quaylane": {
+   "name": "Quay Lane shops",
+   "lat": 0.054,
+   "lng": 0.098,
+   "q": "Quay Lane Example Bay",
+   "note": "Invented place"
+  },
+  "breakwater": {
+   "name": "The breakwater",
+   "lat": 0.058,
+   "lng": 0.106,
+   "q": "Breakwater Example Bay",
+   "note": "Invented place"
   }
  },
  "legs": {
@@ -5512,6 +5581,85 @@
     }
    ],
    "area": "bay"
+  },
+  "coastpath": {
+   "name": "Lantern Point coast path",
+   "place": "coastpath",
+   "area": "bay",
+   "cat": "sights",
+   "photos": [
+    "cliffs-2"
+   ],
+   "line": "A sealed path along the cliffs from the quay to the lighthouse.",
+   "links": [
+    {
+     "kind": "web",
+     "label": "Website",
+     "url": "https://example.com/example-bay/coast-path"
+    },
+    {
+     "kind": "addr",
+     "label": "Starts at 1 Harbour Row, Example Bay"
+    }
+   ],
+   "trail": {
+    "km": 2.4,
+    "time": "about 40 min one way",
+    "grade": "easy",
+    "marked": true,
+    "busy": "the town's morning walking path",
+    "shade": "some",
+    "toilets": "at both ends",
+    "phone": "good along the path",
+    "source": "ex_tourism"
+   },
+   "suits": {
+    "walking": "moderate",
+    "shade": "some",
+    "toilets": "yes"
+   }
+  },
+  "quaylane": {
+   "name": "Quay Lane shops",
+   "place": "quaylane",
+   "area": "bay",
+   "cat": "shopping",
+   "photos": [
+    "market-1"
+   ],
+   "line": "Small shops for linen, glass and books behind the quay.",
+   "links": [
+    {
+     "kind": "web",
+     "label": "Website",
+     "url": "https://example.com/example-bay/quay-lane"
+    },
+    {
+     "kind": "addr",
+     "label": "Quay Lane, Example Bay"
+    },
+    {
+     "kind": "hours",
+     "label": "Daily 9am to 5pm (fictional)",
+     "source": "ex_hours"
+    }
+   ]
+  },
+  "breakwater": {
+   "name": "The breakwater at sunrise",
+   "place": "breakwater",
+   "area": "bay",
+   "cat": "sights",
+   "photos": [
+    "pier-2"
+   ],
+   "line": "The first light over the harbour, a short walk from the hotel.",
+   "links": [
+    {
+     "kind": "addr",
+     "label": "End of Harbour Row, Example Bay"
+    }
+   ]
   }
  },
  "areas": {

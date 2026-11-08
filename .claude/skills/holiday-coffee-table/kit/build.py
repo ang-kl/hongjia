@@ -41,6 +41,9 @@ FORECAST_LEAD_DAYS = 15  # Open-Meteo forecasts 16 days, today included
 METRICS = ('code', 'tmax', 'tmin', 'rain_pct', 'rain_mm', 'wind_kmh', 'gust_kmh', 'uv')
 OPS = ('>=', '>', '<=', '<', 'in')
 PLANS = ('a', 'b', 'c')
+# The family's swaps at a stop (the owner, 8 November 2026): B hiking and nature, C shopping, D early or late.
+SWAPS = ('b', 'c', 'd')
+GRADES = ('easy', 'moderate', 'hard')
 # Map tiles. OpenStreetMap's own tile servers refuse requests without a Referer, and a page in the
 # family site's locked frame (an opaque origin) never sends one. So by default ("site") the page asks
 # the family site for a short-lived ticket and loads OpenStreetMap tiles through the site's relay
@@ -111,14 +114,22 @@ LABELS = {
     'map_fallback': 'The route map could not load here. The Google pin and directions tabs still work.',
     'tiles_notice': 'Map pictures load inside the family site.',
     'short_walk': 'short walk', 'optional': 'optional', 'to': 'to',
-    'plan_a': 'As planned', 'plan_b': 'If it rains', 'plan_c': 'Heat, wind or storm', 'plan': 'Plan {p}',
+    'plan_a': 'As planned', 'plan_b': 'If it rains', 'plan_c': "If it's hot", 'plan': 'Plan {p}',
+    'wx_icon_b': '☔', 'wx_icon_c': '☀️',
+    'swap_b': 'Hiking & nature', 'swap_c': 'Shopping', 'swap_d': 'Early or late',
+    'swap_icon_b': '🥾', 'swap_icon_c': '🛍️', 'swap_icon_d': '🌙', 'swap_who_b': '', 'swap_who_c': '', 'swap_who_d': '',
+    'swaps_aria': 'Swaps for {name}', 'swap_when': 'When', 'swap_go': 'Getting there', 'swap_checkin': 'Check in',
+    'swap_meet': 'Meet up', 'swap_rest': 'Everyone else carries on as planned.', 'swapped': 'Swapped: {plans}',
+    'trail_grade_easy': 'easy', 'trail_grade_moderate': 'moderate', 'trail_grade_hard': 'hard',
+    'trail_marked': 'marked trail', 'trail_unmarked': 'not marked', 'trail_busy': 'busy: {why}', 'trail_phone': 'phone: {x}',
+    'trail_shade': 'shade: {x}', 'trail_toilets': 'toilets: {x}', 'trail_aria': 'The walk',
     'plans_for_day': 'Plans for day {n}', 'choose_plan': 'Choose a plan', 'chosen': 'Chosen', 'suggested': 'Forecast suggests',
-    'plans_missing': 'Plan B (rain) and Plan C (heat, wind or storm) are not listed for this day yet.',
-    'plans_rules': 'Rules', 'replaces': 'Replaces', 'plan_for_day': 'Plan {p} for day {n}: {label}',
+    'plans_missing': 'The rain and heat swaps are not listed for this day yet.',
+    'plans_rules': 'Rules', 'replaces': 'Replaces', 'plan_for_day': '{label}, day {n}',
     'wx_from': 'Forecast from {date}', 'wx_error': 'No forecast just now: {error}', 'wx_past': 'This day is over; no forecast.',
     'wx_none': 'No forecast for this day.', 'wx_frame': 'The live forecast shows when this page is opened on the family site.',
     'wx_credit': 'Weather data by', 'wx_licence': 'CC BY 4.0', 'wx_rain': 'rain', 'wx_gust': 'gusts', 'wx_wind': 'wind', 'wx_uv': 'UV',
-    'wx_suggests': 'Suggests Plan {p}: {why}', 'wx_fits': 'Fits Plan A', 'wx_no_plan': 'Suggests Plan {p} ({why}); none is listed for this day yet.',
+    'wx_suggests': 'Suggests {label}: {why}', 'wx_fits': 'Fits Plan A', 'wx_no_plan': 'Suggests {label} ({why}); none is listed for this day yet.',
     'wx_max_min': 'max {max}° / min {min}°',
     'lens_all': 'All travellers', 'lens_choose': 'Choose a kind of traveller', 'lens_fits': 'fits', 'lens_check': 'check',
     'lens_unknown': 'not checked', 'lens_for': 'For {label}', 'party_for': 'For this group', 'suits_aria': 'Suitability',
@@ -195,6 +206,7 @@ START_RE = re.compile(rf'^(?:(?:around|about|from|at)\s+)?{CLOCK}$', re.I)
 BY_RE = re.compile(rf'^by\s+{CLOCK}$', re.I)
 TZ_RE = re.compile(r'^UTC\s*([+-])(\d{1,2})(?::?([0-5]\d))?$')
 CAL_SHORT = 30          # minutes, for an item with only a start ("09:15") or only an end ("By 15:00")
+CAL_DAY = (8, 20)       # the hours a day shows at least: "normal 8-8 PM" (the owner, 8 November 2026)
 CAL_MAX_EVENTS = 12     # the site's limit for one link
 
 
@@ -474,6 +486,13 @@ class Page:
                 for s in c['sources']:
                     check_url(s.get('src'), f'stops.{key}.clips[{i}]')
             self.stop_cats[key] = norm_cats(st.get('cat'), f'stops.{key}.cat')
+            tr = st.get('trail')
+            if tr is not None:
+                if not isinstance(tr, dict) or isinstance(tr.get('km'), bool) or not isinstance(tr.get('km'), (int, float)) or tr['km'] <= 0 \
+                        or tr.get('grade') not in GRADES:
+                    raise KitError(f'stops.{key}.trail: give km (a number) and grade ({", ".join(GRADES)})')
+                if tr.get('source') not in self.sources:
+                    raise KitError(f'stops.{key}.trail.source: a walk\'s length and grade are facts; name their source (a sources key)')
             if st.get('photo_spot'):
                 self.check_spot(st['photo_spot'], f'stops.{key}.photo_spot')
             self.check_awards(st.get('awards'), f'stops.{key}.awards')
@@ -506,6 +525,24 @@ class Page:
                 for it in day.get(plan) or []:
                     if it.get('stop') not in self.stops:
                         raise KitError(f'{w}.{plan}: unknown stop {it.get("stop")!r}')
+            for j, it in enumerate(day['stops']):
+                sw = it.get('swaps')
+                if sw is None:
+                    continue
+                if not isinstance(sw, dict) or not sw or set(sw) - set(SWAPS):
+                    raise KitError(f'{w}.stops[{j}].swaps: use b, c and d only')
+                for p, x in sw.items():
+                    ww = f'{w}.stops[{j}].swaps.{p}'
+                    if not isinstance(x, dict) or x.get('stop') not in self.stops:
+                        raise KitError(f'{ww}: unknown stop {(x or {}).get("stop")!r}')
+                    if x['stop'] == it['stop'] and p != 'd':
+                        # Plan D may be the same place early or late (sunset at the same jetty); B and C go somewhere else.
+                        raise KitError(f'{ww}: a Plan B or C swap is another place, not the stop itself')
+                    m = x.get('meet')
+                    if m is not None and (not isinstance(m, dict) or not m.get('time') or not m.get('place')):
+                        raise KitError(f'{ww}.meet: give a time and a place')
+                    if m and m.get('stop') and m['stop'] not in self.stops:
+                        raise KitError(f'{ww}.meet: unknown stop {m["stop"]!r}')
             if day.get('iso'):
                 parse_date(day['iso'], f'{w}.iso')
             for j, x in enumerate(day.get('timeline') or []):
@@ -979,6 +1016,11 @@ class Page:
             for p in ('b', 'c'):
                 if any(it.get('stop') == sid for it in day.get('plan_' + p) or []):
                     return f'd{n}{p}-{sid}'
+        for n, day in enumerate(self.days, 1):
+            for it in day.get('stops') or []:
+                for p, x in (it.get('swaps') or {}).items():
+                    if (x or {}).get('stop') == sid:
+                        return f'd{n}-{it["stop"]}-{p}'
         return ''
 
     def legend(self, compact=False):
@@ -1202,7 +1244,7 @@ class Page:
         role = item.get('role') or ''
         if item.get('replaces'):
             role = (role + ' ' if role else '') + f'{self.L["replaces"]}: {item["replaces"]}.'
-        note = self.fmt('plan', p=plan.upper()) if plan != 'a' else self.L['optional']
+        note = self.plan_label(plan) if plan != 'a' else self.L['optional']
         details = ' · '.join(f'<a href="{E(self.url_or_source(x, w + ".details"))}" target="_blank" rel="noopener">{E(x["text"])} ↗</a>' for x in st.get('details') or [])
         prompts = st.get('prompts') or []
         ptitle = self.L['prompts3'] if len(prompts) == 3 else self.L['prompts']
@@ -1213,10 +1255,12 @@ class Page:
         if coord_src:
             pin += ' ' + self.src_tag(coord_src, where=w)
         cats = self.stop_cats.get(sid) or []
-        out = (f'<article class="stop" id="{E(did)}"{self.cats_attr(cats)}>'
+        swaps = self.swaps_html(day, n, item, did) if plan == 'a' else ''
+        out = (f'<article class="stop" id="{E(did)}"{self.cats_attr(cats)}{" data-swaps=" + chr(34) + chr(34) if swaps else ""}>'
                f'<header class="stop-h"><span class="pin-letter" aria-hidden="true">{letter}</span>'
                f'<div><h4>{self.pl_link(self.place_pid[st["place"]], E(st["name"]), did)}</h4><p class="role">{E(role)}</p>{self.cat_chips(cats)}</div>'
                f'<button type="button" class="btn-ghost show-map" data-day="{n - 1}" data-idx="{idx if plan == "a" else -1}" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" data-name="{E(st["name"])}" data-note="{E(note)}">{E(self.L["show_on_map"])}</button></header>'
+               f'{swaps}'
                f'{self.suits(st, sid)}'
                f'{self.bento(st.get("photos"), w + ".photos")}'
                f'{self.clips(st.get("clips"))}'
@@ -1307,11 +1351,101 @@ class Page:
     def plan_label(self, p):
         return ((self.plans or {}).get('labels') or {}).get(p) or self.L['plan_' + p]
 
+    def plan_tag(self, p):
+        """Plan A keeps its letter; the weather swaps show an icon and their words, with no letter, because B, C and D
+        are the family's swaps at each stop (the owner, 8 November 2026)."""
+        return self.fmt('plan', p='A') if p == 'a' else self.L['wx_icon_' + p]
+
+    def rule_if(self, r, short=True):
+        """A rule's condition alone. Older data ended the short form with "→ B" or "→ C"; that letter is dropped."""
+        text = (r.get('short') if short else None) or r['text']
+        return re.sub(r'\s*→\s*[BC]\s*$', '', text)
+
+    def rule_line(self, r, short=True):
+        return f'{self.rule_if(r, short)} → {self.plan_tag(r["plan"])} {self.plan_label(r["plan"])}'
+
+    # ------------------------------------------------------------------ the family's swaps at a stop
+    def swap_meta(self, p):
+        fam = ((self.plans or {}).get('family') or {}).get(p) or {}
+        return (fam.get('label') or self.L['swap_' + p], fam.get('who') or self.L['swap_who_' + p],
+                fam.get('icon') or self.L['swap_icon_' + p])
+
+    def swaps_html(self, day, n, item, did):
+        """Plans B, C and D at one Plan A stop. Each opens on its own, so the family can split up (B and C at once) and
+        meet again; the page remembers the choice on this device."""
+        sw = item.get('swaps') or {}
+        keys = [p for p in SWAPS if sw.get(p)]
+        if not keys:
+            return ''
+        st = self.stops[item['stop']]
+        btns, panels = [], []
+        for p in keys:
+            label, who, icon = self.swap_meta(p)
+            pid = f'{did}-{p}'
+            btns.append(f'<button type="button" class="swap-btn" data-swap="{p}" aria-pressed="false" aria-controls="{E(pid)}">'
+                        f'<span aria-hidden="true">{icon}</span> <b>{E(self.fmt("plan", p=p.upper()))}</b> {E(label)}'
+                        + (f' <small>{E(who)}</small>' if who else '') + '</button>')
+            panels.append(self.swap_panel(n, p, sw[p], pid, f'days[{n - 1}].swaps.{p}'))
+        return (f'<div class="swaps" role="group" aria-label="{E(self.fmt("swaps_aria", name=st["name"]))}">' + ''.join(btns) + '</div>'
+                + '<div class="swap-panels">' + ''.join(panels) + f'<p class="swap-rest" hidden>{E(self.L["swap_rest"])}</p></div>')
+
+    def trail_line(self, tr, where):
+        if not tr:
+            return ''
+        bits = [E(f'{tr["km"]:g} km')] + ([E(str(tr['time']))] if tr.get('time') else []) + [E(self.L['trail_grade_' + tr['grade']])]
+        bits.append(E(self.L['trail_marked'] if tr.get('marked') else self.L['trail_unmarked']))
+        for k, lab in (('busy', 'trail_busy'), ('shade', 'trail_shade'), ('toilets', 'trail_toilets'), ('phone', 'trail_phone')):
+            if tr.get(k):
+                # a note may carry its own source tag ("[[src:key]]"), so it is read as rich text
+                pre, _, post = self.L[lab].replace('{why}', '{x}').partition('{x}')
+                bits.append(E(pre) + self.rich(str(tr[k]), f'{where}.{k}') + E(post))
+        return (f'<p class="trail" data-fact><span aria-hidden="true">🥾</span> <span class="sr">{E(self.L["trail_aria"])}: </span>'
+                + ' · '.join(bits) + f' {self.src_tag(tr["source"], where=where)}</p>')
+
+    def swap_panel(self, n, p, x, pid, where):
+        label, who, icon = self.swap_meta(p)
+        sid = x['stop']
+        st = self.stops[sid]
+        pl = self.places[st['place']]
+        w = f'stops.{sid}'
+        head = f'{icon} {self.fmt("plan", p=p.upper())} · ' + (f'{who}: ' if who else '') + label
+        ph = ''
+        if st.get('photos'):
+            img = self.photo(st['photos'][0], w + '.photos')
+            ph = (f'<figure class="swap-ph"><img src="{E(img["src"])}" alt="{E(img["alt"])}" loading="lazy" decoding="async" referrerpolicy="no-referrer">'
+                  f'<figcaption><span class="credit">{self.credit(img, original=False)}</span></figcaption></figure>')
+        rows = []
+        if x.get('when'):  # words, which may carry a source tag (sunrise and sunset times)
+            rows.append((self.L['swap_when'], self.rich(x['when'], where + '.when')))
+        elif x.get('start'):
+            rows.append((self.L['swap_when'], E(' to '.join(v for v in (x.get('start'), x.get('end')) if v))))
+        if x.get('go'):
+            rows.append((self.L['swap_go'], self.rich(x['go'], where + '.go')))
+        if x.get('checkin'):
+            rows.append((self.L['swap_checkin'], self.rich(x['checkin'], where + '.checkin')))
+        m = x.get('meet')
+        if m:
+            place = self.rich(m['place'], where + '.meet')
+            if m.get('stop'):
+                place = self.pl_link(self.place_pid[self.stops[m['stop']]['place']], place, self.stop_anchor(m['stop']))
+            rows.append((self.L['swap_meet'], f'{E(m["time"])} · {place}'))
+        facts = ''.join(f'<dt>{E(k)}</dt><dd>{v}</dd>' for k, v in rows)
+        cats = self.stop_cats.get(sid) or []
+        return (f'<section class="swap" id="{E(pid)}" data-swap="{p}" data-stop="{E(sid)}"{self.cats_attr(cats)} hidden>'
+                f'<p class="swap-h">{E(head)}</p><div class="swap-body">{ph}<div>'
+                f'<h5>{self.pl_link(self.place_pid[st["place"]], E(st["name"]), pid)}</h5>'
+                + (f'<p class="role">{E(x.get("role") or st.get("line") or "")}</p>' if (x.get('role') or st.get('line')) else '')
+                + self.trail_line(st.get('trail'), w + '.trail')
+                + (f'<dl class="swap-facts">{facts}</dl>' if facts else '')
+                + self.link_row(st.get('links'), pl, where=w + '.links', extras=False)
+                + f'<button type="button" class="btn-ghost show-map" data-day="{n - 1}" data-idx="-1" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" data-name="{E(st["name"])}" data-note="{E(label)}">{E(self.L["show_on_map"])}</button>'
+                + '</div></div></section>')
+
     def rules_line(self):
         rules = (self.plans or {}).get('rules') or []
         if not rules:
             return ''
-        return f'<p class="wx-rules"><b>{E(self.L["plans_rules"])}:</b> ' + ' · '.join(E(r.get('short') or r['text']) for r in rules) + '</p>'
+        return f'<p class="wx-rules"><b>{E(self.L["plans_rules"])}:</b> ' + ' · '.join(E(self.rule_line(r)) for r in rules) + '</p>'
 
     def plans_bar(self, day, n, alts):
         wx = ''
@@ -1329,7 +1463,8 @@ class Page:
                 btns = []
                 for p in ['a'] + alts:
                     btns.append(f'<button type="button" class="plan-btn" data-plan="{p}" aria-pressed="{"true" if p == "a" else "false"}">'
-                                f'<b aria-hidden="true">{p.upper()}</b><span class="sr">{E(self.fmt("plan", p=p.upper()))}: </span>{E(self.plan_label(p))}'
+                                + (f'<b aria-hidden="true">A</b><span class="sr">{E(self.fmt("plan", p="A"))}: </span>' if p == 'a'
+                                   else f'<b class="wx-i" aria-hidden="true">{self.plan_tag(p)}</b>') + f'{E(self.plan_label(p))}'
                                 f'<span class="sugg-tag" hidden>{E(self.L["suggested"])}</span></button>')
                 out += f'<div class="plan-switch" role="group" aria-label="{E(self.L["choose_plan"])}">' + ''.join(btns) + '</div>'
             else:
@@ -1362,7 +1497,7 @@ class Page:
                 f'{extra}</div></li>')
 
     def plan_head(self, p):
-        return (f'<p class="plan-h"><span class="plan-tag">{E(self.fmt("plan", p=p.upper()))}</span> {E(self.plan_label(p))}'
+        return (f'<p class="plan-h"><span class="plan-tag">{E(self.plan_tag(p))}</span> {E(self.plan_label(p))}'
                 f' <span class="chosen-tag">{E(self.L["chosen"])}</span><span class="sugg-tag" hidden>{E(self.L["suggested"])}</span></p>')
 
     def day_html(self, day, i):
@@ -1987,6 +2122,26 @@ class Page:
             self._cal = days
         return self._cal
 
+    def swap_span(self, x):
+        """Where a swap sits in the Calendar: its start and end as clock times ("06:00", "07:15"; an end before the start
+        runs past midnight). `when` stays as the words on the card; a swap with no clock start is not drawn."""
+        if not x.get('start'):
+            return None
+        return clock_span(f'{x["start"]} to {x["end"]}' if x.get('end') else str(x['start']))
+
+    def cal_swaps(self, d):
+        """The day's swaps that have a clock time, for the Calendar: drawn only while chosen."""
+        out = []
+        for it in d['day'].get('stops') or []:
+            for p in SWAPS:
+                x = (it.get('swaps') or {}).get(p)
+                span = self.swap_span(x) if x else None
+                if span and d['date']:
+                    label, who, icon = self.swap_meta(p)
+                    out.append(dict(card=f'd{d["n"]}-{it["stop"]}', plan=p, span=span, x=x, stop=x['stop'],
+                                    title=f'{icon} {self.fmt("plan", p=p.upper())} · {self.unaccent(self.stops[x["stop"]]["name"])}'))
+        return out
+
     def cal_event(self, x, date, span):
         """The link parameters of one event (without its index)."""
         def stamp(minutes):
@@ -2017,10 +2172,16 @@ class Page:
         tz = str(self.d['meta'].get('tz'))
         head = self.head(dict(kicker=c.get('kicker') or self.L['cal_kicker'], title=c.get('title') or self.L['cal_title'],
                               intro=c.get('intro') or self.L['cal_intro'].format(tz=tz)), 'calendar', 'calendar')
-        # The hours shown: from the earliest start to the latest end of any timed item, whole hours.
+        # The hours shown: at least 8 to 8 and every timed Plan A item; a chosen swap stretches them, earlier, later or past
+        # midnight (the owner, 8 November 2026). The grid holds every swap's hours; the page shows only the window needed.
         spans = [it['span'] for d in days for it in d['items'] if it['span']]
-        first, last = min(a for a, _ in spans) // 60, -(-max(b for _, b in spans) // 60)
-        hours = max(1, last - first)
+        swaps = {d['n']: self.cal_swaps(d) for d in days}
+        win_first = min(CAL_DAY[0], min(a for a, _ in spans) // 60)
+        win_last = max(CAL_DAY[1], -(-max(b for _, b in spans) // 60))
+        sspans = [s['span'] for v in swaps.values() for s in v]
+        first = min([win_first] + [a // 60 for a, _ in sspans])
+        last = max([win_last] + [-(-b // 60) for _, b in sspans])
+        hours = max(1, win_last - win_first)
         min_len = 0.5  # hours: the shortest card drawn (44 px at the calendar's 88 px hour)
         axis = ''.join(f'<span style="--at:{h - first}">{h % 24:02d}:00</span>' for h in range(first, last + 1))
         cols = []
@@ -2057,6 +2218,20 @@ class Page:
                 cards.append(dict(top=top, end=vis_end, html=(
                     f'<p class="cal-time" title="{E(x.get("time") or "")}">{E(shown)}</p>'
                     f'<p class="cal-title" style="--lines:{lines}">{self.pl_text(x, title)}</p>{add}'), length=length, loose=loose))
+            # The day's swaps, hidden until chosen; the page's script gives them their lanes when they show.
+            swap_html = []
+            for s in swaps.get(d['n']) or []:
+                a, b = s['span']
+                ev = self.cal_event(dict(title=s['title'], stop=s['stop'], time=''), d['date'], s['span'])
+                label = self.L['cal_add_aria'].format(title=s['title'])
+                add = (f'<a class="cal-add cal-add-one" href="{E(self.cal_href(s["title"], [ev]))}" target="_blank" rel="noopener" data-ics'
+                       f' aria-label="{E(label)}" title="{E(label)}"><span aria-hidden="true">＋</span></a>')
+                length = (b - a) / 60
+                lines = max(1, int((max(length, min_len) * 88 - 26) // 16))
+                shown = f'{a // 60 % 24:02d}:{a % 60:02d}-{b // 60 % 24:02d}:{b % 60:02d}'
+                swap_html.append(f'<article class="cal-ev cal-swap" data-card="{E(s["card"])}" data-swap="{s["plan"]}" hidden'
+                                 f' style="--top:{a / 60 - first:.3f};--len:{length:.3f};--lane:0;--lanes:1">'
+                                 f'<p class="cal-time">{E(shown)}</p><p class="cal-title" style="--lines:{lines}">{E(s["title"])}</p>{add}</article>')
             # Side by side where cards overlap: each card takes the first free lane in its group.
             groups, cur = [], []
             for cd in sorted(cards, key=lambda c: c['top']):
@@ -2089,9 +2264,10 @@ class Page:
                            f' aria-label="{E(self.L["cal_add_day_aria"].format(n=d["n"], when=when))}">＋ {E(self.L["cal_add_day"])}</a>')
             cols.append(f'<section class="cal-day" aria-labelledby="cal-h-{d["n"]}"><header class="cal-dh">'
                         f'<h3 id="cal-h-{d["n"]}"><a href="#day-{d["n"]}"><span class="mono">{E(self.L["day"])} {d["n"]}</span> {E(when)}</a></h3>{add_day}</header>'
-                        f'<div class="cal-track">{"".join(html)}</div></section>')
+                        f'<div class="cal-track">{"".join(html)}{"".join(swap_html)}</div></section>')
         return (f'<section id="calendar" class="sec">{head}<p class="fine cal-off" hidden>{E(self.L["cal_off"])}</p>'
-                f'<div class="cal-scroll" tabindex="0" aria-label="{E(self.L["cal_kicker"])}" style="--hours:{hours}"><div class="cal-grid" style="--days:{len(days)}">'
+                f'<div class="cal-scroll" tabindex="0" aria-label="{E(self.L["cal_kicker"])}" data-first="{first}" data-win-from="{win_first}" data-win-to="{win_last}"'
+                f' style="--hours:{hours};--from:{win_first - first}"><div class="cal-grid" style="--days:{len(days)}">'
                 f'<div class="cal-axis" aria-hidden="true"><div class="cal-dh"></div><div class="cal-track">{axis}</div></div>'
                 + ''.join(cols) + '</div></div></section>')
 
@@ -2140,7 +2316,7 @@ class Page:
 
     def plans_section(self):
         p = self.plans
-        keys = ''.join(f'<article><p class="mono kicker">{E(self.fmt("plan", p=k.upper()))}</p><h3>{E(self.plan_label(k))}</h3><p>{self.rich((p.get("explain") or {}).get(k), "plans.explain")}</p></article>'
+        keys = ''.join(f'<article><p class="mono kicker">{E(self.plan_tag(k))}</p><h3>{E(self.plan_label(k))}</h3><p>{self.rich((p.get("explain") or {}).get(k), "plans.explain")}</p></article>'
                        for k in PLANS)
         rules = ''.join(f'<li>{E(r["text"])}</li>' for r in p.get('rules') or [])
         out = f'<section id="plans" class="sec">{self.head(p, "plans", "plans")}<div class="three plan-keys">{keys}</div>'
@@ -2266,7 +2442,7 @@ class Page:
         cats = self.stop_cats.get(sid) or []
         kick = ' · '.join(self.cat_labels[c] for c in cats[:2])
         if plan:  # a post from a weather plan says so, so it never reads as the main plan
-            kick = f'{self.L["plan"].format(p=plan[-1].upper())} · {self.L[plan]}'
+            kick = f'{self.plan_tag(plan[-1])} {self.plan_label(plan[-1])}'
         cap = (f'<figcaption><span class="g-k">{E(kick)}</span>'
                f'<span class="g-name">{self.pl_link(pid, E(st["name"]), self.panels[pid]["anchor"])}</span>'
                + (f'<span class="g-line">{E(line)}</span>' if line else '')
@@ -2393,8 +2569,19 @@ class Page:
                 place_cats[self.stops[it['stop']]['place']] += [c for c in self.stop_cats.get(it['stop']) or [] if c not in place_cats[self.stops[it['stop']]['place']]]
             for s in stops:
                 s['cats'] = place_cats.get(s['id'], [])
+            swaps = []
+            for it in d['stops']:
+                for p in SWAPS:
+                    x = (it.get('swaps') or {}).get(p)
+                    if x:
+                        sst = self.stops[x['stop']]
+                        spl = self.places[sst['place']]
+                        label, who, icon = self.swap_meta(p)
+                        swaps.append(dict(card=f'd{i + 1}-{it["stop"]}', plan=p, name=sst['name'], lat=spl['lat'], lng=spl['lng'],
+                                          label=f'{icon} {self.fmt("plan", p=p.upper())} · {label}',
+                                          note=self.plain(x.get('when') or '') or ' to '.join(v for v in (x.get('start'), x.get('end')) if v)))
             days.append(dict(n=i + 1, label=f'{self.L["day"]} {i + 1} · {d["when"]}', title=self.unaccent(d['title']), iso=d.get('iso') or '',
-                             weather=d.get('weather') or '', stops=stops, legs=legs))
+                             weather=d.get('weather') or '', stops=stops, legs=legs, swaps=swaps))
         ui = {k: self.L[k] for k in ('fly', 'fly_stop', 'short_walk', 'optional', 'map_fallback', 'tiles_notice', 'wx_from', 'wx_error', 'wx_past', 'wx_none',
                                      'wx_frame', 'wx_credit', 'wx_licence', 'wx_rain', 'wx_gust', 'wx_wind', 'wx_uv', 'wx_suggests', 'wx_fits',
                                      'wx_no_plan', 'wx_max_min', 'plans_rules', 'lens_fits', 'lens_check', 'lens_unknown', 'lens_for', 'rail_start', 'to',
@@ -2402,7 +2589,7 @@ class Page:
                                      'tour_from', 'tour_way', 'nearby_pins', 'photo_spot', 'share', 'share_day', 'shared', 'copied',
                                      'near_me', 'near_title', 'near_wait', 'near_note', 'near_declined', 'near_denied', 'near_unavailable',
                                      'near_unsupported', 'near_none', 'about_km', 'new_tab', 'ig_posts', 'address', 'website', 'google_maps',
-                                     'alt_map', 'hours', 'embed_note', 'call', 'stop_details')}
+                                     'alt_map', 'hours', 'embed_note', 'call', 'stop_details', 'swapped')}
         ui['months'] = self.L.get('months') or MONTHS
         ui['wmo'] = {str(k): list(v) for k, v in WMO.items()}
         ui['marks'] = MARK_NAMES
@@ -2413,9 +2600,9 @@ class Page:
         if self.weather:
             out['weather'] = dict(places=[dict(key=p['key'], lat=p['lat'], lon=p['lon'], start=p['start'], end=p['end']) for p in self.weather.get('places') or []])
         if self.plans:
-            out['plans'] = dict(rules=[dict(plan=r['plan'], metric=r['metric'], op=r['op'], value=r['value'], text=r.get('short') or r['text'])
+            out['plans'] = dict(rules=[dict(plan=r['plan'], metric=r['metric'], op=r['op'], value=r['value'], text=self.rule_line(r), why=self.rule_if(r))
                                        for r in self.plans.get('rules') or []],
-                                labels={p: self.plan_label(p) for p in PLANS})
+                                labels={p: (self.plan_tag(p) + ' ' + self.plan_label(p)) if p != 'a' else self.fmt('plan', p='A') for p in PLANS})
         if self.audience:
             out['audience'] = dict(mode=self.audience['mode'], needs=self.audience.get('needs') or [],
                                    lenses=[dict(key=l['key'], label=l['label'], needs=l.get('needs') or []) for l in self.audience.get('lenses') or []])

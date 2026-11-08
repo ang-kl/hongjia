@@ -91,6 +91,12 @@ function drawDay(){
     m.bindPopup(popupNode(s.letter+' · '+s.name,s.note));
     markers.push(m); bounds.push([s.lat,s.lng]);
   });
+  (d.swaps||[]).forEach(function(s){
+    var card=document.getElementById(s.card); if(!card||swapState(card).indexOf(s.plan)<0){ return; }
+    var ic=L.divIcon({className:'mk swp',html:el('span',null,s.plan.toUpperCase()),iconSize:[28,28],iconAnchor:[14,14],popupAnchor:[0,-14]});
+    L.marker([s.lat,s.lng],{icon:ic,title:s.label+' · '+s.name,keyboard:true}).bindPopup(popupNode(s.label+' · '+s.name,s.note)).addTo(routeLayer);
+    bounds.push([s.lat,s.lng]);
+  });
   map.stop();
   if(bounds.length){ map.fitBounds(bounds,{padding:[30,30],maxZoom:14,animate:false}); }
 }
@@ -365,6 +371,78 @@ function choosePlan(day,p,save){
 $$('.day[data-chosen]').forEach(function(day){ var saved=store.get(SKEY+'plan:'+day.id); if(saved){ choosePlan(day,String(saved),false); } });
 document.addEventListener('click',function(e){ var b=e.target.closest&&e.target.closest('.plan-btn'); if(!b){return;} var day=b.closest('.day'); if(day){ choosePlan(day,b.getAttribute('data-plan'),true); } });
 
+/* ---- the family's swaps at a stop (the owner, 8 November 2026): Plans B (hiking and nature), C (shopping) and D
+   (early or late). Each opens on its own, so the family can split up and meet again; the choice is remembered on
+   this device, the map shows the chosen places and the day's timeline says what was swapped. ---- */
+function swapState(card){ return String(card.getAttribute('data-swaps')||'').split(' ').filter(function(x){ return /^[bcd]$/.test(x); }); }
+function swapMarks(card,list){
+  $$('.timeline a.tl-go').forEach(function(a){
+    if(a.getAttribute('href')!=='#'+card.id){ return; }
+    var host=a.parentNode, tag=host.querySelector('.tl-swap');
+    if(!list.length){ if(tag){ tag.parentNode.removeChild(tag); } return; }
+    if(!tag){ tag=el('span','tl-swap'); host.appendChild(tag); }
+    tag.textContent=' '+fill(t('swapped','Swapped: {plans}'),{plans:list.map(function(x){ return x.toUpperCase(); }).join(', ')});
+  });
+}
+function setSwap(card,p,on,save){
+  var btn=card.querySelector('.swap-btn[data-swap="'+p+'"]'), panel=card.querySelector('.swap[data-swap="'+p+'"]');
+  if(!btn||!panel){ return; }
+  btn.setAttribute('aria-pressed',String(on)); panel.hidden=!on;
+  var list=swapState(card).filter(function(x){ return x!==p; }); if(on){ list.push(p); } list.sort();
+  card.setAttribute('data-swaps',list.join(' '));
+  var rest=card.querySelector('.swap-rest'); if(rest){ rest.hidden=!list.some(function(x){ return x!=='d'; }); }
+  if(save){ store.set(SKEY+'swap:'+card.id,list.join(',')); }
+  swapMarks(card,list);
+  calLayout();
+  var d=D.days[dayIdx];
+  if(map&&d&&(d.swaps||[]).some(function(s){ return s.card===card.id; })){ drawDay(); }
+  if(window.railLayout){ setTimeout(window.railLayout,60); }
+}
+$$('.stop[data-swaps]').forEach(function(card){
+  var saved=store.get(SKEY+'swap:'+card.id);
+  if(saved){ String(saved).split(',').forEach(function(p){ if(/^[bcd]$/.test(p)){ setSwap(card,p,true,false); } }); }
+});
+document.addEventListener('click',function(e){
+  var b=e.target.closest&&e.target.closest('.swap-btn'); if(!b){ return; }
+  var card=b.closest('.stop'); if(card){ setSwap(card,b.getAttribute('data-swap'),b.getAttribute('aria-pressed')!=='true',true); }
+});
+/* The Calendar shows the chosen swaps and stretches each day to fit: at least 8 to 8 and Plan A's own hours, earlier,
+   later or past midnight for a chosen swap (the owner, 8 November 2026). Cards that overlap share the width. */
+function calNum(e,k){ var v=parseFloat(e.style.getPropertyValue(k)); return isFinite(v)?v:0; }
+function calLanes(track){
+  var evs=$$('.cal-ev',track).filter(function(e){ return !e.hidden; }).map(function(e){ var top=calNum(e,'--top'); return {e:e,top:top,end:top+Math.max(calNum(e,'--len'),0.5)}; });
+  evs.sort(function(a,b){ return a.top-b.top; });
+  var groups=[], cur=[], end=-1;
+  evs.forEach(function(x){ if(cur.length&&x.top>=end-1e-9){ groups.push(cur); cur=[]; end=-1; } cur.push(x); end=Math.max(end,x.end); });
+  if(cur.length){ groups.push(cur); }
+  groups.forEach(function(g){ var lanes=[];
+    g.forEach(function(x){ var i=-1; for(var k=0;k<lanes.length;k++){ if(lanes[k]<=x.top+1e-9){ i=k; break; } } if(i<0){ lanes.push(x.end); i=lanes.length-1; } else { lanes[i]=x.end; } x.lane=i; });
+    g.forEach(function(x){ x.e.style.setProperty('--lane',String(x.lane)); x.e.style.setProperty('--lanes',String(lanes.length)); }); });
+}
+function calLayout(){
+  var sc=$('.cal-scroll'); if(!sc||!sc.hasAttribute('data-first')){ return; }
+  var first=+sc.getAttribute('data-first'), lo=+sc.getAttribute('data-win-from'), hi=+sc.getAttribute('data-win-to');
+  $$('.cal-ev.cal-swap',sc).forEach(function(ev){
+    var card=document.getElementById(ev.getAttribute('data-card')), on=!!card&&swapState(card).indexOf(ev.getAttribute('data-swap'))>=0;
+    ev.hidden=!on;
+    if(on){ var top=calNum(ev,'--top'); lo=Math.min(lo,first+Math.floor(top)); hi=Math.max(hi,first+Math.ceil(top+Math.max(calNum(ev,'--len'),0.5))); }
+  });
+  sc.style.setProperty('--from',String(lo-first)); sc.style.setProperty('--hours',String(Math.max(1,hi-lo)));
+  var most=$$('.cal-day .cal-track',sc).map(function(tr){ calLanes(tr); return $$('.cal-ev',tr).filter(function(e){ return !e.hidden; }).reduce(function(m,e){ return Math.max(m,calNum(e,'--lanes')); },1); });
+  // A day with more than two cards side by side (Plan A beside a split) gets a wider column, so every card stays readable.
+  var grid=$('.cal-grid',sc), phone=!!window.matchMedia&&window.matchMedia('(max-width:760px)').matches;
+  if(grid){ grid.style.gridTemplateColumns=most.some(function(n){ return n>2; })?'var(--axis) '+most.map(function(n){
+      return n>2?(phone?'calc(31vw * '+n+')':'minmax('+(120*n)+'px,'+(n/2)+'fr)'):(phone?'62vw':'minmax(132px,1fr)'); }).join(' '):''; }
+}
+calLayout();
+if(window.matchMedia){ var calMq=window.matchMedia('(max-width:760px)'); if(calMq.addEventListener){ calMq.addEventListener('change',calLayout); } }
+
+// A link to a swap's own place (a place panel, a # link) opens that swap first, so the reader lands on it.
+function openSwapAt(target){
+  if(!target||!target.classList||!target.classList.contains('swap')||!target.hidden){ return; }
+  var card=target.closest('.stop'); if(card){ setSwap(card,target.getAttribute('data-swap'),true,true); }
+}
+
 /* ---- live weather: asked of the family site once on load, only inside its frame ---- */
 var WX=D.weather||null, MONTH=Array.isArray(UI.months)?UI.months:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 var ISO=/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
@@ -378,7 +456,7 @@ function suggest(f){
   var rules=(PL&&PL.rules)||[];
   for(var i=0;i<rules.length;i++){ var r=rules[i], v=f[r.metric]; if(v===null||v===undefined){continue;}
     var hit=r.op==='in'?(Array.isArray(r.value)&&r.value.indexOf(v)>=0):r.op==='>='?v>=r.value:r.op==='>'?v>r.value:r.op==='<='?v<=r.value:r.op==='<'?v<r.value:false;
-    if(hit){ return {plan:r.plan,why:String(r.text||'')}; } }
+    if(hit){ return {plan:r.plan,why:String(r.why||r.text||'')}; } }
   return {plan:'a',why:''};
 }
 function boxesFor(key){ return $$('.wx[data-wx-place]').filter(function(b){ return b.getAttribute('data-wx-place')===key; }); }
@@ -407,7 +485,8 @@ function showDay(box,f,ans){
   bits.forEach(function(b){ p.appendChild(el('span','wx-v',b)); });
   box.appendChild(p);
   var s=suggest(f), day=box.closest('.day'), has=day&&day.querySelector('.plan[data-plan="'+s.plan+'"]');
-  var msg=s.plan==='a'?t('wx_fits','Fits Plan A'):has?fill(t('wx_suggests','Suggests Plan {p}: {why}'),{p:s.plan.toUpperCase(),why:s.why}):fill(t('wx_no_plan','Suggests Plan {p} ({why}); none is listed for this day yet.'),{p:s.plan.toUpperCase(),why:s.why});
+  var lab=String(((PL&&PL.labels)||{})[s.plan]||s.plan.toUpperCase());
+  var msg=s.plan==='a'?t('wx_fits','Fits Plan A'):has?fill(t('wx_suggests','Suggests {label}: {why}'),{p:s.plan.toUpperCase(),label:lab,why:s.why}):fill(t('wx_no_plan','Suggests {label} ({why}); none is listed for this day yet.'),{p:s.plan.toUpperCase(),label:lab,why:s.why});
   box.appendChild(el('p','wx-sugg',msg));
   markSuggested(day,has?s.plan:'');
   creditLine(box,ans); rulesLine(box);
@@ -971,6 +1050,7 @@ function goToHash(){
   if(!ANCHOR_OK.test(id)){ return; }
   var target=document.getElementById(id); if(!target){ return; }
   if(gallery){ setView(gallery.contains(target)?'gallery':'read'); }
+  openSwapAt(target);
   // Parts above can still change height just after the jump (drawers opening, pictures arriving). Browsers that
   // hold the page in place (scroll anchoring) sometimes hold the wrong spot, and iPhone Safari does not hold it at
   // all, so holding is off while the jump settles: the part is placed again shortly after, but only while nobody
