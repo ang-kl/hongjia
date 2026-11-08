@@ -1,4 +1,4 @@
-# Trip data file (holiday-coffee-table, version 1, 7 November 2026)
+# Trip data file (holiday-coffee-table, version 2, 8 November 2026)
 
 One JSON object describes one trip. `build.py` turns it into one self-contained HTML page.
 
@@ -13,6 +13,10 @@ shaped like the family's v15 page (two bases, two transfer days with a midway br
 
 Required fields are marked **(required)**. Everything else is optional; a section with no data is
 left out of the page and out of the top navigation.
+
+Since version 2 (Direction A) no small label is shown above a title: the `kicker` fields of the
+masthead, the sections, the footer and the opener are still read, so older data files work, but
+they are not shown. Write the title so it says it.
 
 ## Text fields
 
@@ -200,7 +204,7 @@ Suitability marks:
 
 | Field | Required | What |
 |---|---|---|
-| `when` | **yes** | "Sat 12 Jun": the kicker, the rail and the nav. |
+| `when` | **yes** | "Sat 12 Jun": the date line above the day's title, the rail and the nav. |
 | `title` | **yes** | The day's headline. |
 | `route` | **yes** | Place ids in order; the letters A, B, C… follow this order. |
 | `stops` | **yes** | Plan A: `{stop, role}` items, at least one. |
@@ -347,8 +351,8 @@ with the masthead as before.
 | `tz`, `tz_place` | | The destination's IANA time zone (`Europe/Lisbon`) and the place named with its local time. |
 | `tldr` | | Three lines (*rich*): the trip at a glance. |
 | `alerts` | | Chips: `{text, href, icon}`; `href` is an in-page `#anchor` (`#day-7`). A holiday warning goes here, not in a box. |
-| `stays` | | Stop ids: "Where you'll stay" photo cards, each linking to the stop's card, with its website as a small second link. |
-| `highlights` | | Stop ids: "Can't-miss" photo cards (6 to 8 is the house style). A swipeable row on phones. |
+| `stays` | | Stop ids: "Where we stay" photo cards (words under the photo, at most four a row), each linking to the stop's card, with its website as a small second link. |
+| `highlights` | | Stop ids: "Can't-miss, day by day": one row per day in date order, each pick on the day whose plan has it (Plan A first, then B and C). A day with one pick lays its card on its side; a day with none shows the day's `sub` line. |
 | `home` | | `{name, lat, lng}`: where the travellers start; the globe draws a gold great-circle arc from it. |
 | `destination` | | `{name, lat, lng}`; default: the first stay's place. The arc continues to the bases (the stays' places). |
 
@@ -441,4 +445,8 @@ A page fails when it has:
 5. **an official link off its platform**: an Instagram, Facebook, TikTok or YouTube link that is not
    https on that platform, or an address that does not link to Google Maps;
 6. **an http link**: any `http://` link, picture, frame or stylesheet (`data:` pictures and
-   namespaces such as `xmlns` are not links).
+   namespaces such as `xmlns` are not links);
+7. **wording that reads as AI** (the owner's checklist, 8 November 2026): a pet word or inflated
+   descriptor ("delve", "captivating", "stunning", "nestled", "curated", "iconic" and the rest of the
+   list in `build.py`), or "It's not X, it's Y", "not just X but Y" or "more than just". Place names
+   and words in quotation marks (a venue's own) are not read.

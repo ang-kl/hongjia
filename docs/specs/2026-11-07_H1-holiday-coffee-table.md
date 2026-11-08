@@ -125,3 +125,29 @@ from four pinned CDNs). It talks to the site by `postMessage`, and the site chec
   database tests, and the release browser walk (`tests/browser/p1-flow.mjs`), unchanged by this replacement.
 - **This replacement:** the template's tests pass on the new sample; v15's data renders to the page on the site apart
   from the generator tag.
+
+## Amendment, 8 November 2026: Direction A, "River", and the family's plain voice
+
+**The owner's request:** "'Where you'll stay' & 'Can't-miss' - should better design layout ... have max 4 per row.
+'Can't-miss' should be separate by date", "The font size in the whole website is a big issue", and "remove all these
+'AI' effect" from their checklist (Layers 1 to 3 and the 30-second test). They chose a look built on the family's name
+洪, the voice "The family, plainly", Can't-miss "A row per day", and Direction "A" from three clickable drafts.
+
+**The template now:**
+- **Look:** the family's name, 洪, means "flood; big, vast" and is written with the water element, so one fine water
+  line under the trip's title is the only ornament and a river teal the one colour. The opening is light: the title
+  and dates on paper beside the photo, its credit under it. The site's two typefaces (Source Serif 4, Source Sans 3).
+  Four heading sizes that differ at a glance: 48, 32, 24 and 18 px on a wide screen (36, 26, 20 and 18 on a phone),
+  text 17 px. Labels in plain words, never capitals. No label above a section's title. The whole width, prose at a
+  readable line, at most four cards a row. A day's photo sits above its words, never behind them.
+- **Where we stay** and **Can't-miss, day by day:** cards with the words under the photo. Can't-miss has one row per
+  day in date order, each pick under the day whose plan has it (Plan A first, then B and C); a day with one pick lays
+  its card on its side, and a day with none says what the day is. A pick on no day's plan is refused when the page is
+  built.
+- **No motion on scroll:** nothing floats in and no photo breathes; the photo viewer's Escape no longer reaches the
+  family site.
+- **Writing:** SKILL.md sets the family's plain voice and maps each item of the owner's checklist to how a page answers
+  it. `--check` now fails a page with a pet word or inflated descriptor, or "It's not X, it's Y", "not just X but Y" or
+  "more than just" (place names and a venue's quoted words are not read).
+- **Tests:** 55 (four new: Can't-miss by day, no labels above section titles, the wording check, and the type and
+  fonts). Older data files still render; their `kicker` fields are read but not shown.

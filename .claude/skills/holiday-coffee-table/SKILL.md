@@ -5,9 +5,10 @@ description: Use when the family shares a briefing note, document, PDF or pictur
 
 # Holiday coffee-table pages
 
-Version 1, 7 November 2026. Rebuilt from the family's v15 trip page, which is the standard every new
-trip page meets. The owner's words: "create a fresh construct template based on v15 ... I will give
-you a briefing note about the next family holiday and you are to do the similar like v15".
+Version 2, 8 November 2026: Direction A, "River" (the owner's redesign: "A"). Version 1, 7 November
+2026, was rebuilt from the family's v15 trip page, which is the standard every new trip page meets for
+content. The owner's words: "create a fresh construct template based on v15 ... I will give you a
+briefing note about the next family holiday and you are to do the similar like v15".
 
 A trip page is one self-contained HTML document, uploaded to the family site (hongjia.org) and
 viewed in its locked-down document frame. Everything trip-specific lives in one data file (JSON).
@@ -25,10 +26,11 @@ The renderer, its style sheet and its script are generic and stay in this folder
 
 The owner chose "Everything v15 has". A new page leaves a part out only on the owner's word.
 
-- **Opener:** full-screen hero slideshow, the trip in three TL;DR lines, alert chips (a public
-  holiday goes here), the stay and can't-miss cards, a countdown and local time, the globe from home
-  to the destination, and **Play the trip** (the tour). While the tour plays, the family site folds
-  its right-hand buttons into a 🔭.
+- **Opener:** the trip's title and dates on paper beside the photo slideshow (the credit under the
+  photo), the trip in three lines, alert chips (a public holiday goes here), **Where we stay** cards,
+  **Can't-miss, day by day** (one row per day in date order; a day with nothing marked says what the
+  day is), a countdown and local time, the globe from home to the destination, and **Play the trip**
+  (the tour). While the tour plays, the family site folds its right-hand buttons into a 🔭.
 - **Legend** that lights up places on the page and the map by category (stays, transport, weather,
   food, drinks, snacks, shopping, fun, sights, worship).
 - **Days**, one article each: the day's photo band, route line with every place linked, badges,
@@ -114,18 +116,63 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
 
 The owner wants both the look and the content to be super-luxury and to "wow".
 
-- **Look:** the Atelier design: warm ivory and a deep green, Fraunces display headings with one
-  italic accent word (`*word*` in titles), Inter text and letter-spaced labels, rounded photo cards
-  with credits laid over the picture, a frosted top bar, a photo band opening each day, generous
-  photography, nothing cramped, nothing wider than a 390 px phone. Do not restyle it; extend it.
-  Movement uses the Web Animations API, is gentle and stops under reduced motion. Accessibility
-  stays: 44 px targets, keyboard use, screen-reader labels, print mode.
+- **Look:** Direction A, "River". The family's name, 洪, means "flood; big, vast" and is written
+  with the water element, so one fine water line is the only ornament (under the trip's title) and
+  the river teal is the one colour. Text sits on paper, never on a darkened photo. The site's two
+  typefaces (Source Serif 4 for headings, Source Sans 3 for everything else), four heading sizes
+  that differ at a glance (the trip's title, sections, days, places), labels in plain words (no
+  capitals, no labels above section titles), photos above their words with the credit under the
+  picture, at most four cards a row, the whole width of the screen with prose kept to a readable
+  line, nothing wider than a 390 px phone. Do not restyle it; extend it. Nothing floats in or
+  breathes on scroll; movement is only what the reader asked for (the tour, a map flight, a panel)
+  and stops under reduced motion. Accessibility stays: 44 px targets, keyboard use, screen-reader
+  labels, print mode.
 - **Content:** a concierge's knowledge, not a brochure's. Each stop says why it is there, the best
   time, the photo moments, the easier version and what is nearby. Real distances and road times with
   buffers. Honest limits: "proposed, not booked", "estimate, not a quote". No filler, no unverified
   superlatives.
 - **Pace:** one principal outing a day, rest built in, seated meals; transfer days are transfer
   days with one real midway break; "swap, don't stack": a backup replaces a stop, it is never added.
+
+## Writing: the family, plainly
+
+The owner chose "The family, plainly" (8 November 2026): the page reads as the family talking to
+itself, not as a brochure.
+
+- "We", plain words, short sentences, one idea each. Facts first: the time, the place, the distance,
+  what to book. A number or a name beats an adjective.
+- Labels say what they are in the family's words: "Where we stay", "Can't-miss, day by day".
+- No pet words or inflated descriptors ("delve", "captivating", "rich heritage", "stunning",
+  "nestled", "hidden gem", "curated", "iconic" and the like). A venue's own name or its own words in
+  quotation marks are fine.
+- No "It's not X, it's Y", "not just X but Y" or "more than just". Say what the thing is.
+- No line that could sit on any other family's trip page unchanged. Each sentence is about this
+  place, this day and these people.
+- `--check` fails a page with these words or framings ("wording that reads as AI"). Fix the words;
+  never weaken the check.
+
+## The owner's checklist of AI tells, and how a page answers it
+
+The owner asked (8 November 2026) to remove every "AI effect" in this list. A page passes only if it
+answers each one.
+
+| Tell (the owner's list) | How the page answers it |
+| --- | --- |
+| Layer 1: dark gradient hero | A light opening: words on paper beside the photo. |
+| Layer 1: dotted eyebrow headings | No label above a section's title; the title says it. A line above a day's or a card's title only when it carries facts (the date and route), in plain words, never capitals. |
+| Layer 1: uniform float-up animations | Nothing moves on scroll. |
+| Layer 1: pet words, inflated prose | The writing rules above, and `--check`. |
+| Layer 1: "It's not X, it's Y", hollow polish | The writing rules above, and `--check`. |
+| Layer 2: disconnected sections | One water line and one teal across the page; Can't-miss rows lead to their days; every place name opens the same panel. |
+| Layer 2: unintentional whitespace | Related things sit together; a day with one pick lays its card on its side; the whole width is used. |
+| Layer 2: flattened type hierarchy | Four heading sizes that differ at a glance. |
+| Layer 2: generic wireframes | The trip's own structure: days, bases, plans for rain and heat, the family's meals. |
+| Layer 3: literal or absent symbolism | The water line from the family's name, 洪. |
+| Layer 3: incoherent writing | Plain sentences about real things; read every line aloud once. |
+| Layer 3: no human presence | The family's own words and choices, real places with credited photos, the owner's decisions recorded in the data-making script. |
+
+The 30-second test (the owner's): scroll from top to bottom and ask of every choice, crop and
+sentence, "Could this exist for only this family's trip?" Change anything that answers no.
 
 ## The page's libraries and limits
 

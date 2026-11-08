@@ -931,6 +931,67 @@ class KitTest(unittest.TestCase):
         self.assertIn("if(e.key==='Escape'){e.preventDefault();closeTour();}", compact)
         self.assertIn('tPlaying=!reduce;tPause.hidden=reduce;', compact, 'no autoplay under reduced motion: Next steps on')
 
+    # ------------------------------------------------------------ Direction A (the owner, 8 November 2026)
+    def test_cant_miss_by_day(self):
+        op = find(self.root, 'section', id='opener')[0]
+        heads = [h.text().strip() for h in find(op, 'h2', 'op-h')]
+        self.assertEqual(heads, ['Where we stay', "Can't-miss, day by day"], 'plain headings, no emoji')
+        rows = find(op, 'div', 'cm-day')
+        self.assertEqual([r.attrs['id'] for r in rows], [f'cm-day-{i + 1}' for i in range(len(self.data['days']))],
+                         'one row per day, in date order')
+        builder = build.Builder(self.data) if hasattr(build, 'Builder') else None
+        for i, (row, day) in enumerate(zip(rows, self.data['days'])):
+            self.assertEqual(find(row, 'a')[0].attrs['href'], f'#day-{i + 1}', 'the row leads to its day')
+            picks = [find(c, 'a', 'ocard-t')[0].attrs['href'][1:] for c in find(row, 'article', 'ocard')]
+            stops = {it['stop'] for p in ('stops', 'plan_b', 'plan_c') for it in day.get(p) or []}
+            for sid in self.data['opener']['highlights']:
+                if any(h.endswith(sid) or h == sid for h in picks):
+                    self.assertIn(sid, stops)
+            grid = find(row, 'div', 'ocards')
+            if not picks:
+                self.assertFalse(grid)
+                self.assertTrue(find(row, 'p', 'cm-none'), 'a day with nothing marked says what the day is')
+            else:
+                self.assertEqual('cm-one' in grid[0].attrs.get('class', ''), len(picks) == 1,
+                                 'a day with one pick lays its card on its side')
+        d = example()
+        d['opener']['highlights'] = list(d['opener']['highlights']) + ['nowhere-stop']
+        d['stops']['nowhere-stop'] = dict(next(iter(d['stops'].values())))
+        with self.assertRaises(build.KitError):
+            build.build(d)
+
+    def test_no_eyebrow_labels(self):
+        # An eyebrow is a small label sitting right above a section's title. A label that is the only
+        # name of a small part (Meals, More nearby) is that part's heading, and stays.
+        for n in self.root.iter():
+            kids = [c for c in getattr(n, 'children', []) if isinstance(c, build.Node)]
+            for a, b in zip(kids, kids[1:]):
+                # the trip tour fills its own date line and title when it plays
+                if 'kicker' in a.attrs.get('class', '').split() and b.tag in ('h1', 'h2') and not_lightbox(a):
+                    self.fail(f'a label above a section title: {a.text().strip()[:40]!r} over {b.text().strip()[:40]!r}')
+        self.assertFalse(find(self.root, 'p', 'hero-k'))
+        self.assertFalse([k for k in find(self.root, 'p', 'kicker') if k.text().strip() == 'TL;DR'])
+
+    def test_wording_check(self):
+        for bad in ("It's not a museum, it's a living street.", 'This is not just a beach but a way of life.',
+                    'More than just lunch.', 'A stunning view of the bay.', 'We delve into the old town.'):
+            self.assertTrue(build.copy_problems(f'<p>{bad}</p>'), bad)
+        for fine in ('Proposed apartment base, not booked.', 'Closed on Sunday, it reopens Monday.',
+                     '<a class="pl" href="#x">Hidden Gem Cafe</a> opens at 9.', 'The winery says "curated for you".'):
+            self.assertFalse(build.copy_problems(f'<p>{fine}</p>'), fine)
+        problems = build.check_html(self.html.replace('</footer>', '<p>A stunning finish.</p></footer>', 1))
+        self.assertIn('wording that reads as AI', {r for r, _ in problems})
+        self.assertFalse(build.copy_problems(self.html), 'the sample reads plainly')
+
+    def test_direction_a_type_and_fonts(self):
+        css = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read())
+        self.assertIn("--serif:'SourceSerif4'", css)
+        self.assertIn("--sans:'SourceSans3'", css)
+        self.assertIn('.ocards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))', css, 'at most four cards a row')
+        self.assertIn('.hero::after{display:none;content:none}', css, 'no darkened photo behind the title')
+        self.assertIn('family=Source+Serif+4', self.html)
+        self.assertNotIn('family=Fraunces', self.html)
+
     def test_motion_and_phone_rules(self):
         css = open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read()
         compact = re.sub(r'\s+', '', css)
@@ -942,7 +1003,11 @@ class KitTest(unittest.TestCase):
         self.assertIn('has-opener', find(self.root, 'html')[0].attrs.get('class', ''))
         js = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read())
         self.assertIn("if(slides.length>1&&!reduce)", js)
-        self.assertIn("if(!reduce&&'IntersectionObserver'inwindow){varrvEls", js)
+        # Direction A (the owner, 8 November 2026): nothing floats in on scroll and photos do not breathe
+        self.assertNotIn('rvEls', js)
+        self.assertNotIn("classList.toggle('inview'", js)
+        self.assertNotIn("motion(t2,[{opacity:0,transform:'translateY(18px)'}", js)
+        self.assertIn("if(!reduce&&'IntersectionObserver'inwindow){varvio", js)
         self.assertIn('v.muted=true;v.loop=true;', js)
 
     def test_page_weight_and_pinned_libraries(self):
