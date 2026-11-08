@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.07 (6)";
+pub const VERSION: &str = "2026.11.08 (1)";
 
-pub const SYNOPSIS: &str = "This version replaces the template that builds the family's trip pages with a fresh one, built from the current trip page (edition v15) at the owner's request, ready for the next family holiday's briefing note. The old template, its two-day sample and its design notes are gone; the new one carries everything v15 has, a made-up eight-day sample with two bases, checklists for each kind of trip rebuilt from v15, and fresh notes. Nothing on the site itself looks or works differently, and trip pages already on the site are unchanged.";
+pub const SYNOPSIS: &str = "This version gives the site the look the owner chose (Direction A, \"River\"): two typefaces kept on the site, Source Serif 4 for titles and Source Sans 3 for everything else, four heading sizes that differ at a glance, and pages that use the whole width of the window. All documents is now one table, with the filing number, the title, the version as the file's own number (v.15, as in the document's header), the type, the last change, who added it and the hashtags; it sorts by a column, and searches and filters by hashtag. A document's bar has tabs (Details, Versions, Notes, Files, Manage) that open the panel at that part. Esc closes whatever is open first, then goes back a page, as the new Back button does.";

@@ -782,12 +782,27 @@
     loupe.down = null;
     if (still) { swallowClick = Date.now(); loupeClose(true); }
   }, true);
+  // The page's annotation menu sits outside this frame, so Escape is passed on; the document still sees
+  // the key. `free` (8 November 2026) says the document had nothing open (no dialog) and did not use the
+  // key, so the page may go back. Should the document stop the key, it is passed on without `free`.
+  var escBusy = false, escPending = false;
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') return;
-    if (loupe.zoom) { event.preventDefault(); loupeClose(true); return; }
-    // The page's annotation menu sits outside this frame, so tell it; the document still sees the key.
-    send({ type: 'hj:escape' });
+    if (loupe.zoom) { event.preventDefault(); loupeClose(true); send({ type: 'hj:escape' }); return; }
+    var t = event.target;
+    escBusy = !!(t && t.closest && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]'))
+      || Array.prototype.some.call(document.querySelectorAll('dialog[open], [aria-modal="true"]'), function (e) { return e.getClientRects().length > 0; });
+    // Selected text counts as open: Escape clears the selection first.
+    var sel = window.getSelection ? window.getSelection() : null;
+    if (!escBusy && sel && !sel.isCollapsed && String(sel).trim()) { escBusy = true; sel.removeAllRanges(); }
+    escPending = true;
+    setTimeout(function () { if (escPending) { escPending = false; send({ type: 'hj:escape' }); } }, 0);
   }, true);
+  window.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape' || !escPending) return;
+    escPending = false;
+    send({ type: 'hj:escape', free: !escBusy && !event.defaultPrevented });
+  });
   window.addEventListener('scroll', function () { if (loupe.zoom && loupe.last) loupeAt(loupe.last.x, loupe.last.y, loupe.last.touch); }, true);
   window.addEventListener('resize', function () { if (loupe.zoom) { var z = loupe.zoom; loupeClose(false); loupeOpen(z); } });
 

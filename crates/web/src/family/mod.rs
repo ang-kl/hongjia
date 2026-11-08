@@ -164,7 +164,7 @@ impl FamilyState {
     }
 }
 
-pub const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+pub const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 pub const PERMISSIONS_POLICY: &str = "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(self), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()";
 
 /// The security headers in family mode (P0R's set, with forms, same-origin fetch, same-origin
@@ -316,6 +316,14 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
             get(|| async { crate::asset("menu.mjs") }),
         )
         .route("/assets/ink.mjs", get(|| async { crate::asset("ink.mjs") }))
+        .route(
+            "/assets/fonts/source-serif-4.woff2",
+            get(|| async { crate::asset("fonts/source-serif-4.woff2") }),
+        )
+        .route(
+            "/assets/fonts/source-sans-3.woff2",
+            get(|| async { crate::asset("fonts/source-sans-3.woff2") }),
+        )
         .route(
             "/assets/signature.mjs",
             get(|| async { crate::asset("signature.mjs") }),

@@ -1033,3 +1033,104 @@ body.inking .loupe-chip { display: none; }
 .ov-attachment .clip-icon { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .ov-attachment .clip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media print { .ov-attachment { box-shadow: none; } }
+
+/* ==== Direction A, "River" (the owner, 8 November 2026) ====
+   洪, the family's name, means "flood; big, vast" and is written with the water element. One typeface
+   pair (Source Serif 4 for titles, Source Sans 3 for everything else, both SIL OFL, kept on this site),
+   four heading sizes that differ at a glance, the whole width of the window, and no decoration that
+   does not carry meaning. */
+@font-face { font-family: "Source Serif 4"; src: url("/assets/fonts/source-serif-4.woff2") format("woff2"); font-weight: 200 900; font-display: swap; }
+@font-face { font-family: "Source Sans 3"; src: url("/assets/fonts/source-sans-3.woff2") format("woff2"); font-weight: 200 900; font-display: swap; }
+:root {
+  --serif: "Source Serif 4", Georgia, "Songti SC", "Noto Serif CJK SC", serif;
+  --sans: "Source Sans 3", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --bg: #fbfaf6; --card: #ffffff; --ink: #15201f; --muted: #5a6563; --line: #dcdfd9; --river: #1d6a6c;
+  --t-h1: clamp(2rem, 1.25rem + 2vw, 3rem);
+  --t-h2: clamp(1.5rem, 1.15rem + 0.9vw, 2rem);
+  --t-h3: 1.3125rem;
+  --t-h4: 1rem;
+  --t-body: 1.0625rem;
+  --t-small: 0.8125rem;
+  --page-max: 1680px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #101716; --card: #162120; --ink: #e6eeec; --muted: #a2b2af; --line: #2b3b39; --river: #74b7b4; }
+}
+body { font-family: var(--sans); font-size: var(--t-body); }
+body.app { --gutter: 28px; }
+[data-form-factor="phone"] body.app, body.app[data-form-factor="phone"] { --gutter: 16px; }
+.page h1, h1 { font: 650 var(--t-h1)/1.1 var(--serif); letter-spacing: -0.01em; }
+.page h2, .section-head h2, .page .section-head h2 { font: 650 var(--t-h2)/1.2 var(--serif); }
+.panel .section-head h2, .fab-contents-head, .fab-month { font: 650 var(--t-h3)/1.3 var(--sans); }
+h3 { font: 650 var(--t-h3)/1.3 var(--sans); }
+h4 { font: 650 var(--t-h4)/1.35 var(--sans); }
+.page p, .page li { font-size: var(--t-body); }
+.page p { max-width: 72ch; }
+.small, .caption { font-size: var(--t-small) !important; }
+.bar, .page { max-width: var(--page-max); }
+.page { border-radius: 8px; padding: clamp(18px, 2.4vw, 32px); }
+.bar .brand { font: 650 1.375rem/1.2 var(--serif); }
+.bar-start { display: flex; align-items: center; gap: 12px; }
+.bar .brand { min-height: 44px; }
+
+/* Back, with Esc (the owner, 8 November 2026): closes what is open first, then goes back a page. */
+button.back, .back {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--card); color: var(--ink); font: 500 0.9375rem/1 var(--sans); cursor: pointer;
+}
+.back:hover, .back:focus-visible { border-color: var(--river); color: var(--river); }
+.back kbd { font: 600 0.6875rem/1 var(--mono); padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); }
+[data-form-factor="phone"] .back kbd { display: none; }
+
+/* The documents table: one row per document, the version as the file's own number. */
+.list-head { margin-bottom: 14px; }
+.list-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.list-search { flex: 1 1 260px; max-width: 440px; }
+.list-search input { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); font: inherit; font-size: 1rem; }
+button.chip { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--ink); font: 500 0.875rem/1 var(--sans); }
+button.chip[aria-pressed="true"] { border-color: var(--river); color: var(--river); font-weight: 650; }
+.doc-table { width: 100%; border-collapse: collapse; font-size: 1rem; }
+.doc-table th { font: 650 0.8125rem/1.3 var(--sans); color: var(--muted); text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--ink); white-space: nowrap; }
+.doc-table th[data-sort] { cursor: pointer; user-select: none; }
+.doc-table th[aria-sort="ascending"]::after { content: " ↑"; color: var(--river); }
+.doc-table th[aria-sort="descending"]::after { content: " ↓"; color: var(--river); }
+.doc-table td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.doc-table .row { display: table-row; padding: 0; border-radius: 0; }
+.doc-table .row:hover { background: color-mix(in srgb, var(--river) 6%, transparent); }
+.doc-table .row-title { font: 650 1.0625rem/1.35 var(--sans); }
+.doc-table .col-v .doc-v { margin: 0; color: var(--river); }
+.doc-table td.col-when, .doc-table td.col-by, .doc-table td.col-type { color: var(--muted); font-size: 0.9375rem; white-space: nowrap; }
+.doc-table td.col-tags { color: var(--muted); font-size: 0.875rem; }
+.doc-table .col-more { width: 48px; text-align: right; }
+.doc-table .row-more { position: relative; right: auto; top: auto; grid-column: auto; grid-row: auto; }
+.doc-table .row-hidden { font: 700 0.6875rem/1 var(--sans); letter-spacing: 0.04em; padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+.doc-table .row.is-filtered { display: none; }
+@media (max-width: 760px) {
+  .doc-table thead { display: none; }
+  .doc-table .row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 12px 2px; border-bottom: 1px solid var(--line); }
+  .doc-table td { border: 0; padding: 0; }
+  .doc-table .col-title { order: 1; flex: 1 1 calc(100% - 64px); min-width: 0; }
+  .doc-table .col-more { order: 2; flex: 0 0 auto; width: auto; }
+  .doc-table .filing { order: 3; }
+  .doc-table .col-v { order: 4; }
+  .doc-table td.col-when { order: 5; }
+  .doc-table td.col-tags { order: 6; flex: 1 1 100%; }
+  .doc-table .col-type, .doc-table .col-by { display: none; }
+}
+
+/* A document's bar: Back, filing number and version, title, and the tabs that open the panel. */
+.doc-bar { flex-wrap: wrap; gap: 8px 12px; }
+.doc-title { font: 650 1.375rem/1.25 var(--serif); }
+.doc-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.doc-tabs button { min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); font: 500 0.9375rem/1 var(--sans); }
+.doc-tabs button[aria-pressed="true"] { border-color: var(--river); color: var(--river); font-weight: 650; }
+.doc-tabs .count { margin-left: 4px; padding: 2px 6px; font-size: 0.6875rem; }
+body[data-tab="details"] .panel [data-group]:not([data-group="details"]),
+body[data-tab="versions"] .panel [data-group]:not([data-group="versions"]),
+body[data-tab="notes"] .panel [data-group]:not([data-group="notes"]),
+body[data-tab="files"] .panel [data-group]:not([data-group="files"]),
+body[data-tab="manage"] .panel [data-group]:not([data-group="manage"]) { display: none; }
+.panel-title { font: 650 var(--t-h3)/1.3 var(--sans); color: var(--ink); }
+.doc-v { font-family: var(--mono); }

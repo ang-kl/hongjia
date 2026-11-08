@@ -39,6 +39,10 @@ static DOC_VIEW_MJS: &[u8] = include_bytes!("../../../web/assets/doc-view.mjs");
 static MENU_MJS: &[u8] = include_bytes!("../../../web/assets/menu.mjs");
 static INK_MJS: &[u8] = include_bytes!("../../../web/assets/ink.mjs");
 static SIGNATURE_MJS: &[u8] = include_bytes!("../../../web/assets/signature.mjs");
+// The site's two typefaces (the owner's choice of 8 November 2026), SIL Open Font License 1.1: web/assets/fonts/OFL.txt.
+static SERIF_WOFF2: &[u8] = include_bytes!("../../../web/assets/fonts/source-serif-4.woff2");
+static SANS_WOFF2: &[u8] = include_bytes!("../../../web/assets/fonts/source-sans-3.woff2");
+const FONT_CACHE: &str = "public, max-age=604800";
 
 /// A compiled-in browser file (served in placeholder mode except session.mjs, explorer.mjs,
 /// globe-layout.mjs and doc-view.mjs, which are family-only).
@@ -54,6 +58,8 @@ pub(crate) fn asset(name: &str) -> Response {
         "menu.mjs" => file(MENU_MJS, JAVASCRIPT, ASSET_CACHE),
         "ink.mjs" => file(INK_MJS, JAVASCRIPT, ASSET_CACHE),
         "signature.mjs" => file(SIGNATURE_MJS, JAVASCRIPT, ASSET_CACHE),
+        "fonts/source-serif-4.woff2" => file(SERIF_WOFF2, "font/woff2", FONT_CACHE),
+        "fonts/source-sans-3.woff2" => file(SANS_WOFF2, "font/woff2", FONT_CACHE),
         _ => plain(StatusCode::NOT_FOUND, "Not found\n"),
     }
 }

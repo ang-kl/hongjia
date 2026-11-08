@@ -425,8 +425,7 @@ if (shots) {
   };
   await touchAt(750);
   await tp.waitForTimeout(400);
-  if (await menuOpen(tp)) failures.push('a long press opened the menu (it is the phone\'s own now)');
-  await tp.keyboard.press('Escape');
+  if (await menuOpen(tp)) { failures.push('a long press opened the menu (it is the phone\'s own now)'); await tp.keyboard.press('Escape'); }
   await tp.waitForTimeout(700);
   await touchAt(40);
   await tp.waitForTimeout(120);
@@ -1330,6 +1329,49 @@ for (const scheme of ['light', 'dark']) {
   const ok = !before.group && before.scope && !playing.group && playing.scope && peek.group && peek.scope && !after.group && after.scope;
   console.log(`${ok ? 'ok  ' : 'FAIL'} tour folds the buttons into 🔭: ${JSON.stringify({ before, playing, peek, after })}`);
   if (!ok) failures.push('tour fold of the right-hand buttons');
+  await ctx.close();
+}
+// Direction A (the owner, 8 November 2026): the documents table, the document tabs, and Esc / Back.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: state });
+  const p = await ctx.newPage();
+  await p.goto(base + '/documents', { waitUntil: 'networkidle' });
+  const table = await p.evaluate(() => {
+    const t = document.querySelector('[data-doc-table]');
+    return t ? { rows: t.tBodies[0].rows.length, v: [...t.querySelectorAll('.col-v .doc-v')].every(e => /^v\.\d{2,}$/.test(e.textContent.trim())),
+      heads: [...t.querySelectorAll('th')].map(th => th.textContent.trim()).filter(Boolean) } : null;
+  });
+  const tableOk = !!table && table.rows > 1 && table.v && table.heads.includes('Version') && table.heads.includes('Last change');
+  await p.click('th[data-sort="title"]');
+  const sorted = await p.evaluate(() => { const t = [...document.querySelectorAll('[data-doc-table] tbody tr')].map(r => r.dataset.title); return t.join('|') === [...t].sort().join('|'); });
+  const first = await p.evaluate(() => document.querySelector('[data-doc-table] tbody tr').dataset.title);
+  await p.fill('[data-list-search]', first.slice(0, 6));
+  const filtered = await p.evaluate(() => [...document.querySelectorAll('[data-doc-table] tbody tr')].filter(r => !r.classList.contains('is-filtered')).length);
+  await p.fill('[data-list-search]', '');
+  // Into a document, then a tab, then Esc twice: the first clears the tab, the second goes back.
+  await p.click('[data-doc-table] tbody tr .row-title');
+  await p.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
+  await p.waitForTimeout(800);
+  await p.click('[data-doc-tab="versions"]');
+  const tab = await p.evaluate(() => ({ tab: document.body.dataset.tab,
+    shown: [...document.querySelectorAll('.panel [data-group]')].filter(g => g.getClientRects().length).map(g => g.dataset.group) }));
+  await p.locator('.doc-bar .filing').click();
+  await p.keyboard.press('Escape');
+  await p.waitForTimeout(300);
+  const afterFirst = { url: new URL(p.url()).pathname, tab: await p.evaluate(() => document.body.dataset.tab || '') };
+  await p.keyboard.press('Escape');
+  await p.waitForURL(u => new URL(u).pathname === '/documents', { timeout: 4000 }).catch(() => {});
+  const afterSecond = new URL(p.url()).pathname;
+  // The Back button does the same from a document.
+  await p.click('[data-doc-table] tbody tr .row-title');
+  await p.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
+  await p.click('.doc-bar [data-back]');
+  await p.waitForURL(u => new URL(u).pathname === '/documents', { timeout: 4000 }).catch(() => {});
+  const viaButton = new URL(p.url()).pathname;
+  const ok = tableOk && sorted && filtered >= 1 && tab.tab === 'versions' && tab.shown.join() === 'versions'
+    && /^\/documents\/\d{4}-\d{4}_\d+$/.test(afterFirst.url) && afterFirst.tab === '' && afterSecond === '/documents' && viaButton === '/documents';
+  console.log(`${ok ? 'ok  ' : 'FAIL'} documents table, tabs and Esc / Back: ${JSON.stringify({ table, sorted, filtered, tab, afterFirst, afterSecond, viaButton })}`);
+  if (!ok) failures.push('documents table, tabs and Esc / Back');
   await ctx.close();
 }
 await browser.close();
