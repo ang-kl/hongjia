@@ -151,3 +151,25 @@ from four pinned CDNs). It talks to the site by `postMessage`, and the site chec
   "more than just" (place names and a venue's quoted words are not read).
 - **Tests:** 55 (four new: Can't-miss by day, no labels above section titles, the wording check, and the type and
   fonts). Older data files still render; their `kicker` fields are read but not shown.
+
+## Amendment, 8 November 2026: the family's swaps at each stop (Plans B, C and D)
+
+**The owner's request:** "how about Plan B be built as well. for each day each period ... hiking and nature. And able to
+swap ... shopping as Plan C. similar for the night and super earlier morning or overnight as Plan D". Their choices: keep
+the weather swaps; a swap at every stop; split up and meet; one car goes with the shoppers; a walk may be done alone
+(short, busy, well marked, with a check-in); Plan D per stop; the template first, then the trip.
+
+**The template now:**
+- **The weather swaps** keep their data keys (`plan_b`, `plan_c`) but go by their words and an icon: ☔ "If it rains"
+  and ☀️ "If it's hot". The rules read "rain 60%+ → ☔ If it rains"; an older rule ending "→ B" reads the same.
+- **The family's swaps at a stop:** a Plan A item may carry `swaps` for B (hiking and nature 🥾), C (shopping 🛍️) and
+  D (early or late 🌙). Each is a button under the stop's name; each opens its own panel with the place's photo and credit,
+  its line, a walk's facts (`trail`: length, time, grade, marked, busy, shade, toilets, phone, with their source), when,
+  getting there, a check-in time and where and when the family meets again. B and C open together when the family splits.
+  The choice is remembered on the device; the day's map shows the chosen places as dashed pins with their letter; the
+  timeline says "Swapped: B, C"; a place used only as a swap opens that swap from its panel or a # link.
+- **Checks:** a swap names a known stop that is not the stop itself; `meet` needs a time and a place; a walk's `trail`
+  needs a number of km, a grade and a source.
+- **Tests:** 58 (three new: the swaps' markup and data, their checks, and a browser run at 1180 and 390 px: open B and C,
+  the timeline note, the two pins, remembered after a reload, undone, and opened from a # link).
+- Who each swap is for, and the owner's rules for a particular family, stay in the private data file.

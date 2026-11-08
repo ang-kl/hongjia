@@ -213,6 +213,46 @@ def find_browser():
 
 NODE, PLAYWRIGHT_PATH = find_browser()
 BROWSER = bool(NODE)
+SWAPS_JS = r'''
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const res = {};
+  for (const w of [1180, 390]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 844 } });
+    const page = await ctx.newPage();
+    const errors = []; page.on('pageerror', e => errors.push(e.message));
+    // the map's own script may load (as in the tiles test); nothing else leaves the machine
+    await page.route(/^https?:/, r => r.request().url().startsWith('https://unpkg.com/leaflet@') ? r.continue() : r.abort());
+    await page.goto('file://' + process.argv[2], { waitUntil: 'load' });
+    await page.click('#d1-harbour .swap-btn[data-swap="b"]');
+    await page.click('#d1-harbour .swap-btn[data-swap="c"]');
+    await page.evaluate(() => { const m = document.querySelector('.leaflet-container') || document.querySelector('.mapc'); if (m) { m.scrollIntoView(); } });
+    await page.waitForTimeout(600);
+    const on = await page.evaluate(() => { const c = document.getElementById('d1-harbour'); return { swaps: c.getAttribute('data-swaps'),
+      open: [...c.querySelectorAll('.swap')].filter(s => !s.hidden).map(s => s.id), rest: !c.querySelector('.swap-rest').hidden,
+      pressed: [...c.querySelectorAll('.swap-btn')].map(b => b.getAttribute('aria-pressed')),
+      tl: [...document.querySelectorAll('.timeline .tl-swap')].map(t => t.textContent.trim()),
+      pins: document.querySelectorAll('.mk.swp').length, map: !!document.querySelector('.leaflet-container'),
+      wide: document.documentElement.scrollWidth > innerWidth + 1 }; });
+    await page.reload({ waitUntil: 'load' });
+    const kept = await page.evaluate(() => document.getElementById('d1-harbour').getAttribute('data-swaps'));
+    await page.click('#d1-harbour .swap-btn[data-swap="b"]');
+    await page.click('#d1-harbour .swap-btn[data-swap="c"]');
+    const off = await page.evaluate(() => { const c = document.getElementById('d1-harbour'); return { swaps: c.getAttribute('data-swaps'),
+      open: [...c.querySelectorAll('.swap')].filter(s => !s.hidden).length, rest: !c.querySelector('.swap-rest').hidden,
+      tl: document.querySelectorAll('.timeline .tl-swap').length, pins: document.querySelectorAll('.mk.swp').length }; });
+    // a link to a swap's own place opens that swap
+    await page.evaluate(() => { location.hash = 'd1-harbour-d'; });
+    await page.waitForTimeout(300);
+    const viaHash = await page.evaluate(() => !document.getElementById('d1-harbour-d').hidden);
+    res[w] = { on, kept, off, viaHash, errors };
+    await ctx.close();
+  }
+  console.log(JSON.stringify(res));
+  await browser.close();
+})();
+'''
 MEASURE_JS = r'''
 const { chromium } = require('playwright');
 (async () => {
@@ -234,8 +274,8 @@ const { chromium } = require('playwright');
         const h = e.getBoundingClientRect().height; if (innerWidth > 600 && h > Math.max(48, 2 * lh(e) + 4)) tall.push(['line', e.textContent.trim().slice(0, 60), h]);
       }
       const harbour = document.getElementById('d1-harbour');
-      const tel = [...harbour.querySelectorAll('.offl .lk[data-kind=tel] .l')].find(seen);
-      const addr = harbour.querySelector('.offl .lk-addr');
+      const tel = [...harbour.querySelectorAll('.offl .lk[data-kind=tel] .l')].find(e => seen(e) && !e.closest('.swap'));
+      const addr = [...harbour.querySelectorAll('.offl .lk-addr')].find(e => !e.closest('.swap'));
       return { chips: chips.length, tall, tel: tel ? tel.textContent : null, addr: addr && seen(addr) ? addr.innerText : '',
                hscroll: document.documentElement.scrollWidth > innerWidth };
     });
@@ -332,6 +372,11 @@ def find(root, tag=None, cls=None, **attrs):
 
 def outside(n, pred):
     return n.up(pred) is None
+
+
+def own(nodes):
+    """A stop card's own parts, leaving out the family's swap panels inside it."""
+    return [n for n in nodes if n.up(lambda p: 'swap' in (p.attrs.get('class') or '').split()) is None]
 
 
 def not_lightbox(n):
@@ -775,14 +820,14 @@ class KitTest(unittest.TestCase):
         for li in with_stop:
             self.assertTrue(find(li, 'a', 'lk'), 'and its official links')
         harbour = find(self.root, 'article', 'stop', id='d1-harbour')[0]
-        chips = find(find(harbour, 'div', 'offl')[0], 'a', 'lk')
+        chips = find(own(find(harbour, 'div', 'offl'))[0], 'a', 'lk')
         kinds = [a.attrs.get('data-kind') for a in chips if a.attrs.get('data-kind')]
         self.assertEqual(kinds, ['web', 'ig', 'fb', 'tt', 'yt', 'tel'])
         emoji = {a.attrs['data-kind']: find(a, 'span', 'e')[0].text() for a in chips if a.attrs.get('data-kind')}
         self.assertEqual([emoji[k] for k in kinds], ['🌐', '📷', '📘', '🎵', '▶️', '📞'])
-        addr = find(find(harbour, 'p', 'lk-addr')[0], 'a', data_kind='addr')[0]
+        addr = find(own(find(harbour, 'p', 'lk-addr'))[0], 'a', data_kind='addr')[0]
         self.assertTrue(addr.attrs['href'].startswith('https://www.google.com/maps/'))
-        hours = find(harbour, 'p', 'lk-hours')[0]
+        hours = own(find(harbour, 'p', 'lk-hours'))[0]
         self.assertIn('data-fact', hours.attrs)
         self.assertTrue(find(hours, 'a', 'src', data_source=True))
         drawer = find(harbour, 'details', 'ig-drawer')
@@ -804,7 +849,7 @@ class KitTest(unittest.TestCase):
                 self.assertFalse(find(a, 'small') or find(a, 'br') or find(a, 'b'), 'no notes inside a chip')
                 self.assertNotEqual(a.attrs.get('data-kind'), 'addr', 'the address is a line, not a chip')
         harbour = find(self.root, 'article', 'stop', id='d1-harbour')[0]
-        tel = find(harbour, 'a', 'lk', data_kind='tel')[0]
+        tel = own(find(harbour, 'a', 'lk', data_kind='tel'))[0]
         self.assertEqual(find(tel, 'span', 'l-wide')[0].text(), '+000 100 0400', 'the number on wide screens')
         self.assertEqual(find(tel, 'span', 'l-narrow')[0].text(), 'Call', 'and Call on phones')
         self.assertEqual(tel.attrs.get('title'), 'Harbour office', 'a name goes in the title')
@@ -815,7 +860,7 @@ class KitTest(unittest.TestCase):
                          ('Office · +000 100 0400', 'Call Office'), 'two venues on one stop: say which')
         ig = find(harbour, 'a', 'lk', data_kind='ig')[0]
         self.assertEqual((find(ig, 'span', 'l')[0].text(), ig.attrs.get('title')), ('Instagram', 'placeholder account'))
-        self.assertEqual(find(find(harbour, 'p', 'lk-addr')[0], 'span', 'a')[0].text(), '1 Harbour Row, Example Bay')
+        self.assertEqual(find(own(find(harbour, 'p', 'lk-addr'))[0], 'span', 'a')[0].text(), '1 Harbour Row, Example Bay')
         hotel = find(self.root, 'article', 'stop', id='d1-hotel')[0]
         tel = find(hotel, 'a', 'lk', data_kind='tel')[0]
         self.assertEqual((find(tel, 'span', 'l-wide')[0].text(), tel.attrs.get('title')), ('+000 100 0200', 'Hotel reception'))
@@ -930,6 +975,86 @@ class KitTest(unittest.TestCase):
         compact = re.sub(r'\s+', '', js)
         self.assertIn("if(e.key==='Escape'){e.preventDefault();closeTour();}", compact)
         self.assertIn('tPlaying=!reduce;tPause.hidden=reduce;', compact, 'no autoplay under reduced motion: Next steps on')
+
+    # ------------------------------------------------------------ the family's swaps (the owner, 8 November 2026)
+    def test_family_swaps(self):
+        card = find(self.root, 'article', 'stop', id='d1-harbour')[0]
+        self.assertIn('data-swaps', card.attrs)
+        btns = find(card, 'button', 'swap-btn')
+        self.assertEqual([b.attrs['data-swap'] for b in btns], ['b', 'c', 'd'])
+        self.assertTrue(all(b.attrs.get('aria-pressed') == 'false' for b in btns))
+        self.assertIn('The walker', btns[0].text())
+        self.assertIn('The shopper', btns[1].text())
+        panels = find(card, 'section', 'swap')
+        self.assertEqual([p.attrs['id'] for p in panels], ['d1-harbour-b', 'd1-harbour-c', 'd1-harbour-d'])
+        self.assertEqual([b.attrs['aria-controls'] for b in btns], [p.attrs['id'] for p in panels])
+        self.assertTrue(all('hidden' in p.attrs for p in panels), 'every swap starts closed: Plan A is the day')
+        b = panels[0]
+        trail = find(b, 'p', 'trail')[0]
+        self.assertIn('data-fact', trail.attrs)
+        self.assertTrue(find(trail, 'a', 'src'), "a walk's length and grade carry their source")
+        self.assertIn('2.4 km', trail.text())
+        self.assertEqual([x.text() for x in find(b, 'dt')], ['When', 'Getting there', 'Check in', 'Meet again'])
+        meet = find(b, 'dd')[-1]
+        self.assertIn('12:00', meet.text())
+        self.assertTrue(find(meet, 'a', 'pl'), 'the meeting place opens its own panel')
+        self.assertTrue(find(panels[1], 'p', 'lk-hours'), 'a shop shows its hours')
+        self.assertTrue(find(card, 'p', 'swap-rest'))
+        day = self.trip['days'][0]
+        self.assertEqual([(s['card'], s['plan']) for s in day['swaps']], [('d1-harbour', 'b'), ('d1-harbour', 'c'), ('d1-harbour', 'd')])
+        self.assertEqual(self.trip['panels'][self.trip['days'][0]['swaps'][0]['card'] and 'p-coastpath']['anchor'], 'd1-harbour-b',
+                         "a place used only as a swap opens that swap")
+        # The weather swaps go by their words and an icon, with no letter.
+        plan_b = find(self.root, 'button', 'plan-btn', data_plan='b')[0]
+        self.assertNotEqual(find(plan_b, 'b')[0].text().strip(), 'B')
+        self.assertIn('If it rains', plan_b.text())
+        rules = find(self.root, 'p', 'wx-rules')[0].text()
+        self.assertIn('rain 60%+ → ☔ If it rains', rules)
+        self.assertNotIn('→ B', rules)
+        d = copy.deepcopy(self.data)
+        d['plans']['rules'][0]['short'] = 'rain 60%+ → B'
+        self.assertIn('rain 60%+ → ☔ If it rains', build.build(d), 'an older rule ending "→ B" reads the same')
+
+    def test_family_swaps_are_checked(self):
+        def broken(change):
+            d = copy.deepcopy(self.data)
+            change(d)
+            with self.assertRaises(build.KitError):
+                build.build(d)
+        sw = lambda d: [x for x in d['days'][0]['stops'] if x['stop'] == 'harbour'][0]['swaps']
+        broken(lambda d: sw(d).update(e={'stop': 'coastpath'}))
+        broken(lambda d: sw(d)['b'].update(stop='nowhere'))
+        broken(lambda d: sw(d)['b'].update(stop='harbour'))
+        broken(lambda d: sw(d)['b']['meet'].pop('place'))
+        broken(lambda d: d['stops']['coastpath']['trail'].pop('source'))
+        broken(lambda d: d['stops']['coastpath']['trail'].update(grade='steep'))
+        broken(lambda d: d['stops']['coastpath']['trail'].update(km='far'))
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_family_swaps_in_a_browser(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            script = os.path.join(tmp, 'swaps.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(SWAPS_JS)
+            out = subprocess.run([NODE, script, page], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        for w, r in res.items():
+            self.assertEqual(r['errors'], [], w)
+            on = r['on']
+            self.assertEqual((on['swaps'], on['open'], on['rest'], on['pressed']),
+                             ('b c', ['d1-harbour-b', 'd1-harbour-c'], True, ['true', 'true', 'false']), f'{w}: B and C together: we split up')
+            self.assertTrue(on['tl'] and all(t == 'Swapped: B, C' for t in on['tl']), f'{w}: the timeline says so')
+            self.assertTrue(on['map'], f'{w}: the map loaded')
+            self.assertEqual(on['pins'], 2, f'{w}: the map shows the two chosen places')
+            self.assertFalse(on['wide'], f'{w}: nothing wider than the screen')
+            self.assertEqual(r['kept'], 'b c', f'{w}: remembered on this device')
+            self.assertEqual(r['off'], {'swaps': '', 'open': 0, 'rest': False, 'tl': 0, 'pins': 0}, f'{w}: and undone')
+            self.assertTrue(r['viaHash'], f'{w}: a link to a swap opens it')
 
     # ------------------------------------------------------------ Direction A (the owner, 8 November 2026)
     def test_cant_miss_by_day(self):
@@ -1264,7 +1389,9 @@ class KitTest(unittest.TestCase):
         pt = [t for t in find(find(r, 'section', id='gallery')[0], 'figure', 'g-tile') if 'tiktok.com/embed/v2/7300000000000000009' in t.attrs.get('data-embed', '')]
         plan_days = [day for day in d['days'] if any(x['stop'] == 'tearoom' for p in ('plan_b', 'plan_c') for x in day.get(p) or [])]
         self.assertEqual(len(pt), len(plan_days), 'one tile a day, though the stop is in Plan B and Plan C')
-        self.assertIn('Plan B', find(pt[0], 'span', 'g-k')[0].text())
+        # the weather swaps go by their words and an icon, never a letter (B, C and D are the family's swaps)
+        self.assertIn('☔ If it rains', find(pt[0], 'span', 'g-k')[0].text())
+        self.assertNotIn('Plan B', find(pt[0], 'span', 'g-k')[0].text())
         js = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read())
         self.assertIn(r"varEMBED_OK=/^https:\/\/www\.instagram\.com\/(p|reel)\/[A-Za-z0-9_-]{5,40}\/embed\/captioned\/$|^https:\/\/www\.tiktok\.com\/embed\/v2\/[0-9]{8,25}$/;", js)
         css = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read())

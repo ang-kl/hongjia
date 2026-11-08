@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.08 (3)";
+pub const VERSION: &str = "2026.11.08 (4)";
 
-pub const SYNOPSIS: &str = "This version fixes two things the owner saw in the new look. On a phone, a document's tabs (Details, Versions, Notes, Files and Manage) now stay on one row under the title and slide sideways, so the document starts higher on the screen. On an iPad, a day with a single Can't-miss pick now shows its card on its side, photo beside the words, as on a wide screen; only on a phone does the card stack. Trip pages pick up the second fix when their next version is built.";
+pub const SYNOPSIS: &str = "This version lets a trip page offer the family's own swaps at each stop, as the owner asked. Under a stop's name, Plan B (hiking and nature), Plan C (shopping) and Plan D (very early, night or overnight) each open their own card: the place with its photo and credit, a walk's length, time and grade with their source, when, how to get there, a check-in time and where and when everyone meets again. Choosing B and C together means the family splits up and meets later. The choice is remembered on each phone or iPad, the day's map shows the chosen places, and the timeline says what was swapped. The weather swaps stay, now called \"If it rains\" and \"If it's hot\" without a letter. Trip pages already on the site are unchanged until a new version is uploaded.";

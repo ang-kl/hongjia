@@ -1,4 +1,4 @@
-# Trip data file (holiday-coffee-table, version 2, 8 November 2026)
+# Trip data file (holiday-coffee-table, version 3, 8 November 2026)
 
 One JSON object describes one trip. `build.py` turns it into one self-contained HTML page.
 
@@ -185,6 +185,7 @@ Shown on the map when the reader ticks the safety box.
 | `clips` | | Videos: `{sources: [{src, type}], poster, alt, cap, credit, page, host, licence, licence_url}`; `poster`, `alt`, `cap`, `credit` and one source are required. |
 | `embeds` | | Latest posts: `{kind: "instagram" \| "tiktok", handle}`. Only accounts the venue links from its own website. |
 | `suits` | | Suitability marks: `{mark: value}`, see the table below. |
+| `trail` | | For a walk (usually a Plan B swap): `{km, time, grade, marked, busy, shade, toilets, phone, source}`. `km` (a number), `grade` (`easy`, `moderate` or `hard`) and `source` (a `sources` key) are required: a walk's length and grade are facts. Shown as one line with its source tag. |
 | `suits_note` | | *rich*: one access note under the marks. |
 | `lens_notes` | | `{lens key: rich text}`: shown for that lens. |
 
@@ -207,15 +208,15 @@ Suitability marks:
 | `when` | **yes** | "Sat 12 Jun": the date line above the day's title, the rail and the nav. |
 | `title` | **yes** | The day's headline. |
 | `route` | **yes** | Place ids in order; the letters A, B, C… follow this order. |
-| `stops` | **yes** | Plan A: `{stop, role}` items, at least one. |
+| `stops` | **yes** | Plan A: `{stop, role, swaps}` items, at least one. `swaps` is optional: see "The family's swaps" below. |
 | `iso` | with `weather` | The date, `YYYY-MM-DD`. |
 | `route_label`, `sub`, `base`, `badge` | | Kicker route, dek line and the two pills. |
 | `walk` | | `"a>b"` legs that are short walks (dashed on the map, no leg needed). |
 | `timeline` | | `{time, title, text, stop, photos, links}`; `text` is *rich*. With `stop` (a stop id), the item links to its card and shows the stop's photos (up to three: a swipeable strip on phones, tap to enlarge, credited) and its official links; `photos` and `links` override or stand alone. |
 | `info` | | Boxes under the timeline: `{title, text}`, *rich* (house style: Getting around, Meals, Style & photo moments, Make it easier). |
 | `links` | | `{text, source}` or `{text, url}` under the boxes. |
-| `plan_b` | | Plan B (rain): `{stop, role, replaces}` items. |
-| `plan_c` | | Plan C (heat, wind or storm): `{stop, role, replaces}` items. |
+| `plan_b` | | The rain swap ("If it rains"): `{stop, role, replaces}` items. The key keeps its old name. |
+| `plan_c` | | The heat swap ("If it's hot": heat, strong wind or storms): `{stop, role, replaces}` items. |
 | `plan_notes` | | `{"b": rich, "c": rich}`: one line under each plan's heading. |
 | `weather` | | A `weather.places` key: the day's forecast strip. |
 | `taste`, `shop` | | The day's two boxes, "Taste of the day" and "Shop the day": `{text, hours, items}`. `text` and `hours` are *rich* (`hours`, the shops' trading hours that day, is a fact and needs a source tag); `items` are cards like a stop's `nearby` (`cat` defaults to `food` and `shopping`). |
@@ -226,19 +227,41 @@ Suitability marks:
 
 ### `plans`
 
-Plan A is each day's `stops`. Plans B and C are each day's `plan_b` and `plan_c`. The page shows
-all plans; the reader chooses by hand, and the forecast only highlights the plan the rules suggest.
+Plan A is each day's `stops`. The weather swaps are each day's `plan_b` (if it rains) and `plan_c` (if
+it's hot, windy or stormy); since 8 November 2026 they go by their words and an icon (☔, ☀️) and never
+by a letter, because the letters B, C and D belong to the family's swaps at each stop. The page shows
+every plan; the reader chooses by hand, and the forecast only highlights the swap the rules suggest.
 
 | Field | What |
 |---|---|
 | `kicker`, `title`, `intro` | The Plans section. |
-| `labels` | `{"a": "As planned", "b": "If it rains", "c": "Heat, wind or storm"}` |
+| `labels` | `{"a": "As planned", "b": "If it rains", "c": "If it's hot"}` |
+| `family` | The family's swaps: `{"b": {label, who, icon}, "c": {...}, "d": {...}}`. Defaults: B "Hiking & nature" 🥾, C "Shopping" 🛍️, D "Early or late" 🌙; `who` (for example "The walker") shows on the button and the panel; put real names or relations only in the private data file. |
 | `explain` | `{"a": rich, "b": rich, "c": rich}`: one line per plan in the Plans section. |
-| `rules` | In order; the first rule that matches the day's forecast decides. Each: `plan` (`b` or `c`), `metric`, `op`, `value`, `text` **(all required)**, and `short` (the compact form shown beside each forecast). |
+| `rules` | In order; the first rule that matches the day's forecast decides. Each: `plan` (`b` or `c`), `metric`, `op`, `value`, `text` **(all required)**, and `short`: the condition alone ("rain 60%+"); the page adds "→ ☔ If it rains". An older `short` ending "→ B" or "→ C" reads the same. |
 
 Metrics: `code` (WMO weather code), `tmax`, `tmin` (°C), `rain_pct` (%), `rain_mm`, `wind_kmh`,
 `gust_kmh`, `uv`. Ops: `>=`, `>`, `<=`, `<`, and `in` with a list (for codes: thunderstorms are
 `[95, 96, 99]`).
+
+### The family's swaps at a stop
+
+The owner, 8 November 2026: at each Plan A stop where it makes sense, **Plan B** (hiking and nature),
+**Plan C** (shopping) and **Plan D** (very early, night or overnight). Each opens on its own under the
+stop, so the family can split up (B and C at once) and meet again; the choice is remembered on that
+device, the day's map shows the chosen places as dashed pins with their letter, and the timeline says
+"Swapped: B, C". A place used only as a swap opens that swap when its panel or a # link points at it.
+
+A Plan A item's `swaps` is `{"b": swap, "c": swap, "d": swap}` (any of them). Each swap:
+
+| Field | Required | What |
+|---|---|---|
+| `stop` | **yes** | A `stops` id, never the Plan A stop itself. The swap shows its first photo, name (opening its panel), line, `trail`, links and hours. |
+| `role` | | One plain line for this swap. |
+| `start`, `end` or `when` | | The time ("10:30" to "11:45", or "06:20 sunrise"). |
+| `go` | | *rich*: how to get there ("Walk 5 min", "Taxi about 10 min, about $20 [[src:key]]"). |
+| `checkin` | | *rich*: for someone going alone ("Message the family at 10:00"). |
+| `meet` | | `{time, place, stop}`: where and when the family meets again. `time` and `place` are required; `stop` (a `stops` id) links the place. |
 
 ### `weather`
 

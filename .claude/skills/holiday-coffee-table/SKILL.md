@@ -5,7 +5,8 @@ description: Use when the family shares a briefing note, document, PDF or pictur
 
 # Holiday coffee-table pages
 
-Version 2, 8 November 2026: Direction A, "River" (the owner's redesign: "A"). Version 1, 7 November
+Version 3, 8 November 2026: the family's swaps at each stop (Plans B, C and D). Version 2, the same day:
+Direction A, "River" (the owner's redesign: "A"). Version 1, 7 November
 2026, was rebuilt from the family's v15 trip page, which is the standard every new trip page meets for
 content. The owner's words: "create a fresh construct template based on v15 ... I will give you a
 briefing note about the next family holiday and you are to do the similar like v15".
@@ -35,8 +36,9 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
   food, drinks, snacks, shopping, fun, sights, worship).
 - **Days**, one article each: the day's photo band, route line with every place linked, badges,
   Plan A stops with 2 to 4 credited photos each, timeline items pointing at their stops, the four
-  info boxes (Getting around, Meals, Style & photo moments, Make it easier), **Plan B** (rain) and
-  **Plan C** (heat, wind or storm) as swaps, nearby extras, "if it's closed or crowded"
+  info boxes (Getting around, Meals, Style & photo moments, Make it easier), the weather swaps
+  ("If it rains"; "If it's hot", for heat, wind or storms), **the family's swaps at each stop**
+  (Plan B hiking and nature, Plan C shopping, Plan D early or late; see below), nearby extras, "if it's closed or crowded"
   alternatives, the live forecast strip, **Meals** with four choices each (the planned place
   counted), **Taste of the day** and **Shop the day** with that day's trading hours, and Share
   this day.
@@ -202,14 +204,25 @@ accepts answers only from `window.parent`. The site checks every message's field
 - **Add to calendar:** links to the site's `/calendar.ics`, signed-in only, which turns the event in
   the link into a calendar file.
 
-## Plan A, B and C
+## Plan A, the weather swaps, and the family's swaps
 
-- **Plan A** is the day as written. **Plan B** is for rain: covered, indoor, close to the base.
-  **Plan C** is for heat, strong wind or storms: cooler, sheltered, shorter, earlier.
-- Each alternative names what it replaces, and is researched and sourced like Plan A.
-- The rules (for example "Rain chance 60% or more: Plan B") are in the data file and on the page; the
-  first matching rule decides the suggestion. The page shows every plan; the forecast highlights the
-  suggested one and never hides another.
+- **Plan A** is the day as written.
+- **The weather swaps** (data keys `plan_b` and `plan_c`) go by their words, never a letter: **If it
+  rains** (covered, indoor, close to the base) and **If it's hot** (heat, strong wind or storms:
+  cooler, sheltered, shorter, earlier). Each names what it replaces and is researched and sourced like
+  Plan A. The rules ("rain 60%+ → ☔ If it rains") are in the data file and on the page; the first
+  matching rule decides the suggestion. The forecast highlights; it never hides.
+- **The family's swaps at each stop** (the owner, 8 November 2026): **Plan B** hiking and nature,
+  **Plan C** shopping, **Plan D** very early, night or overnight. At every Plan A stop where they make
+  sense; none at an airport or a check-in. Choosing B and C at once means the family splits up and
+  meets again: every swap says when and where (`meet`).
+  - The owner's rules so far (ask again for another trip): with one car, the car goes with the
+    shoppers, so a Plan B walk is reachable on foot or by taxi; someone walking alone gets only short,
+    busy, well-marked walks, each with a check-in time; Plan D never drives country roads at dusk or at
+    night. Who each swap is for goes in the private data file (`plans.family`), never in this folder.
+  - Every swap is a researched place with its own photo, credit, links, hours on that date (public
+    holidays checked) and, for a walk, its `trail` facts with their source. Where nothing fits, the
+    stop has no swap for that plan: never force one.
 
 ## Privacy
 
