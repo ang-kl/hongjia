@@ -989,6 +989,9 @@ class KitTest(unittest.TestCase):
         self.assertIn("--sans:'SourceSans3'", css)
         self.assertIn('.ocards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))', css, 'at most four cards a row')
         self.assertIn('.hero::after{display:none;content:none}', css, 'no darkened photo behind the title')
+        # a single Can't-miss pick lies on its side on an iPad too, and stacks only on a phone
+        self.assertIn('@media(max-width:560px){.cm-one.ocard{display:flex}', css)
+        self.assertNotIn('@media(max-width:800px){.cm-day{grid-template-columns:minmax(0,1fr)}.cm-one', css)
         self.assertIn('family=Source+Serif+4', self.html)
         self.assertNotIn('family=Fraunces', self.html)
 

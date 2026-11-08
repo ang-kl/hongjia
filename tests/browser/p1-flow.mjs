@@ -1374,6 +1374,25 @@ for (const scheme of ['light', 'dark']) {
   if (!ok) failures.push('documents table, tabs and Esc / Back');
   await ctx.close();
 }
+// On a phone the document's tabs keep to one row that slides sideways (the owner, 8 November 2026: "Fix both").
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1, storageState: state });
+  const p = await ctx.newPage();
+  await p.goto(base + '/documents', { waitUntil: 'networkidle' });
+  await p.click('[data-doc-table] tbody tr .row-title');
+  await p.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
+  await p.waitForTimeout(600);
+  const tabs = await p.evaluate(() => {
+    const box = document.querySelector('[data-doc-tabs]');
+    const tops = [...box.querySelectorAll('button')].filter(b => b.getClientRects().length).map(b => Math.round(b.getBoundingClientRect().top));
+    return { rows: new Set(tops).size, count: tops.length, height: Math.round(box.getBoundingClientRect().height),
+      pageWide: document.documentElement.scrollWidth > innerWidth + 1 };
+  });
+  const ok = tabs.count >= 4 && tabs.rows === 1 && tabs.height <= 48 && !tabs.pageWide;
+  console.log(`${ok ? 'ok  ' : 'FAIL'} phone: document tabs on one row: ${JSON.stringify(tabs)}`);
+  if (!ok) failures.push('phone: document tabs on one row');
+  await ctx.close();
+}
 await browser.close();
 server.kill('SIGTERM');
 const total = CLASSES.length * PAGES.length * 2;

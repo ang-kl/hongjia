@@ -1014,7 +1014,9 @@ p,li{font-size:var(--tb)}
 .cm-one .ocard > .ocard-ph{padding-bottom:10px}
 .cm-one .ocard-b{padding:14px 18px}
 .g-day-h h3{font-size:var(--t3);font-weight:650}
-@media (max-width:800px){.cm-day{grid-template-columns:minmax(0,1fr)}.cm-one .ocard{display:flex}.cm-day .ocards.cm-one{max-width:none}}
+@media (max-width:800px){.cm-day{grid-template-columns:minmax(0,1fr)}}
+/* a single pick stays on its side down to phone width, so an iPad does not show one very large photo */
+@media (max-width:560px){.cm-one .ocard{display:flex}.cm-day .ocards.cm-one{max-width:none}}
 /* a day's photo sits above its words, never behind them */
 .day-h.has-band{display:grid;grid-template-columns:auto minmax(0,1fr);min-height:0;color:var(--ink);padding:0;isolation:auto;border-radius:0;overflow:visible;margin-bottom:18px}
 .day-band{position:static;inset:auto;z-index:auto;grid-column:1 / -1;margin:0 0 14px;border-radius:var(--r);overflow:hidden;aspect-ratio:21/8}
