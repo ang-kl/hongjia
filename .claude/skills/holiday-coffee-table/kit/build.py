@@ -157,7 +157,7 @@ LABELS.update({
     'call': 'Call', 'hours': 'Hours',
     'op_play': 'Play the trip', 'op_read': 'Start reading', 'op_tldr': 'The trip at a glance', 'op_stays': 'Where we stay',
     'op_highlights': "Can't-miss, day by day",
-    'cm_none': 'Nothing marked for this day.', 'op_alerts': 'Good to know', 'op_globe': 'Globe: the way there, and the bases',
+    'cm_none': 'Nothing marked for this day.', 'cm_swaps_aria': "Day {n}'s swaps", 'op_alerts': 'Good to know', 'op_globe': 'Globe: the way there, and the bases',
     'op_globe_hint': 'Drag to turn the globe.', 'op_time': 'Local time', 'website': 'Website',
     'cd_to_go': '{n} days to go', 'cd_one': '1 day to go', 'cd_today': 'Today is the day', 'cd_during': 'Day {d} of {n}',
     'local_time': '{time} in {place}',
@@ -1869,8 +1869,38 @@ class Page:
                     else f'<p class="cm-none">{E(day.get("sub") or self.L["cm_none"])}</p>')
             base = f'<p class="cm-base">{E(day["base"])}</p>' if day.get('base') else ''
             rows.append(f'<div class="cm-day" id="cm-day-{n}"><div class="cm-when"><h3><a href="#day-{n}">{E(self.L["day"])} {n} · {E(day["when"])}</a></h3>'
-                        f'{base}</div>{body}</div>')
+                        f'{base}</div>{body}{self.cm_swaps(day, n, picks)}</div>')
         return ''.join(rows)
+
+    def cm_swaps(self, day, n, picks):
+        """The day's Plan B, C and D under its picks (the owner, 8 November 2026: "should include Plan B, Plan C, Plan D
+        picture with the hyperlink"): one of each at most, a Can't-miss stop's own first, then the day's order. The
+        link opens that swap at its stop, as the stop's own button does."""
+        cards = []
+        for p in SWAPS:
+            items = [it for it in day['stops'] if (it.get('swaps') or {}).get(p)]
+            if not items:
+                continue
+            it = sorted(items, key=lambda x: x['stop'] not in picks)[0]
+            x = it['swaps'][p]
+            st = self.stops[x['stop']]
+            label, _, icon = self.swap_meta(p)
+            href = f'#d{n}-{it["stop"]}-{p}'
+            phs = st.get('photos') or []
+            ph = ''
+            if phs:
+                # the same place early or late, beside its own card: its second photo, where it has one
+                k = 1 if x['stop'] == it['stop'] and it['stop'] in picks and len(phs) > 1 else 0
+                img = self.photo(phs[k], f'stops.{x["stop"]}.photos')
+                ph = (f'<figure class="cm-swap-ph"><a href="{E(href)}" tabindex="-1" aria-hidden="true">'
+                      f'<img src="{E(img["src"])}" alt="{E(img["alt"])}" loading="lazy" decoding="async" referrerpolicy="no-referrer"></a>'
+                      f'<figcaption><span class="credit">{self.credit(img, original=False)}</span></figcaption></figure>')
+            cards.append(f'<article class="cm-swap" data-swap="{p}">{ph}<p class="cm-swap-t"><a href="{E(href)}">'
+                         f'<span aria-hidden="true">{icon}</span> {E(self.fmt("plan", p=p.upper()))}<span class="sr">, {E(label)}: {E(st["name"])}</span></a></p>'
+                         f'<p class="cm-swap-n">{E(st["name"])}</p></article>')
+        if not cards:
+            return ''
+        return f'<div class="cm-swaps" role="group" aria-label="{E(self.fmt("cm_swaps_aria", n=n))}">' + ''.join(cards) + '</div>'
 
     def ocard(self, sid, where):
         st = self.stops[sid]

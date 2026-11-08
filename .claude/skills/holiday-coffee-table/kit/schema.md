@@ -373,15 +373,15 @@ with the masthead as before.
 
 | Field | Required | What |
 |---|---|---|
-| `hero` | **yes** | 1 to 8 photo ids: they cross-fade and zoom slowly (still under reduced motion). |
-| `title`, `kicker` | | Default: the masthead's. The hero title is the page's only `h1`. |
+| `hero` | **yes** | 1 to 8 photo ids: they fill the first screen and cross-fade (still under reduced motion); the photos do not zoom. |
+| `title`, `kicker` | | Default: the masthead's. The hero title is the page's only `h1`; the kicker is not shown on the page. |
 | `dates` | | The dates as shown, for example "Saturday 12 to Saturday 19 June 2027". |
 | `start`, `end` | | `YYYY-MM-DD` for the countdown ("134 days to go", "Day 3 of 8" during, hidden after); default: the first and last day's `iso`. |
 | `tz`, `tz_place` | | The destination's IANA time zone (`Europe/Lisbon`) and the place named with its local time. |
 | `tldr` | | Three lines (*rich*): the trip at a glance. |
 | `alerts` | | Chips: `{text, href, icon}`; `href` is an in-page `#anchor` (`#day-7`). A holiday warning goes here, not in a box. |
 | `stays` | | Stop ids: "Where we stay" photo cards (words under the photo, at most four a row), each linking to the stop's card, with its website as a small second link. |
-| `highlights` | | Stop ids: "Can't-miss, day by day": one row per day in date order, each pick on the day whose plan has it (Plan A first, then B and C). A day with one pick lays its card on its side; a day with none shows the day's `sub` line. |
+| `highlights` | | Stop ids: "Can't-miss, day by day": one row per day in date order, each pick on the day whose plan has it (Plan A first, then B and C). A day with one pick lays its card on its side; a day with none shows the day's `sub` line. Under the picks, the day's Plan B, C and D swaps (one of each at most, a Can't-miss stop's own first): each with its photo and credit, a "Plan B" link that opens that swap at its stop, and the place's name. |
 | `home` | | `{name, lat, lng}`: where the travellers start; the globe draws a gold great-circle arc from it. |
 | `destination` | | `{name, lat, lng}`; default: the first stay's place. The arc continues to the bases (the stays' places). |
 

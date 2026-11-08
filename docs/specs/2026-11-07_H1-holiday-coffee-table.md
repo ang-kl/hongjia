@@ -177,3 +177,13 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
   chose "Stretch to fit" and overnight as "out late, sleep at base"): each day shows at least 08:00 to 20:00 and Plan A's
   own hours; a chosen swap with clock `start` and `end` times appears as a dashed card and stretches the day earlier,
   later or past midnight, with its own Add to calendar. A day with more than two cards side by side gets a wider column.
+- **The v15 opening screen, in today's type** (the owner: "I prefer the v15 landing screen as the landing"; they chose
+  "v15 layout, today's type"): the photo fills the first screen and the title, dates, countdown, local time and buttons
+  sit on it, centred, with the v15 soft shade so they stay readable and the credit at the top right. The words keep
+  Source Serif 4 and Source Sans 3 and plain lettering (no small-capitals line, no capital-letter buttons); the photos
+  stay still, and the one water line sits under the title in white. This is the one place where words sit on a photo.
+- **Plan B, C and D under Can't-miss** (the owner: "the 'Can't-miss, day by day' should include Plan B, Plan C, Plan D
+  picture with the hyperlink 'Plan B' etc."; they chose one of each a day, and a link that goes to the stop and opens the
+  swap): under each day's picks, at most one Plan B, one Plan C and one Plan D, a Can't-miss stop's own first, then the
+  day's order. Each shows the swap's photo and credit, a "Plan B" link and the place's name; the link opens that swap at
+  its stop, as the stop's own button does, so it is remembered on the device and shown on the map and in the Calendar.

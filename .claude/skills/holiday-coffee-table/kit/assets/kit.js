@@ -1070,6 +1070,12 @@ function placeAt(target){
   placedY=window.scrollY;
 }
 window.addEventListener('hashchange',goToHash);
+// A "Plan B" link under Can't-miss names a swap; tapped again after the swap was closed, the address does not
+// change, so the page opens it itself.
+document.addEventListener('click',function(e){
+  var a=e.target.closest&&e.target.closest('.cm-swap a[href^="#"]'); if(!a||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey){ return; }
+  if(location.hash===a.getAttribute('href')){ e.preventDefault(); goToHash(); }
+});
 if(location.hash){ if(document.readyState==='complete'){ goToHash(); } else { window.addEventListener('load',goToHash); } }
 
 /* ==== Add to calendar (the owner, 7 November 2026): each Add opens the family site's /calendar.ics with
