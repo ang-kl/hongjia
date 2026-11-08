@@ -368,6 +368,12 @@ are no groups.
 
 ## Opener
 
+Every place, plan and part gets its own anchor and a small # link beside its title (the owner, 8 November
+2026): sections and days by their ids, stops as `d{day}-{stop}`, the family's swaps as `d{day}-{stop}-{b|c|d}`,
+Can't-miss days as `cm-day-{n}`, the opening's parts as `op-glance`, `op-stays` and `op-cantmiss`, and a titled
+part inside a section as `p-` and its title in plain letters (a second part with the same title adds `-2`).
+Changing a title changes its part's address.
+
 `opener` makes the page start with a full-screen hero, before the masthead. Without it the page starts
 with the masthead as before.
 

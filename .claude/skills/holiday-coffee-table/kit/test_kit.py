@@ -257,10 +257,15 @@ const { chromium } = require('playwright');
       return page.evaluate(() => { const s = document.getElementById('d1-harbour-b'), r = s.getBoundingClientRect();
         return { open: !s.hidden, seen: r.top < innerHeight && r.bottom > 0, swaps: document.getElementById('d1-harbour').getAttribute('data-swaps') }; }); };
     const viaCm = await cm();
+    // a titled part's own address lands on it
+    const part = await page.evaluate(() => { const h = document.querySelector('main .sec h3[id^="p-"]'); return h && h.id; });
+    await page.evaluate(id => { location.hash = id; }, part);
+    await page.waitForTimeout(600);
+    const viaPart = await page.evaluate(id => { const r = document.getElementById(id).getBoundingClientRect(); return { id, seen: r.top >= -2 && r.top < innerHeight / 2 }; }, part);
     await page.click('#d1-harbour .swap-btn[data-swap="b"]');
     await page.evaluate(() => window.scrollTo(0, 0));
     const viaCm2 = await cm();
-    res[w] = { on, kept, off, viaHash, viaCm, viaCm2, calBC, calD, errors };
+    res[w] = { on, kept, off, viaHash, viaCm, viaCm2, viaPart, calBC, calD, errors };
     await ctx.close();
   }
   console.log(JSON.stringify(res));
@@ -1082,6 +1087,7 @@ class KitTest(unittest.TestCase):
             self.assertEqual(r['kept'], 'b c', f'{w}: remembered on this device')
             self.assertEqual(r['off'], {'swaps': '', 'open': 0, 'rest': False, 'tl': 0, 'pins': 0}, f'{w}: and undone')
             self.assertTrue(r['viaHash'], f'{w}: a link to a swap opens it')
+            self.assertTrue(r['viaPart']['id'] and r['viaPart']['seen'], f'{w}: a part\'s own address lands on it ({r["viaPart"]})')
             for k in ('viaCm', 'viaCm2'):
                 self.assertTrue(r[k]['open'] and r[k]['seen'] and 'b' in r[k]['swaps'].split(), f'{w}: "Plan B" under Can\'t-miss opens it ({k}: {r[k]})')
             bc, dd = r['calBC'], r['calD']
@@ -1504,6 +1510,49 @@ class KitTest(unittest.TestCase):
         self.assertIn('@mediaprint{.sec-link{display:none!important}}', css)
         with self.assertRaises(build.KitError):
             build.Page(copy.deepcopy(self.data)).sec_link('1 bad"id')
+
+    def test_key_point_links(self):
+        # the owner, 8 November 2026: every key point should have a link on an ID, "to share the link, to create jump
+        # easily"; they chose "Places, plans and parts"
+        main = find(self.root, 'main')[0]
+        op = find(self.root, 'section', id='opener')[0]
+        want = [(a.attrs['id'], find(a, 'h4')[0]) for a in find(main, 'article', 'stop')]
+        want += [(s.attrs['id'], find(s, 'h5')[0]) for s in find(main, 'section', 'swap')]
+        want += [(r.attrs['id'], find(r, 'h3')[0]) for r in find(op, 'div', 'cm-day')]
+        want += [(h.attrs['id'], h) for h in find(op, 'h2') if h.attrs.get('id')]
+        self.assertEqual({h.attrs.get('id') for h in find(op, 'h2')} - {None}, {'op-glance', 'op-stays', 'op-cantmiss'})
+        self.assertTrue(any(p.startswith('d1-') for p, _ in want) and any(p.endswith('-b') for p, _ in want))
+        # every titled part inside the reading sections: its own anchor, or the article it heads
+        cal = find(main, 'section', id='calendar')
+        for sec in find(main, 'section', 'sec'):
+            if cal and sec is cal[0]:
+                continue  # the Calendar's day columns lead to their days
+            for h in find(sec, 'h3'):
+                if h.attrs.get('id') and h.attrs['id'].startswith('p-'):
+                    want.append((h.attrs['id'], h))
+        self.assertTrue(any(p.startswith('p-') for p, _ in want), 'the sample has titled parts')
+        for pid, h in want:
+            links = find(h, 'a', 'sec-link')
+            self.assertEqual(len(links), 1, pid)
+            a = links[0]
+            self.assertEqual((a.attrs.get('href'), a.attrs.get('data-sec-link')), ('#' + pid, pid), pid)
+            self.assertEqual(a.text().strip(), '', pid)
+            self.assertTrue(a.attrs.get('aria-label', '').startswith('Share a link to this part: '), f'{pid}: says which part')
+            self.assertTrue(build.ID_OK.match(pid), pid)
+        # no titled part in a reading section is left without its #
+        for sec in find(main, 'section', 'sec'):
+            if cal and sec is cal[0]:
+                continue
+            for h in find(sec, 'h2') + find(sec, 'h3'):
+                self.assertTrue(find(h, 'a', 'sec-link'), f'{sec.attrs.get("id")}: {h.tag} "{h.text().strip()[:40]}" has no # link')
+        ids = [n.attrs['id'] for n in self.root.iter() if n.attrs.get('id')]
+        self.assertEqual(len(ids), len(set(ids)), 'every anchor is unique on the page')
+        for a in find(self.root, 'a', 'sec-link'):
+            self.assertIn(a.attrs['data-sec-link'], ids, 'every # names a part that is there')
+        # the same title twice gets two anchors
+        page = build.Page(copy.deepcopy(self.data))
+        self.assertEqual([page.part_id('Rules'), page.part_id('Rules'), page.part_id('Café & Bar'), page.part_id('⛪')],
+                         ['p-rules', 'p-rules-2', 'p-cafe-bar', 'p-part'])
 
     @unittest.skipUnless(BROWSER, 'needs node and Playwright')
     def test_gallery_in_a_browser(self):

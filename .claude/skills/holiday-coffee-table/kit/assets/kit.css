@@ -915,6 +915,9 @@ html[data-mode=print] .cal-add{display:none}
 .day-h.has-band .sec-link{color:#fff;border-color:rgba(255,255,255,.65)}
 .day-h.has-band .sec-link:hover,.day-h.has-band .sec-link:focus-visible{background:rgba(255,255,255,.18)}
 html[data-mode=print] .sec-link{display:none}
+/* a place's, a plan's or a day's # stays beside its name, however the name wraps (the owner, 8 November 2026) */
+.stop-h h4,.swap h5,.cm-when h3,.pc header h3{display:flex;align-items:flex-start;gap:.35em}
+.stop-h h4 > .sec-link,.swap h5 > .sec-link,.cm-when h3 > .sec-link,.pc header h3 > .sec-link{flex:none;margin:0}
 @media print{.sec-link{display:none !important}}
 
 /* ==== Direction A, "River" (the owner, 8 November 2026) ====
