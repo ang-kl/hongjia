@@ -206,6 +206,7 @@ START_RE = re.compile(rf'^(?:(?:around|about|from|at)\s+)?{CLOCK}$', re.I)
 BY_RE = re.compile(rf'^by\s+{CLOCK}$', re.I)
 TZ_RE = re.compile(r'^UTC\s*([+-])(\d{1,2})(?::?([0-5]\d))?$')
 CAL_SHORT = 30          # minutes, for an item with only a start ("09:15") or only an end ("By 15:00")
+CAL_DAY = (8, 20)       # the hours a day shows at least: "normal 8-8 PM" (the owner, 8 November 2026)
 CAL_MAX_EVENTS = 12     # the site's limit for one link
 
 
@@ -2117,6 +2118,26 @@ class Page:
             self._cal = days
         return self._cal
 
+    def swap_span(self, x):
+        """Where a swap sits in the Calendar: its start and end as clock times ("06:00", "07:15"; an end before the start
+        runs past midnight). `when` stays as the words on the card; a swap with no clock start is not drawn."""
+        if not x.get('start'):
+            return None
+        return clock_span(f'{x["start"]} to {x["end"]}' if x.get('end') else str(x['start']))
+
+    def cal_swaps(self, d):
+        """The day's swaps that have a clock time, for the Calendar: drawn only while chosen."""
+        out = []
+        for it in d['day'].get('stops') or []:
+            for p in SWAPS:
+                x = (it.get('swaps') or {}).get(p)
+                span = self.swap_span(x) if x else None
+                if span and d['date']:
+                    label, who, icon = self.swap_meta(p)
+                    out.append(dict(card=f'd{d["n"]}-{it["stop"]}', plan=p, span=span, x=x, stop=x['stop'],
+                                    title=f'{icon} {self.fmt("plan", p=p.upper())} · {self.unaccent(self.stops[x["stop"]]["name"])}'))
+        return out
+
     def cal_event(self, x, date, span):
         """The link parameters of one event (without its index)."""
         def stamp(minutes):
@@ -2147,10 +2168,16 @@ class Page:
         tz = str(self.d['meta'].get('tz'))
         head = self.head(dict(kicker=c.get('kicker') or self.L['cal_kicker'], title=c.get('title') or self.L['cal_title'],
                               intro=c.get('intro') or self.L['cal_intro'].format(tz=tz)), 'calendar', 'calendar')
-        # The hours shown: from the earliest start to the latest end of any timed item, whole hours.
+        # The hours shown: at least 8 to 8 and every timed Plan A item; a chosen swap stretches them, earlier, later or past
+        # midnight (the owner, 8 November 2026). The grid holds every swap's hours; the page shows only the window needed.
         spans = [it['span'] for d in days for it in d['items'] if it['span']]
-        first, last = min(a for a, _ in spans) // 60, -(-max(b for _, b in spans) // 60)
-        hours = max(1, last - first)
+        swaps = {d['n']: self.cal_swaps(d) for d in days}
+        win_first = min(CAL_DAY[0], min(a for a, _ in spans) // 60)
+        win_last = max(CAL_DAY[1], -(-max(b for _, b in spans) // 60))
+        sspans = [s['span'] for v in swaps.values() for s in v]
+        first = min([win_first] + [a // 60 for a, _ in sspans])
+        last = max([win_last] + [-(-b // 60) for _, b in sspans])
+        hours = max(1, win_last - win_first)
         min_len = 0.5  # hours: the shortest card drawn (44 px at the calendar's 88 px hour)
         axis = ''.join(f'<span style="--at:{h - first}">{h % 24:02d}:00</span>' for h in range(first, last + 1))
         cols = []
@@ -2187,6 +2214,20 @@ class Page:
                 cards.append(dict(top=top, end=vis_end, html=(
                     f'<p class="cal-time" title="{E(x.get("time") or "")}">{E(shown)}</p>'
                     f'<p class="cal-title" style="--lines:{lines}">{self.pl_text(x, title)}</p>{add}'), length=length, loose=loose))
+            # The day's swaps, hidden until chosen; the page's script gives them their lanes when they show.
+            swap_html = []
+            for s in swaps.get(d['n']) or []:
+                a, b = s['span']
+                ev = self.cal_event(dict(title=s['title'], stop=s['stop'], time=''), d['date'], s['span'])
+                label = self.L['cal_add_aria'].format(title=s['title'])
+                add = (f'<a class="cal-add cal-add-one" href="{E(self.cal_href(s["title"], [ev]))}" target="_blank" rel="noopener" data-ics'
+                       f' aria-label="{E(label)}" title="{E(label)}"><span aria-hidden="true">＋</span></a>')
+                length = (b - a) / 60
+                lines = max(1, int((max(length, min_len) * 88 - 26) // 16))
+                shown = f'{a // 60 % 24:02d}:{a % 60:02d}-{b // 60 % 24:02d}:{b % 60:02d}'
+                swap_html.append(f'<article class="cal-ev cal-swap" data-card="{E(s["card"])}" data-swap="{s["plan"]}" hidden'
+                                 f' style="--top:{a / 60 - first:.3f};--len:{length:.3f};--lane:0;--lanes:1">'
+                                 f'<p class="cal-time">{E(shown)}</p><p class="cal-title" style="--lines:{lines}">{E(s["title"])}</p>{add}</article>')
             # Side by side where cards overlap: each card takes the first free lane in its group.
             groups, cur = [], []
             for cd in sorted(cards, key=lambda c: c['top']):
@@ -2219,9 +2260,10 @@ class Page:
                            f' aria-label="{E(self.L["cal_add_day_aria"].format(n=d["n"], when=when))}">＋ {E(self.L["cal_add_day"])}</a>')
             cols.append(f'<section class="cal-day" aria-labelledby="cal-h-{d["n"]}"><header class="cal-dh">'
                         f'<h3 id="cal-h-{d["n"]}"><a href="#day-{d["n"]}"><span class="mono">{E(self.L["day"])} {d["n"]}</span> {E(when)}</a></h3>{add_day}</header>'
-                        f'<div class="cal-track">{"".join(html)}</div></section>')
+                        f'<div class="cal-track">{"".join(html)}{"".join(swap_html)}</div></section>')
         return (f'<section id="calendar" class="sec">{head}<p class="fine cal-off" hidden>{E(self.L["cal_off"])}</p>'
-                f'<div class="cal-scroll" tabindex="0" aria-label="{E(self.L["cal_kicker"])}" style="--hours:{hours}"><div class="cal-grid" style="--days:{len(days)}">'
+                f'<div class="cal-scroll" tabindex="0" aria-label="{E(self.L["cal_kicker"])}" data-first="{first}" data-win-from="{win_first}" data-win-to="{win_last}"'
+                f' style="--hours:{hours};--from:{win_first - first}"><div class="cal-grid" style="--days:{len(days)}">'
                 f'<div class="cal-axis" aria-hidden="true"><div class="cal-dh"></div><div class="cal-track">{axis}</div></div>'
                 + ''.join(cols) + '</div></div></section>')
 

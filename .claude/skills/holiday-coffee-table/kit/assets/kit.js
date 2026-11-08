@@ -393,6 +393,7 @@ function setSwap(card,p,on,save){
   var rest=card.querySelector('.swap-rest'); if(rest){ rest.hidden=!list.some(function(x){ return x!=='d'; }); }
   if(save){ store.set(SKEY+'swap:'+card.id,list.join(',')); }
   swapMarks(card,list);
+  calLayout();
   var d=D.days[dayIdx];
   if(map&&d&&(d.swaps||[]).some(function(s){ return s.card===card.id; })){ drawDay(); }
   if(window.railLayout){ setTimeout(window.railLayout,60); }
@@ -405,6 +406,37 @@ document.addEventListener('click',function(e){
   var b=e.target.closest&&e.target.closest('.swap-btn'); if(!b){ return; }
   var card=b.closest('.stop'); if(card){ setSwap(card,b.getAttribute('data-swap'),b.getAttribute('aria-pressed')!=='true',true); }
 });
+/* The Calendar shows the chosen swaps and stretches each day to fit: at least 8 to 8 and Plan A's own hours, earlier,
+   later or past midnight for a chosen swap (the owner, 8 November 2026). Cards that overlap share the width. */
+function calNum(e,k){ var v=parseFloat(e.style.getPropertyValue(k)); return isFinite(v)?v:0; }
+function calLanes(track){
+  var evs=$$('.cal-ev',track).filter(function(e){ return !e.hidden; }).map(function(e){ var top=calNum(e,'--top'); return {e:e,top:top,end:top+Math.max(calNum(e,'--len'),0.5)}; });
+  evs.sort(function(a,b){ return a.top-b.top; });
+  var groups=[], cur=[], end=-1;
+  evs.forEach(function(x){ if(cur.length&&x.top>=end-1e-9){ groups.push(cur); cur=[]; end=-1; } cur.push(x); end=Math.max(end,x.end); });
+  if(cur.length){ groups.push(cur); }
+  groups.forEach(function(g){ var lanes=[];
+    g.forEach(function(x){ var i=-1; for(var k=0;k<lanes.length;k++){ if(lanes[k]<=x.top+1e-9){ i=k; break; } } if(i<0){ lanes.push(x.end); i=lanes.length-1; } else { lanes[i]=x.end; } x.lane=i; });
+    g.forEach(function(x){ x.e.style.setProperty('--lane',String(x.lane)); x.e.style.setProperty('--lanes',String(lanes.length)); }); });
+}
+function calLayout(){
+  var sc=$('.cal-scroll'); if(!sc||!sc.hasAttribute('data-first')){ return; }
+  var first=+sc.getAttribute('data-first'), lo=+sc.getAttribute('data-win-from'), hi=+sc.getAttribute('data-win-to');
+  $$('.cal-ev.cal-swap',sc).forEach(function(ev){
+    var card=document.getElementById(ev.getAttribute('data-card')), on=!!card&&swapState(card).indexOf(ev.getAttribute('data-swap'))>=0;
+    ev.hidden=!on;
+    if(on){ var top=calNum(ev,'--top'); lo=Math.min(lo,first+Math.floor(top)); hi=Math.max(hi,first+Math.ceil(top+Math.max(calNum(ev,'--len'),0.5))); }
+  });
+  sc.style.setProperty('--from',String(lo-first)); sc.style.setProperty('--hours',String(Math.max(1,hi-lo)));
+  var most=$$('.cal-day .cal-track',sc).map(function(tr){ calLanes(tr); return $$('.cal-ev',tr).filter(function(e){ return !e.hidden; }).reduce(function(m,e){ return Math.max(m,calNum(e,'--lanes')); },1); });
+  // A day with more than two cards side by side (Plan A beside a split) gets a wider column, so every card stays readable.
+  var grid=$('.cal-grid',sc), phone=!!window.matchMedia&&window.matchMedia('(max-width:760px)').matches;
+  if(grid){ grid.style.gridTemplateColumns=most.some(function(n){ return n>2; })?'var(--axis) '+most.map(function(n){
+      return n>2?(phone?'calc(31vw * '+n+')':'minmax('+(120*n)+'px,'+(n/2)+'fr)'):(phone?'62vw':'minmax(132px,1fr)'); }).join(' '):''; }
+}
+calLayout();
+if(window.matchMedia){ var calMq=window.matchMedia('(max-width:760px)'); if(calMq.addEventListener){ calMq.addEventListener('change',calLayout); } }
+
 // A link to a swap's own place (a place panel, a # link) opens that swap first, so the reader lands on it.
 function openSwapAt(target){
   if(!target||!target.classList||!target.classList.contains('swap')||!target.hidden){ return; }

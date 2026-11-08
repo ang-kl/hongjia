@@ -252,13 +252,19 @@ stop, so the family can split up (B and C at once) and meet again; the choice is
 device, the day's map shows the chosen places as dashed pins with their letter, and the timeline says
 "Swapped: B, C". A place used only as a swap opens that swap when its panel or a # link points at it.
 
+The Calendar (the owner, 8 November 2026: a day can run from the normal 8am to 8pm, to about 18 hours, or overnight) shows
+each day from at least 08:00 to 20:00 and Plan A's own hours; a chosen swap with a `start` appears as a dashed card in
+its day and stretches the day earlier, later or past midnight. Overnight means out late and back to that night's base.
+A day with more than two cards side by side gets a wider column.
+
 A Plan A item's `swaps` is `{"b": swap, "c": swap, "d": swap}` (any of them). Each swap:
 
 | Field | Required | What |
 |---|---|---|
 | `stop` | **yes** | A `stops` id, never the Plan A stop itself. The swap shows its first photo, name (opening its panel), line, `trail`, links and hours. |
 | `role` | | One plain line for this swap. |
-| `start`, `end` or `when` | | The time ("10:30" to "11:45", or "06:20 sunrise"). |
+| `start`, `end` | | Clock times ("06:00", "07:15"; an end before the start runs past midnight). They place the swap in the Calendar when it is chosen. |
+| `when` | | The time as words on the card ("06:23 sunrise; first light 05:59"). Without `start`, the swap is not drawn in the Calendar. |
 | `go` | | *rich*: how to get there ("Walk 5 min", "Taxi about 10 min, about $20 [[src:key]]"). |
 | `checkin` | | *rich*: for someone going alone ("Message the family at 10:00"). |
 | `meet` | | `{time, place, stop}`: where and when the family meets again. `time` and `place` are required; `stop` (a `stops` id) links the place. |

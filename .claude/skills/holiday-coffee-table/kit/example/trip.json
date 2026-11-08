@@ -336,7 +336,9 @@
         "time": "08:00",
         "place": "breakfast at the hotel",
         "stop": "hotel"
-       }
+       },
+       "start": "06:30",
+       "end": "07:30"
       }
      }
     },

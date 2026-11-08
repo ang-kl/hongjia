@@ -886,10 +886,10 @@ html[data-view=gallery] .layout{display:block}
 .cal-dh h3{margin:0;font:600 .86rem/1.2 var(--sans);color:var(--ink)}
 .cal-dh h3 a{color:inherit;text-decoration:none}
 .cal-dh h3 .mono{display:block;font-size:.58rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
-.cal-track{position:relative;height:calc(var(--hours) * var(--hour));background:repeating-linear-gradient(to bottom,var(--rule2) 0,var(--rule2) 1px,transparent 1px,transparent var(--hour))}
+.cal-track{position:relative;overflow:hidden;height:calc(var(--hours) * var(--hour));background:repeating-linear-gradient(to bottom,var(--rule2) 0,var(--rule2) 1px,transparent 1px,transparent var(--hour))}
 .cal-axis .cal-track{background:none}
-.cal-axis .cal-track span{position:absolute;right:8px;top:calc(var(--at) * var(--hour) + 3px);font:500 .62rem/1 var(--sans);color:var(--muted);font-variant-numeric:tabular-nums}
-.cal-ev{position:absolute;box-sizing:border-box;top:calc(var(--top) * var(--hour) + 2px);left:calc(4px + (100% - 8px) * var(--lane) / var(--lanes));width:calc((100% - 8px) / var(--lanes) - 3px);height:calc(var(--len) * var(--hour) - 4px);min-height:40px;padding:5px 36px 5px 8px;border-radius:10px;background:var(--accent-wash);border-left:3px solid var(--gold);overflow:hidden}
+.cal-axis .cal-track span{position:absolute;right:8px;top:calc((var(--at) - var(--from,0)) * var(--hour) + 3px);font:500 .62rem/1 var(--sans);color:var(--muted);font-variant-numeric:tabular-nums}
+.cal-ev{position:absolute;box-sizing:border-box;top:calc((var(--top) - var(--from,0)) * var(--hour) + 2px);left:calc(4px + (100% - 8px) * var(--lane) / var(--lanes));width:calc((100% - 8px) / var(--lanes) - 3px);height:calc(var(--len) * var(--hour) - 4px);min-height:40px;padding:5px 36px 5px 8px;border-radius:10px;background:var(--accent-wash);border-left:3px solid var(--gold);overflow:hidden}
 .cal-loose{background:transparent;border:1px dashed var(--gold-soft);padding-right:8px}
 .cal-time{margin:0;font:500 .62rem/1.3 var(--sans);letter-spacing:.02em;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cal-loose .cal-time{text-transform:uppercase;letter-spacing:.08em}
@@ -1079,4 +1079,7 @@ thead th,.cc-grid dt,.upg-dl dt,.sh-facts dt{font-family:var(--sans);font-size:v
 .plan-btn b.wx-i{background:transparent;border-color:transparent;font-size:1rem}
 @media (max-width:560px){.swap-body{grid-template-columns:minmax(0,1fr)}.swap-facts{grid-template-columns:minmax(0,1fr)}.swap-facts dd{margin-bottom:4px}}
 @media print{.swap[hidden]{display:none}.swaps{display:none}}
+/* a chosen swap in the Calendar: dashed, with its plan letter in the title */
+.cal-ev.cal-swap{background:#fff;border:1px dashed var(--gold);border-left:3px dashed var(--gold)}
+@media print{.cal-grid{grid-template-columns:40px repeat(var(--days),1fr) !important}}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--paper:#fbfaf6}}

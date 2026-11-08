@@ -173,3 +173,7 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
 - **Tests:** 58 (three new: the swaps' markup and data, their checks, and a browser run at 1180 and 390 px: open B and C,
   the timeline note, the two pins, remembered after a reload, undone, and opened from a # link).
 - Who each swap is for, and the owner's rules for a particular family, stay in the private data file.
+- **The Calendar stretches to fit** (the owner: a day can run from the normal 8am to 8pm, to about 18 hours, or overnight; they
+  chose "Stretch to fit" and overnight as "out late, sleep at base"): each day shows at least 08:00 to 20:00 and Plan A's
+  own hours; a chosen swap with clock `start` and `end` times appears as a dashed card and stretches the day earlier,
+  later or past midnight, with its own Add to calendar. A day with more than two cards side by side gets a wider column.

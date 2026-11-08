@@ -237,6 +237,12 @@ const { chromium } = require('playwright');
       wide: document.documentElement.scrollWidth > innerWidth + 1 }; });
     await page.reload({ waitUntil: 'load' });
     const kept = await page.evaluate(() => document.getElementById('d1-harbour').getAttribute('data-swaps'));
+    const sc = () => page.evaluate(() => { const s = document.querySelector('.cal-scroll'); return { from: s.style.getPropertyValue('--from'), hours: s.style.getPropertyValue('--hours'),
+      shown: [...document.querySelectorAll('.cal-swap')].filter(e => !e.hidden).map(e => e.dataset.swap + ':' + e.style.getPropertyValue('--lanes')) }; });
+    const calBC = await sc();
+    await page.click('#d1-harbour .swap-btn[data-swap="d"]');
+    const calD = await sc();
+    await page.click('#d1-harbour .swap-btn[data-swap="d"]');
     await page.click('#d1-harbour .swap-btn[data-swap="b"]');
     await page.click('#d1-harbour .swap-btn[data-swap="c"]');
     const off = await page.evaluate(() => { const c = document.getElementById('d1-harbour'); return { swaps: c.getAttribute('data-swaps'),
@@ -246,7 +252,7 @@ const { chromium } = require('playwright');
     await page.evaluate(() => { location.hash = 'd1-harbour-d'; });
     await page.waitForTimeout(300);
     const viaHash = await page.evaluate(() => !document.getElementById('d1-harbour-d').hidden);
-    res[w] = { on, kept, off, viaHash, errors };
+    res[w] = { on, kept, off, viaHash, calBC, calD, errors };
     await ctx.close();
   }
   console.log(JSON.stringify(res));
@@ -1055,6 +1061,11 @@ class KitTest(unittest.TestCase):
             self.assertEqual(r['kept'], 'b c', f'{w}: remembered on this device')
             self.assertEqual(r['off'], {'swaps': '', 'open': 0, 'rest': False, 'tl': 0, 'pins': 0}, f'{w}: and undone')
             self.assertTrue(r['viaHash'], f'{w}: a link to a swap opens it')
+            bc, dd = r['calBC'], r['calD']
+            self.assertEqual(sorted(x.split(':')[0] for x in bc['shown']), ['b', 'c'], f'{w}: the Calendar shows the chosen swaps')
+            self.assertTrue(all(int(x.split(':')[1]) >= 2 for x in bc['shown']), f'{w}: beside Plan A, sharing the width')
+            self.assertGreater(int(dd['hours']), int(bc['hours']), f'{w}: a sunrise swap stretches the day earlier')
+            self.assertLess(int(dd['from']), int(bc['from']), f'{w}: from an earlier hour')
 
     # ------------------------------------------------------------ Direction A (the owner, 8 November 2026)
     def test_cant_miss_by_day(self):
@@ -1502,8 +1513,16 @@ class KitTest(unittest.TestCase):
         cols = find(sec[0], 'section', 'cal-day')
         self.assertEqual(len(cols), len(self.data['days']), 'one column per day')
         timed = [t for d in self.data['days'] for t in d.get('timeline') or [] if build.clock_span(t.get('time'))]
-        adds = find(sec[0], 'a', 'cal-add-one')
+        adds = [a for a in find(sec[0], 'a', 'cal-add-one') if outside(a, lambda p: 'cal-swap' in (p.attrs.get('class') or '').split())]
         self.assertEqual(len(adds), len(timed), 'an Add for every timed item')
+        # The family's swaps with a clock time wait in the Calendar, hidden until chosen (the owner, 8 November 2026).
+        sw = find(sec[0], 'article', 'cal-swap')
+        self.assertEqual([(a.attrs['data-card'], a.attrs['data-swap']) for a in sw], [('d1-harbour', 'b'), ('d1-harbour', 'c'), ('d1-harbour', 'd')])
+        self.assertTrue(all('hidden' in a.attrs and find(a, 'a', 'cal-add-one') for a in sw))
+        scroll = find(sec[0], 'div', 'cal-scroll')[0]
+        self.assertLessEqual(int(scroll.attrs['data-win-from']), 8)
+        self.assertGreaterEqual(int(scroll.attrs['data-win-to']), 20, 'a day shows at least 8 to 8')
+        self.assertLessEqual(int(scroll.attrs['data-first']), 6, 'and the grid holds the sunrise swap, for when it is chosen')
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(adds[0].attrs['href']).query)
         first = self.data['days'][0]
         a, b = build.clock_span(first['timeline'][0]['time'])

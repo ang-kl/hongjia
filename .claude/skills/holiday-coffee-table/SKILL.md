@@ -223,6 +223,9 @@ accepts answers only from `window.parent`. The site checks every message's field
   - Every swap is a researched place with its own photo, credit, links, hours on that date (public
     holidays checked) and, for a walk, its `trail` facts with their source. Where nothing fits, the
     stop has no swap for that plan: never force one.
+  - A day runs from the normal 8am to 8pm, to about 18 hours, or overnight (out late, back to that
+    night's base). Give swaps clock `start` and `end` times so the Calendar shows them and stretches
+    the day when they are chosen.
 
 ## Privacy
 
