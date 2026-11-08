@@ -356,6 +356,17 @@ def check_url(url, where, allow=('https',)):
     return url
 
 
+# Wikimedia limits its older thumbnail address for pages like ours (pictures came back "too many requests" on
+# 8 November 2026) and serves the same thumbnails from thumb.wikimedia.org, so the kit uses that address.
+OLD_THUMBS = 'https://upload.wikimedia.org/wikipedia/commons/thumb/'
+NEW_THUMBS = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/'
+
+
+def wm_thumb(src):
+    """A Wikimedia thumbnail at its newer address; any other picture address unchanged."""
+    return NEW_THUMBS + src[len(OLD_THUMBS):] if isinstance(src, str) and src.startswith(OLD_THUMBS) else src
+
+
 def check_image(src, where):
     if isinstance(src, str) and src.startswith('data:image/'):
         return src
@@ -481,6 +492,7 @@ class Page:
                 for k in ('poster', 'alt', 'cap', 'credit'):
                     if not c.get(k):
                         raise KitError(f'stops.{key}.clips[{i}].{k} is required')
+                c['poster'] = wm_thumb(c['poster'])
                 check_image(c['poster'], f'stops.{key}.clips[{i}].poster')
                 if not c.get('sources'):
                     raise KitError(f'stops.{key}.clips[{i}]: at least one video source is required')
@@ -698,6 +710,7 @@ class Page:
         for k in ('src', 'alt', 'cap', 'credit'):
             if not p.get(k):
                 raise KitError(f'{where}.{k} is required (every photo needs a picture, a description, a caption and a credit)')
+        p['src'] = wm_thumb(p['src'])
         check_image(p['src'], where + '.src')
         for k in ('credit_url', 'licence_url'):
             if p.get(k):
@@ -2878,6 +2891,10 @@ def check_html(html, name='page'):
         if n.tag == 'style':
             for m in re.finditer(r'(?i)(url\(\s*["\']?|@import\s+["\'])http://[^\s"\')]+', n.text()):
                 problems.append(('http link', f'stylesheet: {m.group(0)[:80]}'))
+    # 6b. pictures at Wikimedia's older thumbnail address, which Wikimedia limits (8 November 2026)
+    old = html.count(OLD_THUMBS)
+    if old:
+        problems.append(('old photo address', f'{old} picture address(es) use {OLD_THUMBS}, which Wikimedia limits; build the page again (the kit uses {NEW_THUMBS})'))
     # 7. wording that reads as machine-written (the owner's checklist, 8 November 2026)
     problems += [('wording that reads as AI', x) for x in copy_problems(html)]
     return problems
