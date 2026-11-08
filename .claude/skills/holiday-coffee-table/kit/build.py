@@ -1392,13 +1392,15 @@ class Page:
     def trail_line(self, tr, where):
         if not tr:
             return ''
-        bits = [f'{tr["km"]:g} km'] + ([str(tr['time'])] if tr.get('time') else []) + [self.L['trail_grade_' + tr['grade']]]
-        bits.append(self.L['trail_marked'] if tr.get('marked') else self.L['trail_unmarked'])
+        bits = [E(f'{tr["km"]:g} km')] + ([E(str(tr['time']))] if tr.get('time') else []) + [E(self.L['trail_grade_' + tr['grade']])]
+        bits.append(E(self.L['trail_marked'] if tr.get('marked') else self.L['trail_unmarked']))
         for k, lab in (('busy', 'trail_busy'), ('shade', 'trail_shade'), ('toilets', 'trail_toilets'), ('phone', 'trail_phone')):
             if tr.get(k):
-                bits.append(self.L[lab].format(why=tr[k], x=tr[k]))
+                # a note may carry its own source tag ("[[src:key]]"), so it is read as rich text
+                pre, _, post = self.L[lab].replace('{why}', '{x}').partition('{x}')
+                bits.append(E(pre) + self.rich(str(tr[k]), f'{where}.{k}') + E(post))
         return (f'<p class="trail" data-fact><span aria-hidden="true">🥾</span> <span class="sr">{E(self.L["trail_aria"])}: </span>'
-                + E(' · '.join(bits)) + f' {self.src_tag(tr["source"], where=where)}</p>')
+                + ' · '.join(bits) + f' {self.src_tag(tr["source"], where=where)}</p>')
 
     def swap_panel(self, n, p, x, pid, where):
         label, who, icon = self.swap_meta(p)
@@ -1413,9 +1415,10 @@ class Page:
             ph = (f'<figure class="swap-ph"><img src="{E(img["src"])}" alt="{E(img["alt"])}" loading="lazy" decoding="async" referrerpolicy="no-referrer">'
                   f'<figcaption><span class="credit">{self.credit(img, original=False)}</span></figcaption></figure>')
         rows = []
-        when = x.get('when') or ' to '.join(v for v in (x.get('start'), x.get('end')) if v)
-        if when:
-            rows.append((self.L['swap_when'], E(when)))
+        if x.get('when'):  # words, which may carry a source tag (sunrise and sunset times)
+            rows.append((self.L['swap_when'], self.rich(x['when'], where + '.when')))
+        elif x.get('start'):
+            rows.append((self.L['swap_when'], E(' to '.join(v for v in (x.get('start'), x.get('end')) if v))))
         if x.get('go'):
             rows.append((self.L['swap_go'], self.rich(x['go'], where + '.go')))
         if x.get('checkin'):
@@ -2575,7 +2578,8 @@ class Page:
                         spl = self.places[sst['place']]
                         label, who, icon = self.swap_meta(p)
                         swaps.append(dict(card=f'd{i + 1}-{it["stop"]}', plan=p, name=sst['name'], lat=spl['lat'], lng=spl['lng'],
-                                          label=f'{icon} {self.fmt("plan", p=p.upper())} · {label}', note=x.get('when') or x.get('start') or ''))
+                                          label=f'{icon} {self.fmt("plan", p=p.upper())} · {label}',
+                                          note=self.plain(x.get('when') or '') or ' to '.join(v for v in (x.get('start'), x.get('end')) if v)))
             days.append(dict(n=i + 1, label=f'{self.L["day"]} {i + 1} · {d["when"]}', title=self.unaccent(d['title']), iso=d.get('iso') or '',
                              weather=d.get('weather') or '', stops=stops, legs=legs, swaps=swaps))
         ui = {k: self.L[k] for k in ('fly', 'fly_stop', 'short_walk', 'optional', 'map_fallback', 'tiles_notice', 'wx_from', 'wx_error', 'wx_past', 'wx_none',

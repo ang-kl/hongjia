@@ -1000,6 +1000,16 @@ class KitTest(unittest.TestCase):
         self.assertIn('data-fact', trail.attrs)
         self.assertTrue(find(trail, 'a', 'src'), "a walk's length and grade carry their source")
         self.assertIn('2.4 km', trail.text())
+        d = copy.deepcopy(self.data)
+        d['stops']['coastpath']['trail']['busy'] = 'the town\'s morning path [[src:ex_hours]]'
+        tr = find(find(build.parse_html(build.build(d)), 'section', id='d1-harbour-b')[0], 'p', 'trail')[0]
+        self.assertNotIn('[[src:', tr.text(), "a walk's note may carry its own source tag")
+        self.assertEqual(len(find(tr, 'a', 'src')), 2)
+        sw = [x for x in d['days'][0]['stops'] if x['stop'] == 'harbour'][0]['swaps']
+        sw['d']['when'] = '06:45 sunrise [[src:ex_climate]]'
+        dd = find(find(build.parse_html(build.build(d)), 'section', id='d1-harbour-d')[0], 'dd')[0]
+        self.assertNotIn('[[src:', dd.text(), 'a sunrise time may carry its source tag')
+        self.assertTrue(find(dd, 'a', 'src'))
         self.assertEqual([x.text() for x in find(b, 'dt')], ['When', 'Getting there', 'Check in', 'Meet up'])
         meet = find(b, 'dd')[-1]
         self.assertIn('12:00', meet.text())
