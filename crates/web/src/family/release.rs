@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.08 (5)";
+pub const VERSION: &str = "2026.11.08 (6)";
 
-pub const SYNOPSIS: &str = "This version brings back the v15 opening screen on a trip page, as the owner asked, in today's type: the photo fills the first screen, with the trip's title, dates, countdown and the Play the trip and Start reading buttons centred on it, and the photo's credit at the top right. Under Can't-miss, day by day, each day now also shows its Plan B, Plan C and Plan D, one of each at most, each with its photo and credit and a link named Plan B, Plan C or Plan D; the link goes to that stop and opens the swap there, as its own button does.";
+pub const SYNOPSIS: &str = "This version gives every key point of a trip page its own link, as the owner asked: besides each section and day, each stop, each Plan B, C and D, each Can't-miss day, the opening's three parts and every titled part inside a section now has a small # beside its title. A tap shares the full address of that point on the family site, or offers Copy link; opening the address after signing in lands on that point, and a Plan B, C or D opens there too.";

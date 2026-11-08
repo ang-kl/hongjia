@@ -35,6 +35,11 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
   with nothing marked says what the day is; under each day's picks, its Plan B, C and D, one of each
   at most, each with its photo and credit and a "Plan B" link that opens that swap at its stop), and
   the globe from home to the destination. While the tour plays, the family site folds its right-hand buttons into a 🔭.
+- **A # link on every place, plan and part** (the owner, 8 November 2026: every key point should have a
+  link on an ID, "to share the link, to create jump easily"; they chose "Places, plans and parts"):
+  each section, day and Gallery day, each stop, each Plan B, C and D, each Can't-miss day, the
+  opening's three parts and every titled part inside a section. A tap shares the family site's full
+  address for that point (or offers Copy link); opened, it lands there, and a swap's link opens it.
 - **Legend** that lights up places on the page and the map by category (stays, transport, weather,
   food, drinks, snacks, shopping, fun, sights, worship).
 - **Days**, one article each: the day's photo band, route line with every place linked, badges,

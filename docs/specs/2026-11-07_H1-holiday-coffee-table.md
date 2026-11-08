@@ -187,3 +187,14 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
   swap): under each day's picks, at most one Plan B, one Plan C and one Plan D, a Can't-miss stop's own first, then the
   day's order. Each shows the swap's photo and credit, a "Plan B" link and the place's name; the link opens that swap at
   its stop, as the stop's own button does, so it is remembered on the device and shown on the map and in the Calendar.
+- **The shade stays** (the owner, 8 November 2026: "Keep the shade as it is"): the v15 soft shade under the opening's
+  words is kept as it is.
+- **A # link on every place, plan and part** (the owner: "every key points should have either: Placing Hyperlinks on the
+  Anchor Element (<a>); Placing Hyperlinks with Flexible Paths (Relative vs. Absolute Links); Placing Hyperlinks on an
+  ID (In-Page / Jump / Anchor Links). These can help humans to share the link, to create jump easily"; they chose
+  "Places, plans and parts"). Besides the sections, days and Gallery days, each stop, each Plan B, C and D, each
+  Can't-miss day, the opening's three parts and every titled part inside a section has its own ID and a small # link
+  (an `<a>`) beside its title. In the page the link is relative (`#d1-harbour`); a tap on the family site shares the
+  full address of that point (`https://` the site, the document, `#d1-harbour`), or offers Copy link, and opening
+  it after signing in lands on the point. A swap's address also opens the swap. A titled part's ID is `p-` and its
+  title in plain letters, so it lasts as long as the title does.

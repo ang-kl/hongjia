@@ -18,6 +18,7 @@ import math
 import os
 import re
 import sys
+import unicodedata
 import urllib.parse
 from html import escape, unescape
 from html.parser import HTMLParser
@@ -1258,7 +1259,7 @@ class Page:
         swaps = self.swaps_html(day, n, item, did) if plan == 'a' else ''
         out = (f'<article class="stop" id="{E(did)}"{self.cats_attr(cats)}{" data-swaps=" + chr(34) + chr(34) if swaps else ""}>'
                f'<header class="stop-h"><span class="pin-letter" aria-hidden="true">{letter}</span>'
-               f'<div><h4>{self.pl_link(self.place_pid[st["place"]], E(st["name"]), did)}</h4><p class="role">{E(role)}</p>{self.cat_chips(cats)}</div>'
+               f'<div><h4>{self.pl_link(self.place_pid[st["place"]], E(st["name"]), did)}{self.sec_link(did, st["name"])}</h4><p class="role">{E(role)}</p>{self.cat_chips(cats)}</div>'
                f'<button type="button" class="btn-ghost show-map" data-day="{n - 1}" data-idx="{idx if plan == "a" else -1}" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" data-name="{E(st["name"])}" data-note="{E(note)}">{E(self.L["show_on_map"])}</button></header>'
                f'{swaps}'
                f'{self.suits(st, sid)}'
@@ -1341,7 +1342,7 @@ class Page:
         groups = self.d.get('worship') or []
         if not groups:
             return ''
-        out = f'<div class="worship" data-cats="worship"><h3 class="h-rule">⛪ {E(self.L["worship_title"])}</h3>'
+        out = f'<div class="worship" data-cats="worship">' + self.part_h3(f'⛪ {E(self.L["worship_title"])}', self.L['worship_title'])
         for gi, g in enumerate(groups):
             base = g.get('title') or (self.areas.get(g.get('base')) or {}).get('name') or g.get('base') or ''
             out += (f'<h4>{E(base)}</h4>' if base else '') + '<div class="alts-grid">' + ''.join(
@@ -1433,7 +1434,7 @@ class Page:
         cats = self.stop_cats.get(sid) or []
         return (f'<section class="swap" id="{E(pid)}" data-swap="{p}" data-stop="{E(sid)}"{self.cats_attr(cats)} hidden>'
                 f'<p class="swap-h">{E(head)}</p><div class="swap-body">{ph}<div>'
-                f'<h5>{self.pl_link(self.place_pid[st["place"]], E(st["name"]), pid)}</h5>'
+                f'<h5>{self.pl_link(self.place_pid[st["place"]], E(st["name"]), pid)}{self.sec_link(pid, self.fmt("plan", p=p.upper()) + ": " + st["name"])}</h5>'
                 + (f'<p class="role">{E(x.get("role") or st.get("line") or "")}</p>' if (x.get('role') or st.get('line')) else '')
                 + self.trail_line(st.get('trail'), w + '.trail')
                 + (f'<dl class="swap-facts">{facts}</dl>' if facts else '')
@@ -1576,7 +1577,7 @@ class Page:
         for ai, a in enumerate(ts.get('areas') or []):
             w = f'taste_shop.areas[{ai}]'
             title = a.get('title') or (self.areas.get(a.get('area')) or {}).get('name') or a.get('area') or ''
-            out += f'<div class="ts-area"><h3 class="h-rule">{self.accent(title)}</h3>'
+            out += '<div class="ts-area">' + self.part_h3(self.accent(title), title)
             if a.get('intro'):
                 out += f'<p class="ts-text">{self.rich(a["intro"], w + ".intro")}</p>'
             sig = a.get('signature') or []
@@ -1711,7 +1712,7 @@ class Page:
         a = self.areas[aid]
         secs = ''.join(f'<section{" class=" + chr(34) + E(g["tone"]) + chr(34) if g.get("tone") else ""}><h4>{E(g["title"])}</h4><ul>{self.area_items(g.get("items") or [], False, f"areas.{aid}")}</ul></section>'
                        for g in a.get('groups') or [])
-        return (f'<article class="pc" id="pc-{E(aid)}"><header><h3>{E(a["name"])}</h3>'
+        return (f'<article class="pc" id="pc-{E(aid)}"><header><h3>{E(a["name"])}{self.sec_link(f"pc-{aid}", a["name"])}</h3>'
                 + (f'<p class="mono kicker">{E(a["used"])}</p>' if a.get('used') else '') + f'</header><div class="pc-grid">{secs}</div></article>')
 
     def area_order(self):
@@ -1732,19 +1733,19 @@ class Page:
             cls = {'fine': 'fine', 'quote': 'quote', 'offer': 'offer', 'lede': 'lede'}.get(b.get('style') or '', '')
             return f'<p{" class=" + chr(34) + cls + chr(34) if cls else ""}{fact}>{self.rich(b.get("text"), w)}</p>'
         if t == 'h3':
-            return f'<h3 class="h-rule">{E(b.get("text"))}</h3>'
+            return self.part_h3(E(b.get('text')), b.get('text') or '')
         if t == 'alert':
             return f'<div class="alert" role="note"><b>{E(b.get("title"))}</b> {self.rich(b.get("text"), w)}</div>'
         if t == 'list':
             cls = 'principles' if b.get('style') == 'principles' else 'mini'
             ul = f'<ul class="{cls}">' + ''.join(f'<li{fact}>{self.rich(x, w)}</li>' for x in b.get('items') or []) + '</ul>'
-            head = f'<h3 class="h-rule">{E(b["title"])}</h3>' if b.get('title') else ''
+            head = self.part_h3(E(b['title']), b['title']) if b.get('title') else ''
             if b.get('box'):
                 return f'<div class="{E(b["box"])}">{head}{ul}</div>'
             return head + ul
         if t == 'bases':
             return '<div class="bases">' + ''.join(
-                f'<div class="base"><span class="mono">{E(x.get("label"))}</span><h3>{E(x.get("name"))}</h3><p>{E(x.get("text"))}</p><b>{E(x.get("note"))}</b></div>'
+                f'<div class="base"><span class="mono">{E(x.get("label"))}</span>{self.part_h3(E(x.get("name")), x.get("name") or "", "")}<p>{E(x.get("text"))}</p><b>{E(x.get("note"))}</b></div>'
                 for x in b.get('items') or []) + '</div>'
         if t == 'anchors':
             return '<div class="flights">' + ''.join(
@@ -1767,7 +1768,7 @@ class Page:
                     if x['place'] not in self.place_pid:
                         raise KitError(f'{w}: unknown place {x["place"]!r}')
                     title = self.pl_link(self.place_pid[x['place']], title, self.panels[self.place_pid[x['place']]]['anchor'])
-                arts.append(f'<article{cls}>{k}<h3>{title}</h3>' + ''.join(f'<p{fact}>{self.rich(p, w)}</p>' for p in as_list(x.get('paras'))) + '</article>')
+                arts.append(f'<article{cls}>{k}{self.part_h3(title, x.get("title") or "", "")}' + ''.join(f'<p{fact}>{self.rich(p, w)}</p>' for p in as_list(x.get('paras'))) + '</article>')
             return f'<div class="{layout}">' + ''.join(arts) + '</div>'
         if t == 'columns':
             return '<div class="two">' + ''.join(f'<div>{self.blocks(col, w + ".columns")}</div>' for col in b.get('columns') or []) + '</div>'
@@ -1804,14 +1805,33 @@ class Page:
             return self.emergency()
         raise KitError(f'{w}: unknown block type {t!r}')
 
-    def sec_link(self, anchor):
+    def sec_link(self, anchor, name=None):
         """A small # beside a heading that shares a link to that part of the page (the owner, 7 November 2026:
-        "every section of the page have a HTML hyperlink #hashtag that I can share"). The # itself is drawn by the
-        style sheet, so the heading's own words stay unchanged for the site's contents list."""
+        "every section of the page have a HTML hyperlink #hashtag that I can share"; 8 November 2026: every key
+        point, so a place, a plan or a part can be shared and jumped to). The # itself is drawn by the style sheet,
+        so the heading's own words stay unchanged for the site's contents list; `name` tells a screen reader which
+        part the link shares."""
         if not ID_OK.match(anchor):
             raise KitError(f'section link {anchor!r}: not a usable anchor')
+        label = self.L['sec_link'] + (f': {self.unaccent(name)}' if name else '')
         return (f'<a class="sec-link" href="#{anchor}" data-sec-link="{anchor}" title="{E(self.L["sec_link"])}" '
-                f'aria-label="{E(self.L["sec_link"])}"></a>')
+                f'aria-label="{E(label)}"></a>')
+
+    def part_id(self, text):
+        """A lasting anchor for a titled part inside a section: its title in plain letters, unique on the page."""
+        plain = unicodedata.normalize('NFKD', self.unaccent(unescape(str(text)))).encode('ascii', 'ignore').decode()
+        base = re.sub(r'[^a-z0-9]+', '-', plain.lower()).strip('-')[:40].strip('-') or 'part'
+        seen = self.__dict__.setdefault('_part_ids', set())
+        aid, k = f'p-{base}', 2
+        while aid in seen:
+            aid, k = f'p-{base}-{k}', k + 1
+        seen.add(aid)
+        return aid
+
+    def part_h3(self, inner, text, cls='h-rule'):
+        """A part's title with its own anchor and # link."""
+        aid = self.part_id(text)
+        return f'<h3 id="{aid}"' + (f' class="{cls}"' if cls else '') + f'>{inner}{self.sec_link(aid, text)}</h3>'
 
     def head(self, s, w, anchor=None):
         # No small label above a section's title (Direction A, the owner, 8 November 2026): the title says it.
@@ -1868,7 +1888,8 @@ class Page:
             body = (f'<div class="ocards{" cm-one" if len(picks) == 1 else ""}">{"".join(self.ocard(s, "opener.highlights") for s in picks)}</div>' if picks
                     else f'<p class="cm-none">{E(day.get("sub") or self.L["cm_none"])}</p>')
             base = f'<p class="cm-base">{E(day["base"])}</p>' if day.get('base') else ''
-            rows.append(f'<div class="cm-day" id="cm-day-{n}"><div class="cm-when"><h3><a href="#day-{n}">{E(self.L["day"])} {n} · {E(day["when"])}</a></h3>'
+            rows.append(f'<div class="cm-day" id="cm-day-{n}"><div class="cm-when"><h3><a href="#day-{n}">{E(self.L["day"])} {n} · {E(day["when"])}</a>'
+                        f'{self.sec_link(f"cm-day-{n}", self.L["op_highlights"] + ": " + self.L["day"] + " " + str(n))}</h3>'
                         f'{base}</div>{body}{self.cm_swaps(day, n, picks)}</div>')
         return ''.join(rows)
 
@@ -1978,12 +1999,12 @@ class Page:
                 + (f'<p class="hero-live">{live}</p>' if live else '')
                 + f'<p class="hero-ctas"><button type="button" class="btn-gold btn-hero" id="play-trip"><span aria-hidden="true">▶</span> {E(self.L["op_play"])}</button>'
                 f'<a class="btn-hero2" href="#top">{E(self.L["op_read"])} <span aria-hidden="true">↓</span></a></p></div></div>'
-                f'<div class="op-body"><div class="op-grid"><div class="op-tldr"><h2>{E(self.L["op_tldr"])}</h2>'
+                f'<div class="op-body"><div class="op-grid"><div class="op-tldr"><h2 id="op-glance">{E(self.L["op_tldr"])}{self.sec_link("op-glance", self.L["op_tldr"])}</h2>'
                 + (f'<ol class="tldr">{tldr}</ol>' if tldr else '')
                 + (f'<ul class="op-alerts" aria-label="{E(self.L["op_alerts"])}">{alerts}</ul>' if alerts else '')
                 + f'</div>{globe}</div>'
-                + (f'<h2 class="op-h">{E(self.L["op_stays"])}</h2><div class="ocards">{stays}</div>' if stays else '')
-                + (f'<h2 class="op-h">{E(self.L["op_highlights"])}</h2><div class="cm-days">{highs}</div>' if highs else '')
+                + (f'<h2 class="op-h" id="op-stays">{E(self.L["op_stays"])}{self.sec_link("op-stays", self.L["op_stays"])}</h2><div class="ocards">{stays}</div>' if stays else '')
+                + (f'<h2 class="op-h" id="op-cantmiss">{E(self.L["op_highlights"])}{self.sec_link("op-cantmiss", self.L["op_highlights"])}</h2><div class="cm-days">{highs}</div>' if highs else '')
                 + self.legend() + '</div></section>')
 
     def tour_html(self):
@@ -2324,7 +2345,7 @@ class Page:
         out = f'<section id="audience" class="sec" data-audience="{a["mode"]}">{self.head(a, "audience", "audience")}'
         if a['mode'] == 'party':
             out += '<div class="party">' + ''.join(
-                f'<article class="traveller"><span class="mono">{E(t.get("label"))}</span>' + (f'<h3>{E(t["name"])}</h3>' if t.get('name') else '')
+                f'<article class="traveller"><span class="mono">{E(t.get("label"))}</span>' + (self.part_h3(E(t['name']), t['name'], '') if t.get('name') else '')
                 + f'<p>{self.rich(t.get("detail"), "audience.travellers")}</p></article>' for t in a.get('travellers') or []) + '</div>'
             if a.get('needs'):
                 out += (f'<p class="needs"><b>{E(self.L["party_needs"])}:</b> '
@@ -2336,7 +2357,7 @@ class Page:
                 icon = f'<span aria-hidden="true">{E(l["icon"])}</span> ' if l.get('icon') else ''
                 btns.append(f'<button type="button" class="lens-btn" data-lens="{E(l["key"])}" aria-pressed="false">{icon}{E(l["label"])}</button>')
                 needs = ', '.join(MARK_NAMES[m] for m in l.get('needs') or [])
-                cards.append(f'<article class="lens-card" data-lens-card="{E(l["key"])}"><h3>{icon}{E(l["label"])}</h3><p>{self.rich(l.get("intro"), "audience.lenses")}</p>'
+                cards.append(f'<article class="lens-card" data-lens-card="{E(l["key"])}">{self.part_h3(icon + E(l["label"]), l["label"], "")}<p>{self.rich(l.get("intro"), "audience.lenses")}</p>'
                              + (f'<p class="mono">{E(self.L["lens_looks_for"])}: {E(needs)}</p>' if needs else '') + '</article>')
             out += (f'<div class="lens-switch" role="group" aria-label="{E(self.L["lens_choose"])}">' + ''.join(btns) + '</div>'
                     f'<div class="lens-cards">{"".join(cards)}</div><p class="fine">{E(self.L["lens_note"])}</p>')
@@ -2346,15 +2367,17 @@ class Page:
 
     def plans_section(self):
         p = self.plans
-        keys = ''.join(f'<article><p class="mono kicker">{E(self.plan_tag(k))}</p><h3>{E(self.plan_label(k))}</h3><p>{self.rich((p.get("explain") or {}).get(k), "plans.explain")}</p></article>'
+        keys = ''.join(f'<article><p class="mono kicker">{E(self.plan_tag(k))}</p>{self.part_h3(E(self.plan_label(k)), self.plan_label(k), "")}<p>{self.rich((p.get("explain") or {}).get(k), "plans.explain")}</p></article>'
                        for k in PLANS)
         rules = ''.join(f'<li>{E(r["text"])}</li>' for r in p.get('rules') or [])
         out = f'<section id="plans" class="sec">{self.head(p, "plans", "plans")}<div class="three plan-keys">{keys}</div>'
         if rules:
-            out += f'<h3 class="h-rule">{E(p.get("rules_title") or self.L["plans_rules"])}</h3><ol class="mini rules">{rules}</ol>'
+            rt = p.get('rules_title') or self.L['plans_rules']
+            out += self.part_h3(E(rt), rt) + f'<ol class="mini rules">{rules}</ol>'
         wx = self.weather
         if wx:
-            out += f'<h3 class="h-rule">{E(wx.get("title") or "Live forecast")}</h3>' + ''.join(f'<p>{self.rich(x, "weather.intro")}</p>' for x in as_list(wx.get('intro')))
+            wt = wx.get('title') or 'Live forecast'
+            out += self.part_h3(E(wt), wt) + ''.join(f'<p>{self.rich(x, "weather.intro")}</p>' for x in as_list(wx.get('intro')))
             out += '<ul class="mini wx-places">' + ''.join(
                 f'<li><b>{E(pl.get("label") or pl["key"])}</b>: {E(human_date(parse_date(pl["start"], "s")))} {E(self.L["to"])} {E(human_date(parse_date(pl["end"], "e")))}</li>'
                 for pl in wx.get('places') or []) + '</ul>'
@@ -2378,7 +2401,7 @@ class Page:
                              f'<p>{self.rich(x["line"], w + ".line")}</p><dl class="upg-dl"><div><dt>{E(self.L["upg_price"])}</dt><dd>{self.rich(x["price"], w)}</dd></div>'
                              f'<div><dt>{E(self.L["upg_book"])}</dt><dd>{self.rich(x["book_ahead"], w)}</dd></div></dl>'
                              f'<p class="upg-src">{E(self.L["upg_source"])}: {srcs}</p>{links}</div></article>')
-            out += (f'<h3 class="h-rule">{E(title)}</h3>' if title else '') + f'<div class="upg-grid">{"".join(cards)}</div>'
+            out += (self.part_h3(E(title), title) if title else '') + f'<div class="upg-grid">{"".join(cards)}</div>'
         return out + '</section>'
 
     def credits_section(self):
