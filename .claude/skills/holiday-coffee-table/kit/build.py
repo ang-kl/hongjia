@@ -144,8 +144,9 @@ EMOJI.update({'ig': '📷', 'addr': '📍', 'hours': '⏰'})
 LINK_LABELS.update({'addr': 'Address', 'hours': 'Hours'})
 LABELS.update({
     'call': 'Call', 'hours': 'Hours',
-    'op_play': 'Play the trip', 'op_read': 'Start reading', 'op_tldr': 'The trip at a glance', 'op_stays': "Where you'll stay",
-    'op_highlights': "Can't-miss", 'op_alerts': 'Good to know', 'op_globe': 'Globe: the way there, and the bases',
+    'op_play': 'Play the trip', 'op_read': 'Start reading', 'op_tldr': 'The trip at a glance', 'op_stays': 'Where we stay',
+    'op_highlights': "Can't-miss, day by day",
+    'cm_none': 'Nothing marked for this day.', 'op_alerts': 'Good to know', 'op_globe': 'Globe: the way there, and the bases',
     'op_globe_hint': 'Drag to turn the globe.', 'op_time': 'Local time', 'website': 'Website',
     'cd_to_go': '{n} days to go', 'cd_one': '1 day to go', 'cd_today': 'Today is the day', 'cd_during': 'Day {d} of {n}',
     'local_time': '{time} in {place}',
@@ -1678,7 +1679,8 @@ class Page:
                 f'aria-label="{E(self.L["sec_link"])}"></a>')
 
     def head(self, s, w, anchor=None):
-        out = f'<p class="mono kicker">{E(s["kicker"])}</p>' if s.get('kicker') else ''
+        # No small label above a section's title (Direction A, the owner, 8 November 2026): the title says it.
+        out = ''
         out += f'<h2>{self.accent(s["title"])}{self.sec_link(anchor) if anchor else ""}</h2>' if s.get('title') else ''
         cls = ' class="fine"' if s.get('intro_style') == 'fine' else ''
         out += ''.join(f'<p{cls}>{self.rich(p, w + ".intro")}</p>' for p in as_list(s.get('intro')))
@@ -1702,6 +1704,38 @@ class Page:
                     if it.get('stop') == sid and it.get('role'):
                         return it['role']
         return ''
+
+    def stop_day(self, sid):
+        for i, day in enumerate(self.days):
+            if any(it['stop'] == sid for it in day['stops']):
+                return i
+        for i, day in enumerate(self.days):
+            if any(it['stop'] == sid for p in ('plan_b', 'plan_c') for it in day.get(p) or []):
+                return i
+        return None
+
+    def cantmiss_rows(self, highlights):
+        """Can't-miss, one row per day in date order (the owner, 8 November 2026: "should be separate by date",
+        then "A row per day"). A day with nothing marked says what the day is, from its own line."""
+        if not highlights:
+            return ''
+        by_day = {}
+        for sid in highlights:
+            i = self.stop_day(sid)
+            if i is None:
+                raise KitError(f'opener.highlights: {sid!r} is on no day\'s plan, so it has no date to sit under')
+            by_day.setdefault(i, []).append(sid)
+        rows = []
+        for i, day in enumerate(self.days):
+            n = i + 1
+            picks = by_day.get(i) or []
+            # One pick lies on its side, photo beside words, so a day with one place does not leave a gap.
+            body = (f'<div class="ocards{" cm-one" if len(picks) == 1 else ""}">{"".join(self.ocard(s, "opener.highlights") for s in picks)}</div>' if picks
+                    else f'<p class="cm-none">{E(day.get("sub") or self.L["cm_none"])}</p>')
+            base = f'<p class="cm-base">{E(day["base"])}</p>' if day.get('base') else ''
+            rows.append(f'<div class="cm-day" id="cm-day-{n}"><div class="cm-when"><h3><a href="#day-{n}">{E(self.L["day"])} {n} · {E(day["when"])}</a></h3>'
+                        f'{base}</div>{body}</div>')
+        return ''.join(rows)
 
     def ocard(self, sid, where):
         st = self.stops[sid]
@@ -1771,21 +1805,20 @@ class Page:
         globe = (f'<figure class="op-globe">{self.globe_svg("g-sea-1", glabel)}<figcaption class="fine">{E(self.L["op_globe_hint"])} '
                  f'Land: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>.</figcaption></figure>')
         stays = ''.join(self.ocard(s, 'opener.stays') for s in o.get('stays') or [])
-        highs = ''.join(self.ocard(s, 'opener.highlights') for s in o.get('highlights') or [])
+        highs = self.cantmiss_rows(o.get('highlights') or [])
         return (f'<section id="opener" class="opener" aria-label="{E(self.unaccent(title))}">'
                 f'<div class="hero"><div class="hero-slides">{"".join(slides)}</div><div class="hero-in">'
-                + (f'<p class="mono kicker hero-k">{E(o.get("kicker") or m.get("kicker"))}</p>' if (o.get('kicker') or m.get('kicker')) else '')
                 + f'<h1 class="hero-t">{self.accent(title)}</h1>'
                 + (f'<p class="hero-dates">{E(o["dates"])}</p>' if o.get('dates') else '')
                 + (f'<p class="hero-live">{live}</p>' if live else '')
                 + f'<p class="hero-ctas"><button type="button" class="btn-gold btn-hero" id="play-trip"><span aria-hidden="true">▶</span> {E(self.L["op_play"])}</button>'
                 f'<a class="btn-hero2" href="#top">{E(self.L["op_read"])} <span aria-hidden="true">↓</span></a></p></div></div>'
-                f'<div class="op-body"><div class="op-grid"><div class="op-tldr"><p class="mono kicker">TL;DR</p><h2>{E(self.L["op_tldr"])}</h2>'
+                f'<div class="op-body"><div class="op-grid"><div class="op-tldr"><h2>{E(self.L["op_tldr"])}</h2>'
                 + (f'<ol class="tldr">{tldr}</ol>' if tldr else '')
                 + (f'<ul class="op-alerts" aria-label="{E(self.L["op_alerts"])}">{alerts}</ul>' if alerts else '')
                 + f'</div>{globe}</div>'
-                + (f'<h3 class="h-rule op-h"><span aria-hidden="true">🏨</span> {E(self.L["op_stays"])}</h3><div class="ocards">{stays}</div>' if stays else '')
-                + (f'<h3 class="h-rule op-h"><span aria-hidden="true">✨</span> {E(self.L["op_highlights"])}</h3><div class="ocards">{highs}</div>' if highs else '')
+                + (f'<h2 class="op-h">{E(self.L["op_stays"])}</h2><div class="ocards">{stays}</div>' if stays else '')
+                + (f'<h2 class="op-h">{E(self.L["op_highlights"])}</h2><div class="cm-days">{highs}</div>' if highs else '')
                 + self.legend() + '</div></section>')
 
     def tour_html(self):
@@ -1845,7 +1878,6 @@ class Page:
         facts = ''.join(f'<li><span class="mono">{E(f.get("label"))}</span><b{" class=" + chr(34) + "status" + chr(34) if f.get("status") else ""}>{E(f.get("value"))}</b></li>'
                         for f in m.get('facts') or [])
         return (f'<header class="mast" id="top"><div class="mast-in">'
-                + (f'<p class="mono kicker">{E(m["kicker"])}</p>' if m.get('kicker') else '')
                 + (f'<h2 class="mast-h">{self.accent(m["title"])}</h2>' if self.opener_d else f'<h1>{self.accent(m["title"])}</h1>')
                 + (f'<p class="lede">{E(m["lede"])}</p>' if m.get('lede') else '')
                 + (f'<ul class="facts" aria-label="{E(self.L["trip_facts"])}">{facts}</ul>' if facts else '')
@@ -2192,7 +2224,7 @@ class Page:
 
     def footer(self):
         f = self.d.get('footer') or {}
-        return (f'<footer class="foot sec">' + (f'<p class="mono kicker">{E(f["kicker"])}</p>' if f.get('kicker') else '')
+        return (f'<footer class="foot sec">'
                 + ''.join(f'<p>{self.rich(x, "footer.text")}</p>' for x in as_list(f.get('text')))
                 + f'<p class="fine">{self.rich(f.get("fine"), "footer.fine")} <a href="#top">{E(self.L["back_to_top"])}</a></p></footer>')
 
@@ -2319,7 +2351,7 @@ class Page:
         if not total:
             return ''
         return (f'<section id="gallery" class="gallery" aria-label="{E(self.L["gallery_title"])}">'
-                f'<p class="mono kicker">{E(self.L["view_gallery"])}</p><h2>{E(self.L["gallery_title"])}{self.sec_link("gallery")}</h2>'
+                f'<h2>{E(self.L["gallery_title"])}{self.sec_link("gallery")}</h2>'
                 f'<p class="fine">{E(self.L["gallery_intro"])} {E(self.L["g_embed_note"])}</p>{"".join(days)}</section>')
 
     def view_switch(self):
@@ -2413,7 +2445,7 @@ class Page:
         templates = ''.join(f'<template id="cc-{E(a)}">{self.area_compact(a)}</template>' for a in self.areas)
         # Atelier type (6 November 2026): Fraunces for display, with its italic for the accent words, and
         # Inter for text and the letter-spaced labels. Both are SIL Open Font Licence fonts on Google Fonts.
-        fonts = 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Inter:wght@300..700&display=swap'
+        fonts = 'https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400..700&family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap'
         return ('<!doctype html>\n'
                 f'<html lang="{E(meta["lang"])}" data-mode="light"{" class=" + chr(34) + "has-opener" + chr(34) if self.opener_d else ""}>\n<head>\n<meta charset="utf-8">\n'
                 '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<meta name="color-scheme" content="light">\n'
@@ -2606,7 +2638,44 @@ def check_html(html, name='page'):
         if n.tag == 'style':
             for m in re.finditer(r'(?i)(url\(\s*["\']?|@import\s+["\'])http://[^\s"\')]+', n.text()):
                 problems.append(('http link', f'stylesheet: {m.group(0)[:80]}'))
+    # 7. wording that reads as machine-written (the owner's checklist, 8 November 2026)
+    problems += [('wording that reads as AI', x) for x in copy_problems(html)]
     return problems
+
+
+# The owner's checklist of AI tells (8 November 2026), the wording part: statistical pet words and
+# inflated descriptors, and "It's not X, it's Y" framing. Place names and quoted words are left out (a
+# venue may be called or describe itself in words we would not write), and so are scripts and styles.
+PET_WORDS = ('delve', 'delves', 'delving', 'captivating', 'rich heritage', 'tapestry', 'elevate', 'elevates',
+             'elevated experience', 'unforgettable', 'breathtaking', 'stunning', 'nestled', 'hidden gem', 'vibrant',
+             'bustling', 'seamless', 'seamlessly', 'immerse', 'immersive', 'curated', 'bespoke', 'iconic',
+             'world-class', 'unparalleled', 'indulge', 'embark', 'testament to', 'boasts', 'picturesque', 'quaint',
+             'enchanting', 'magical', 'awe-inspiring', 'meticulously', 'effortlessly', 'a feast for the senses',
+             'look no further', 'whether you\'re', 'treasure trove', 'like no other', 'second to none')
+PET_RE = re.compile(r"(?i)(?<![\w-])(" + '|'.join(re.escape(w) for w in PET_WORDS) + r")(?![\w-])")
+FRAME_RES = (
+    re.compile(r"(?i)\b(?:it|this|that|they|we)(?:'s|’s| is| was| are|'re|’re)\s+not\s+(?:just\s+|only\s+|merely\s+)?[^.!?;]{1,60}?[,;:—–-]\s*(?:it|this|that|they|we)(?:'s|’s| is| was| are|'re|’re)\b"),
+    re.compile(r"(?i)\b(?:is|are|was|isn't|isn’t|aren't|aren’t)\s+(?:not\s+)?(?:just|merely)\s+(?:a|an|the)\b[^.!?]{1,60}?\b(?:it's|it’s|it is|but)\b"),
+    re.compile(r"(?i)\bmore than just\b"),
+    re.compile(r"(?i)\bnot just\b[^.!?]{1,60}?\bbut\b"),
+)
+
+
+def copy_problems(html):
+    body = re.sub(r'(?is)<(script|style|template)\b.*?</\1>', ' ', html)
+    body = re.sub(r'(?is)<a\b[^>]*class="[^"]*\bpl\b[^"]*"[^>]*>.*?</a>', ' ', body)
+    body = re.sub(r'(?is)<h4\b.*?</h4>', ' ', body)
+    text = unescape(re.sub(r'<[^>]+>', ' ', body))
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'"[^"]{1,200}"|“[^”]{1,200}”', ' ', text)  # a venue's own words, quoted, are theirs
+    found, seen = [], set()
+    for m in list(PET_RE.finditer(text)) + [m for r in FRAME_RES for m in r.finditer(text)]:
+        around = text[max(0, m.start() - 50):m.end() + 50].strip()
+        if around in seen:
+            continue
+        seen.add(around)
+        found.append(f'"{m.group(0)}" in …{around}…')
+    return found
 
 
 def report(name, problems):
