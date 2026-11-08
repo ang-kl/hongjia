@@ -548,3 +548,86 @@ function setup() {
   });
   for (const button of [satellite, fab, folder]) button.disabled = false;
 }
+
+// ==== Back with Esc (the owner, 8 November 2026: "Have a 'Esc' key to go back to previous page") ====
+// Esc closes whatever is open first; each part does that itself. When nothing was open, Esc goes back
+// a page, as the ← Back button does. Whether anything is open is read before any other handler runs,
+// so the key that closes something never also leaves the page; typing in a field never goes back.
+const OPEN = 'details[open], dialog[open], [role="dialog"]:not([hidden]), .fab-contents:not([hidden]), .fab-search:not([hidden]), .anno-menu:not([hidden]), .doc-ask:not([hidden]), [data-loupe-chip]:not([hidden]), [data-sig-pad]:not([hidden])';
+export function somethingOpen() {
+  if (location.hash === '#panel') return true; // the document's panel over a phone screen
+  if (document.body.dataset.tab) return true; // a document tab chosen
+  return [...document.querySelectorAll(OPEN)].some(e => e.getClientRects().length > 0);
+}
+const typing = t => t instanceof Element && !!t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
+export function goBack() {
+  let from = null;
+  try { from = document.referrer ? new URL(document.referrer) : null; } catch { from = null; }
+  const usable = from && from.origin === location.origin && from.href !== location.href
+    && !['/', '/signin', '/consent', '/signout'].includes(from.pathname);
+  if (usable && history.length > 1) { history.back(); return; }
+  // Opened directly (a shared link, a new tab): go up instead.
+  if (location.pathname !== '/documents') location.href = '/documents';
+}
+let escFree = false;
+window.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  escFree = !somethingOpen() && !typing(event.target);
+  // Selected text counts as open: Escape clears the selection first.
+  const sel = window.getSelection();
+  if (escFree && sel && !sel.isCollapsed && String(sel).trim()) { escFree = false; sel.removeAllRanges(); }
+}, true);
+window.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || !escFree || event.defaultPrevented) return;
+  escFree = false;
+  goBack();
+});
+// Esc pressed inside the document, when neither the document nor this page had anything open.
+document.addEventListener('hj:escape-free', () => { if (!somethingOpen()) goBack(); });
+document.addEventListener('click', event => {
+  const back = event.target instanceof Element && event.target.closest('[data-back]');
+  if (back) { event.preventDefault(); goBack(); }
+});
+
+// ==== The documents table (the owner, 8 November 2026): sort by a column, search, filter by hashtag ====
+const table = document.querySelector('[data-doc-table]');
+if (table) {
+  const body = table.tBodies[0];
+  const search = document.querySelector('[data-list-search]');
+  const none = document.querySelector('[data-list-none]');
+  const chips = [...document.querySelectorAll('[data-tag-filter]')];
+  let tagOn = '';
+  const filter = () => {
+    const q = (search?.value || '').trim().toLowerCase().replace(/^#/, '');
+    let shown = 0;
+    for (const row of body.rows) {
+      const words = `${row.dataset.title} ${row.dataset.tags} ${row.dataset.filing}`;
+      const hit = (!q || words.includes(q)) && (!tagOn || ` ${row.dataset.tags} `.includes(` ${tagOn} `));
+      row.classList.toggle('is-filtered', !hit);
+      if (hit) shown += 1;
+    }
+    if (none) none.hidden = shown > 0;
+  };
+  search?.addEventListener('input', filter);
+  for (const chip of chips) {
+    chip.addEventListener('click', () => {
+      tagOn = tagOn === chip.dataset.tagFilter.toLowerCase() ? '' : chip.dataset.tagFilter.toLowerCase();
+      for (const c of chips) c.setAttribute('aria-pressed', String(c.dataset.tagFilter.toLowerCase() === tagOn));
+      filter();
+    });
+  }
+  const numeric = new Set(['v', 'changed']);
+  for (const th of table.querySelectorAll('th[data-sort]')) {
+    th.tabIndex = 0;
+    const sort = () => {
+      const key = th.dataset.sort;
+      const dir = th.getAttribute('aria-sort') === 'ascending' ? -1 : 1;
+      for (const other of table.querySelectorAll('th[data-sort]')) other.setAttribute('aria-sort', 'none');
+      th.setAttribute('aria-sort', dir === 1 ? 'ascending' : 'descending');
+      const value = row => numeric.has(key) ? Number(row.dataset[key] || 0) : (row.dataset[key] || '');
+      [...body.rows].sort((a, b) => (value(a) > value(b) ? 1 : value(a) < value(b) ? -1 : 0) * dir).forEach(r => body.append(r));
+    };
+    th.addEventListener('click', sort);
+    th.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); sort(); } });
+  }
+}

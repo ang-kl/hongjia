@@ -91,7 +91,12 @@ fn page_shell(
     let viewer = body_class.split_whitespace().any(|c| c == "viewer-page");
     let header = match nav {
         Some(_) if viewer => String::new(),
-        Some(_) => r#"<header class="bar"><a class="brand" href="/documents/latest"><span lang="zh">洪家</span> · hongjia</a></header>"#.to_string(),
+        Some(_) => concat!(
+            r#"<header class="bar"><div class="bar-start">"#,
+            r#"<button type="button" class="back" data-back title="Back to the previous page (Esc)"><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button>"#,
+            r#"<a class="brand" href="/documents/latest"><span lang="zh">洪家</span> · hongjia</a></div></header>"#
+        )
+        .to_string(),
         None => r#"<header class="bar"><a class="brand" href="/"><span lang="zh">洪家</span> · hongjia</a></header>"#.to_string(),
     };
     let session_script = if nav.is_some() {
@@ -562,13 +567,6 @@ pub fn documents(
     show_hidden: bool,
     hidden: i64,
 ) -> String {
-    let mut groups: Vec<(&str, Vec<&DocumentRow>)> = Vec::new();
-    for row in rows {
-        match groups.last_mut() {
-            Some((month, list)) if *month == row.month => list.push(row),
-            _ => groups.push((&row.month, vec![row])),
-        }
-    }
     // Hidden documents are listed only on asking (the owner, 7 November 2026).
     let switch = match (show_hidden, hidden) {
         (true, _) => r#"<p class="small list-switch">Showing hidden documents too. <a href="/documents">Hide them</a></p>"#.to_string(),
@@ -577,53 +575,68 @@ pub fn documents(
             r#"<p class="small list-switch"><a href="/documents?hidden=1">Show hidden ({n})</a></p>"#
         ),
     };
+    // One table for document management (the owner, 8 November 2026): the version is the file's own
+    // number, as in the document's header; the page script sorts by a column, searches and filters.
+    let mut all_tags: Vec<&str> = rows
+        .iter()
+        .flat_map(|d| d.tags.iter().map(String::as_str))
+        .collect();
+    all_tags.sort_unstable();
+    all_tags.dedup();
+    let chips: String = all_tags
+        .iter()
+        .take(24)
+        .map(|t| {
+            format!(
+                r#"<button type="button" class="chip" data-tag-filter="{t}" aria-pressed="false">#{t}</button>"#,
+                t = escape(t)
+            )
+        })
+        .collect();
     let body: String = if rows.is_empty() {
         r#"<p>No documents yet.</p>"#.to_string()
     } else {
-        groups
+        let items: String = rows
             .iter()
-            .map(|(month, list)| {
-                let items: String = list
-                    .iter()
-                    .map(|d| {
-                        let tags = if d.tags.is_empty() {
-                            String::new()
-                        } else {
-                            format!(r#"<span class="row-tags">{}</span>"#, hashtags(&d.tags))
-                        };
-                        // Hide and Delete for whoever added it and for the owner (the owner, 7 November
-                        // 2026). Delete opens the document's Manage section, where DELETE is typed.
-                        let more = if manageable(d) {
-                            let (action, word) = if d.hidden { ("unhide", "Unhide") } else { ("hide", "Hide") };
-                            format!(
-                                r#"<details class="row-more"><summary title="More for {title}"><span aria-hidden="true">⋯</span><span class="visually-hidden">More for {title}</span></summary><div class="row-menu"><form method="post" action="/documents/{key}/{action}"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="back" value="list"><button type="submit" class="link">{word}</button></form><a href="/documents/{key}#panel">Delete…</a></div></details>"#,
-                                title = escape(&d.title),
-                                key = escape(&d.key),
-                                csrf = escape(nav.csrf),
-                            )
-                        } else {
-                            String::new()
-                        };
-                        let flag = if d.hidden { r#"<span class="row-hidden">Hidden</span>"# } else { "" };
-                        format!(
-                            r#"<li class="row{hidden_class}"><span class="filing">{label}</span><a class="row-title" href="/documents/{key}">{title}</a>{flag}<span class="row-meta">{kind} · v{v} · {by}</span>{tags}{more}</li>"#,
-                            hidden_class = if d.hidden { " is-hidden" } else { "" },
-                            label = escape(&filing_label(&d.key)),
-                            key = escape(&d.key),
-                            title = escape(&d.title),
-                            kind = kind_name(&d.kind),
-                            v = d.version_no,
-                            by = escape(d.added_by.as_deref().unwrap_or("someone")),
-                        )
-                    })
-                    .collect();
+            .map(|d| {
+                // Hide and Delete for whoever added it and for the owner (the owner, 7 November 2026).
+                // Delete opens the document's Manage section, where DELETE is typed.
+                let more = if manageable(d) {
+                    let (action, word) = if d.hidden { ("unhide", "Unhide") } else { ("hide", "Hide") };
+                    format!(
+                        r#"<details class="row-more"><summary title="More for {title}"><span aria-hidden="true">⋯</span><span class="visually-hidden">More for {title}</span></summary><div class="row-menu"><form method="post" action="/documents/{key}/{action}"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="back" value="list"><button type="submit" class="link">{word}</button></form><a href="/documents/{key}#panel">Delete…</a></div></details>"#,
+                        title = escape(&d.title),
+                        key = escape(&d.key),
+                        csrf = escape(nav.csrf),
+                    )
+                } else {
+                    String::new()
+                };
+                let flag = if d.hidden { r#" <span class="row-hidden">Hidden</span>"# } else { "" };
+                let tag = version_tag(&d.filename, d.version_no);
                 format!(
-                    r#"<section class="group"><div class="section-head"><h2>{month}</h2><span class="count" aria-label="{n} documents">{n}</span></div><ul class="rows">{items}</ul></section>"#,
-                    month = escape(month),
-                    n = list.len()
+                    r#"<tr class="row{hidden_class}" data-filing="{key}" data-title="{title_key}" data-v="{v_num}" data-changed="{changed_sort}" data-by="{by}" data-tags="{tags_key}"><td class="filing">{label}</td><td class="col-title"><a class="row-title" href="/documents/{key}">{title}</a>{flag}</td><td class="col-v"><span class="doc-v" title="version {n} on this site">{tag}</span></td><td class="col-type">{kind}</td><td class="col-when">{changed}</td><td class="col-by">{by}</td><td class="col-tags">{tags}</td><td class="col-more">{more}</td></tr>"#,
+                    hidden_class = if d.hidden { " is-hidden" } else { "" },
+                    label = escape(&filing_label(&d.key)),
+                    key = escape(&d.key),
+                    title = escape(&d.title),
+                    title_key = escape(&d.title.to_lowercase()),
+                    v_num = tag.trim_start_matches("v.").trim_start_matches('0'),
+                    n = d.version_no,
+                    changed_sort = escape(&d.changed_sort),
+                    changed = escape(&d.changed),
+                    kind = kind_name(&d.kind),
+                    by = escape(d.added_by.as_deref().unwrap_or("someone")),
+                    tags = hashtags(&d.tags),
+                    tags_key = escape(&d.tags.join(" ").to_lowercase()),
                 )
             })
-            .collect()
+            .collect();
+        format!(
+            r#"<div class="list-tools" data-list-tools><label class="list-search"><span class="visually-hidden">Search the list</span><input type="search" data-list-search placeholder="Search titles and hashtags" autocomplete="off" spellcheck="false" maxlength="100"></label>{chips}</div>
+<table class="doc-table" data-doc-table><thead><tr><th scope="col" data-sort="filing" aria-sort="none">Filing no.</th><th scope="col" data-sort="title" aria-sort="none">Title</th><th scope="col" data-sort="v" aria-sort="none">Version</th><th scope="col" class="col-type">Type</th><th scope="col" data-sort="changed" aria-sort="descending">Last change</th><th scope="col" class="col-by" data-sort="by" aria-sort="none">Added by</th><th scope="col" class="col-tags">Hashtags</th><th scope="col" class="col-more"><span class="visually-hidden">More</span></th></tr></thead><tbody>{items}</tbody></table>
+<p class="small" data-list-none hidden>No document matches.</p>"#
+        )
     };
     layout(
         "Documents",
@@ -1207,6 +1220,7 @@ pub fn document_view(
         };
         format!(r#"<p class="small">Only {who} can change or delete this document.</p>"#)
     };
+    let manage_grouped = format!(r#"<div data-group="manage">{manage}</div>"#);
     let latest = versions.iter().find(|v| v.version_no == doc.version_no);
     let v_title = escape(&format!(
         "{} · version {} on this site",
@@ -1219,20 +1233,34 @@ pub fn document_view(
     };
     let main = format!(
         r##"<div class="viewer-doc">
-<div class="doc-bar"><span class="filing">{label}</span><span class="doc-v" title="{v_title}">· {v_tag}</span><h1 class="doc-title">{title}</h1><button type="button" class="pill comment-open" data-comment hidden>Comment</button></div>
+<div class="doc-bar"><button type="button" class="back" data-back title="Back to the previous page (Esc)"><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button><span class="filing">{label}</span><span class="doc-v" title="{v_title}">· {v_tag}</span><h1 class="doc-title">{title}</h1><button type="button" class="pill comment-open" data-comment hidden>Comment</button><div class="doc-tabs" role="group" aria-label="This document" data-doc-tabs><button type="button" data-doc-tab="details" aria-pressed="false">Details</button><button type="button" data-doc-tab="versions" aria-pressed="false">Versions <span class="count">{n_versions}</span></button><button type="button" data-doc-tab="notes" aria-pressed="false">Notes</button><button type="button" data-doc-tab="files" aria-pressed="false">Files</button>{manage_tab}</div></div>
 {notice}{hidden_notice}
 <div class="doc-stage" data-doc-stage><iframe class="doc-frame" src="/documents/{key}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe><div class="doc-overlay" data-doc-overlay aria-hidden="true"></div></div>
 </div>
 <aside class="panel" id="panel" aria-label="Manage this document">
 <div class="panel-head"><span class="panel-title">This document</span><a class="panel-close" href="#doc" data-sidebar-close title="Close the sidebar"><span aria-hidden="true">×</span><span class="visually-hidden">Close the sidebar</span></a></div>
-{manage_top}{details}{annotations}{redactions}{attachments}{fields}{tags}{version_section}{check}{manage_foot}
+{manage_top}<div data-group="details">{details}{tags}{check}</div><div data-group="notes">{annotations}{redactions}{fields}</div><div data-group="files">{attachments}</div><div data-group="versions">{version_section}</div>{manage_foot}
 </aside>
 <script type="module" src="/assets/doc-view.mjs"></script>"##,
         title = escape(&doc.title),
         notice = notice(message),
         v_tag = version_tag(&doc.filename, doc.version_no),
-        manage_top = if can_manage { manage.as_str() } else { "" },
-        manage_foot = if can_manage { "" } else { manage.as_str() },
+        manage_top = if can_manage {
+            manage_grouped.as_str()
+        } else {
+            ""
+        },
+        manage_foot = if can_manage {
+            ""
+        } else {
+            manage_grouped.as_str()
+        },
+        n_versions = versions.len(),
+        manage_tab = if can_manage {
+            r#"<button type="button" data-doc-tab="manage" aria-pressed="false">Manage</button>"#
+        } else {
+            ""
+        },
         sandbox = IFRAME_SANDBOX,
         check = check_section(latest),
         annotations = annotations_section(&key, &csrf, review),
@@ -1346,7 +1374,8 @@ mod tests {
             locate: false,
         };
         let page = about(&owner, "Safari on iPhone", &[]);
-        assert!(page.contains(r#"<header class="bar"><a class="brand" href="/documents/latest">"#));
+        assert!(page.contains(r#"<header class="bar"><div class="bar-start"><button type="button" class="back" data-back"#));
+        assert!(page.contains(r#"<a class="brand" href="/documents/latest">"#));
         assert!(!page.contains("hongjia</a><nav>"));
         assert!(!page.contains("data-location"));
         for item in [

@@ -828,7 +828,12 @@ async fn documents_upload_list_view_and_sandboxed_raw(pool: PgPool) {
 
     let list = o.get("/documents").await;
     assert_eq!(list.status, 200);
-    assert!(list.body.contains("sample-trip") && list.body.contains("v1 · delta"));
+    // The documents table (8 November 2026): the version is the file's own number, here the site's (v.01).
+    assert!(
+        list.body.contains("sample-trip")
+            && list.body.contains(r#">v.01</span>"#)
+            && list.body.contains(r#"<td class="col-by">delta</td>"#)
+    );
 
     let view = o.get(&location).await;
     assert_eq!(view.status, 200);
@@ -950,7 +955,7 @@ async fn documents_are_filed_by_date_and_number(pool: PgPool) {
         "label shown with #"
     );
     let list = o.get("/documents").await;
-    assert!(list.body.contains(&format!("{day}_#2")) && list.body.contains(r#"class="count""#));
+    assert!(list.body.contains(&format!("{day}_#2")) && list.body.contains("data-doc-table"));
 
     // The old numeric address forwards to the filing number.
     let id: i64 = sqlx::query_scalar("SELECT id FROM documents WHERE day_no = 1")
@@ -2929,7 +2934,10 @@ async fn pictures_are_recognised_shown_and_downloaded(pool: PgPool) {
         view.contains("<dt>Picture</dt><dd>3 x 2 (PNG)</dd>"),
         "picture size shown"
     );
-    assert!(o.get("/documents").await.body.contains("picture · v1"));
+    let list = o.get("/documents").await.body;
+    assert!(
+        list.contains(r#"<td class="col-type">picture</td>"#) && list.contains(r#">v.01</span>"#)
+    );
     let tags: Vec<String> = sqlx::query_scalar("SELECT tag FROM document_tags ORDER BY pos")
         .fetch_all(&pool)
         .await

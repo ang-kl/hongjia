@@ -103,8 +103,10 @@ export function validMessage(data) {
       if (!LOUPE_ZOOMS.includes(data.zoom) || !['', 'long'].includes(data.reason ?? '')) return null;
       return { type: data.type, zoom: data.zoom, reason: data.reason ?? '' };
     case 'hj:escape':
-      // Escape pressed while the document has the keyboard: it closes the annotation menu.
-      return { type: data.type };
+      // Escape pressed while the document has the keyboard: it closes the annotation menu. `free` says
+      // the document had nothing open and did not use the key, so this page may go back (8 November 2026).
+      if (data.free !== undefined && typeof data.free !== 'boolean') return null;
+      return { type: data.type, free: data.free === true };
     case 'hj:weather-want': {
       // A trip page names its places and dates; the server checks them again before asking.
       if (!Array.isArray(data.places) || data.places.length < 1 || data.places.length > MAX_WEATHER_PLACES) return null;
@@ -615,7 +617,26 @@ function start() {
     line.hidden = !chosen;
     composer.querySelector('[data-composer-clear]').hidden = !chosen;
   };
-  const openPanel = () => {
+  // The tabs in the document's bar (the owner, 8 November 2026): each shows one part of the panel and
+  // opens it; choosing the same tab again shows the whole panel. Esc clears the tab first.
+  const tabs = [...document.querySelectorAll('[data-doc-tab]')];
+  const showTab = name => {
+    if (name) body.dataset.tab = name; else delete body.dataset.tab;
+    for (const t of tabs) t.setAttribute('aria-pressed', String(t.dataset.docTab === name));
+  };
+  const followTab = name => { if (body.dataset.tab && body.dataset.tab !== name) showTab(name); };
+  for (const t of tabs) {
+    t.addEventListener('click', () => {
+      const name = body.dataset.tab === t.dataset.docTab ? '' : t.dataset.docTab;
+      showTab(name);
+      if (name) openPanel(true);
+    });
+  }
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && body.dataset.tab && !event.defaultPrevented) { event.preventDefault(); showTab(''); }
+  });
+  const openPanel = keepTab => {
+    if (keepTab !== true) followTab('notes');
     if (beside.matches) {
       // The sidebar may have been closed with ×; Comment brings it back.
       if (body.dataset.sidebar === 'off') {
@@ -1375,7 +1396,7 @@ function start() {
     if (attachStatus) attachStatus.textContent = text;
     announce(text);
     if (show) {
-      openPanel();
+      openPanel(true); followTab('files');
       document.getElementById('attachments')?.scrollIntoView({ block: 'start' });
     }
   };
@@ -1438,7 +1459,7 @@ function start() {
     if (button.dataset.loupeZoom) loupe.set(Number(button.dataset.loupeZoom));
     else if ('loupeClose' in button.dataset) loupe.set(0);
   });
-  document.addEventListener('keydown', event => { if (event.key === 'Escape' && loupe.zoom && !pad.isOpen) loupe.set(0); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && loupe.zoom && !pad.isOpen) { event.preventDefault(); loupe.set(0); } });
 
   // Drawing (D2): the toolbar and the drawing surface over the frame.
   const ink = createInk({
@@ -1542,9 +1563,13 @@ function start() {
         if (resolve) resolve(message);
         break;
       }
-      case 'hj:escape':
+      case 'hj:escape': {
+        const menuWasOpen = !menu.hidden;
         closeMenu();
+        if (body.dataset.tab) { showTab(''); break; }
+        if (message.free && !menuWasOpen) document.dispatchEvent(new Event('hj:escape-free'));
         break;
+      }
       case 'hj:loupe':
         loupe.zoom = message.zoom;
         loupe.paint();

@@ -100,6 +100,8 @@ pub struct DocumentRow {
     /// A new version, a comment, or a shared saved field counts; personal answers and a page's own
     /// browser storage do not.
     pub changed: String,
+    /// The same moment as `changed`, as digits that sort (YYYYMMDDHHMMSS, Singapore time).
+    pub changed_sort: String,
     /// Hidden from the family's lists, the globe, search and the landing page (the owner, 7 November 2026).
     pub hidden: bool,
 }
@@ -144,6 +146,11 @@ pub(super) async fn list_with(pool: &PgPool, with_hidden: bool) -> sqlx::Result<
                     COALESCE((SELECT max(f.updated_at) FROM document_fields f
                               WHERE f.document_id = d.id AND f.scope_profile_id IS NULL AND f.kind = 'field'), v.uploaded_at))
                     AT TIME ZONE 'Asia/Singapore', 'HH12:MIAM DD-MM') AS changed,
+                to_char(GREATEST(v.uploaded_at,
+                    COALESCE((SELECT max(a.created_at) FROM annotations a WHERE a.document_id = d.id), v.uploaded_at),
+                    COALESCE((SELECT max(f.updated_at) FROM document_fields f
+                              WHERE f.document_id = d.id AND f.scope_profile_id IS NULL AND f.kind = 'field'), v.uploaded_at))
+                    AT TIME ZONE 'Asia/Singapore', 'YYYYMMDDHH24MISS') AS changed_sort,
                 d.hidden_at IS NOT NULL AS hidden
          FROM documents d
          JOIN LATERAL (SELECT * FROM document_versions WHERE document_id = d.id ORDER BY version_no DESC LIMIT 1) v ON TRUE
@@ -170,6 +177,11 @@ async fn find(pool: &PgPool, filing: &Filing) -> sqlx::Result<Option<DocumentRow
                     COALESCE((SELECT max(f.updated_at) FROM document_fields f
                               WHERE f.document_id = d.id AND f.scope_profile_id IS NULL AND f.kind = 'field'), v.uploaded_at))
                     AT TIME ZONE 'Asia/Singapore', 'HH12:MIAM DD-MM') AS changed,
+                to_char(GREATEST(v.uploaded_at,
+                    COALESCE((SELECT max(a.created_at) FROM annotations a WHERE a.document_id = d.id), v.uploaded_at),
+                    COALESCE((SELECT max(f.updated_at) FROM document_fields f
+                              WHERE f.document_id = d.id AND f.scope_profile_id IS NULL AND f.kind = 'field'), v.uploaded_at))
+                    AT TIME ZONE 'Asia/Singapore', 'YYYYMMDDHH24MISS') AS changed_sort,
                 d.hidden_at IS NOT NULL AS hidden
          FROM documents d
          JOIN LATERAL (SELECT * FROM document_versions WHERE document_id = d.id ORDER BY version_no DESC LIMIT 1) v ON TRUE
