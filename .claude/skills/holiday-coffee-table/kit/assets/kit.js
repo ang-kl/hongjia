@@ -912,8 +912,11 @@ if(tourEl&&playBtn){
     if(e.key==='Escape'){ e.preventDefault(); closeTour(); }
     else if(e.key==='ArrowRight'&&!e.target.closest('.leaflet-container')){ tNext.click(); }
     else if(e.key==='ArrowLeft'&&!e.target.closest('.leaflet-container')){ tPrev.click(); }
-    else if(e.key==='Tab'){ var f=$$('button:not([hidden]):not([disabled])',tourEl.querySelector('.tour-ctl')); var i=f.indexOf(document.activeElement);
-      if(e.shiftKey&&i<=0){ e.preventDefault(); f[f.length-1].focus(); } else if(!e.shiftKey&&i===f.length-1){ e.preventDefault(); f[0].focus(); } }
+    else if(e.key==='Tab'){
+      // Focus stays in the tour: the restaurant's links (its rating, menu and diners' reviews), then the buttons.
+      var f=$$('.tour-taste:not([hidden]) a, .tour-ctl button:not([hidden]):not([disabled])',tourEl).filter(function(x){ return x.getClientRects().length; });
+      var i=f.indexOf(document.activeElement);
+      if(e.shiftKey&&i<=0){ e.preventDefault(); f[f.length-1].focus(); } else if(!e.shiftKey&&(i<0||i===f.length-1)){ e.preventDefault(); f[0].focus(); } }
   });
 }
 

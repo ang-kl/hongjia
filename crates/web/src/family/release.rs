@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.10 (2)";
+pub const VERSION: &str = "2026.11.10 (3)";
 
-pub const SYNOPSIS: &str = "This version adds Contents beside a trip page's title on a desktop, listing Part 1 and Part 2 so a click goes straight to that part without reloading, and makes 🔭 blink for 3 seconds as the start of each part goes by while reading down.";
+pub const SYNOPSIS: &str = "This version keeps the header's lists inside a short screen, where they now scroll, and moves a data file named for a version into that version's list as soon as it is attached (and out again when deleted), without waiting for a reload.";
