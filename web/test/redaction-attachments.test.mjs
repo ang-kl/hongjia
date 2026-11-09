@@ -77,3 +77,14 @@ test('pins and notes step aside while a trip page plays its tour (9 November 202
   const js = await readFile(new URL('../assets/doc-view.mjs', import.meta.url), 'utf8');
   assert.match(js, /root\.classList\.toggle\('tour-on', on\)/, 'the tour message sets and clears the class');
 });
+
+test('the header lists: an older version is view only, and files listed with a version are not pinned (9 November 2026)', async () => {
+  const js = await readFile(new URL('../assets/doc-view.mjs', import.meta.url), 'utf8');
+  assert.match(js, /const older = body\.dataset\.older === 'true';/);
+  assert.match(js, /if \(older && \['hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:menu'\]\.includes\(message\.type\)\) return;/, 'nothing typed is saved and no marks are made');
+  assert.match(js, /if \(!OVERLAID\.has\(kind\) \|\| unpinned\.has\(id\)\) continue;/, 'files listed with their version are not pinned');
+  assert.match(js, /window\.addEventListener\('blur', closePicks\);/, 'a click in the document closes the lists');
+  const css = (await readFile(new URL('../assets/site.css', import.meta.url), 'utf8')).replace(/\s+/g, ' ');
+  assert.match(css, /\.doc-pick > summary::-webkit-details-marker \{ display: none; \}/);
+});
+

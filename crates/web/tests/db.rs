@@ -3434,6 +3434,125 @@ const AT: [(&str, &str); 3] = [
     ("anchor_y", "0.5"),
 ];
 
+/// The part of a page between two markers.
+fn between<'a>(body: &'a str, from: &str, to: &str) -> &'a str {
+    let start = body.find(from).expect("start marker") + from.len();
+    let end = start + body[start..].find(to).expect("end marker");
+    &body[start..end]
+}
+
+/// The header's two lists (the owner, 9 November 2026): the version tag opens the last three versions, an older one
+/// shows in place, view only; a data file named for a version is listed under it and not pinned on the page; the
+/// title opens the latest documents, hidden ones left out.
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn header_lists_versions_data_files_and_latest_documents(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let r = upload(&mut o, &csrf, "Trip", Some(("trip-v1.html", SAMPLE))).await;
+    let key = r.header("location").unwrap().to_string();
+    for name in ["trip-v2.html", "trip-v3.html", "trip-v4.html"] {
+        let r = send_multipart(
+            &mut o,
+            &format!("{key}/version"),
+            &[("csrf", &csrf)],
+            Some((name, SAMPLE)),
+        )
+        .await;
+        assert_eq!(r.status, 303, "{}", r.body);
+    }
+    let (status, body) = attach(&mut o, &key, &AT, "trip-data-v3.txt", b"{}").await;
+    assert_eq!(status, 201, "{body}");
+    let d3 = id_in(&body);
+    let (status, body) = attach(&mut o, &key, &AT, "trip-data-v1.txt", b"{}").await;
+    assert_eq!(status, 201, "{body}");
+    let d1 = id_in(&body);
+    let (status, body) = attach(&mut o, &key, &AT, "notes.txt", b"plain notes").await;
+    assert_eq!(status, 201, "{body}");
+    let notes = id_in(&body);
+
+    // The latest: its tag opens the last three versions, the data file under its version.
+    let view = o.get(&key).await.body;
+    assert!(view.contains(r#"<summary class="doc-v""#) && view.contains("· v.04</summary>"));
+    let versions = between(&view, r#"<p class="pick-head">Versions</p><ul>"#, "</ul>");
+    assert!(versions.contains(&format!(r#"href="{key}" aria-current="page"><b>v.04</b>"#)));
+    assert!(versions.contains(&format!(r#"href="{key}?v=3"><b>v.03</b>"#)));
+    assert!(versions.contains(&format!(r#"href="{key}?v=2"><b>v.02</b>"#)));
+    assert!(!versions.contains("v.01"), "the last three only");
+    assert!(versions.contains(&format!(
+        r#"<a class="pick-file" href="{key}/attachments/{d3}" download>↓ trip-data-v3.txt</a>"#
+    )));
+    assert!(!versions.contains(&format!("/attachments/{d1}\"")) && !versions.contains("notes.txt"));
+    // Files named for a version are not pinned; nothing is deleted, and other files keep their pins.
+    let unpinned: Vec<&str> = between(&view, r#"data-unpinned=""#, "\"")
+        .split(' ')
+        .collect();
+    assert!(unpinned.contains(&d3.as_str()) && unpinned.contains(&d1.as_str()));
+    assert!(!unpinned.contains(&notes.as_str()));
+    for id in [&d1, &d3, &notes] {
+        assert!(
+            view.contains(&format!(r#"data-annotation-id="{id}""#)),
+            "still in Files"
+        );
+    }
+    assert!(
+        view.contains(r#"data-older="false""#) && view.contains(&format!(r#"src="{key}/raw""#))
+    );
+
+    // An older version shows in place, view only, with the way back.
+    let old = o.get(&format!("{key}?v=2")).await.body;
+    assert!(
+        old.contains(r#"class="notice older-note""#) && old.contains("You are looking at v.02")
+    );
+    assert!(old.contains(&format!(r#"<a href="{key}">Back to the latest (v.04)</a>"#)));
+    assert!(old.contains(&format!(r#"src="{key}/raw?v=2""#)));
+    assert!(
+        old.contains(r#"data-older="true""#) && old.contains(r#"aria-hidden="true" hidden></div>"#)
+    );
+    assert!(old.contains("· v.02</summary>"));
+    assert!(old.contains(&format!(r#"href="{key}?v=2" aria-current="page""#)));
+    // The latest asked for by number, or a version that does not exist: the latest, as usual.
+    for asked in ["4", "99", "x"] {
+        let page = o.get(&format!("{key}?v={asked}")).await.body;
+        assert!(
+            !page.contains("older-note") && page.contains(&format!(r#"src="{key}/raw""#)),
+            "{asked}"
+        );
+    }
+
+    // The title opens the latest documents: at most five, this one marked, hidden ones left out.
+    let r = upload(&mut o, &csrf, "Secret", Some(("secret.html", SAMPLE))).await;
+    let secret = r.header("location").unwrap().to_string();
+    assert_eq!(
+        o.post(&format!("{secret}/hide"), &[("csrf", &csrf)])
+            .await
+            .status,
+        303
+    );
+    for n in 1..=5 {
+        upload(
+            &mut o,
+            &csrf,
+            &format!("Other {n}"),
+            Some(("other.html", SAMPLE)),
+        )
+        .await;
+    }
+    let view = o.get(&key).await.body;
+    let titles = between(
+        &view,
+        r#"<p class="pick-head">Latest documents</p><ul>"#,
+        "</ul>",
+    );
+    assert_eq!(titles.matches("<li>").count(), 5);
+    assert!(
+        titles.contains(&format!(r#"href="{key}" aria-current="page">Trip</a>"#)),
+        "this one is always listed"
+    );
+    assert!(!titles.contains("Secret"));
+    assert!(view.contains(r#"<p class="pick-more"><a href="/documents">All documents</a></p>"#));
+}
+
 #[sqlx::test(migrations = "../../db/migrations")]
 async fn attachments_are_checked_downloaded_only_and_follow_the_rules(pool: PgPool) {
     let port = start(pool.clone(), config()).await;
@@ -4035,7 +4154,7 @@ async fn documents_can_be_hidden_and_shown_again(pool: PgPool) {
     let key = doc.trim_start_matches("/documents/").to_string();
     // The header shows the file's own version beside the filing number.
     let view = o.get(&doc).await.body;
-    assert!(view.contains(r#"<span class="doc-v""#) && view.contains("· v.13</span>"));
+    assert!(view.contains(r#"<summary class="doc-v""#) && view.contains("· v.13</summary>"));
     assert!(
         view.find(r#"id="manage""#) < view.find("<dt>Filing number</dt>"),
         "Manage comes first"
