@@ -1511,6 +1511,28 @@ class KitTest(unittest.TestCase):
         with self.assertRaises(build.KitError):
             build.Page(copy.deepcopy(self.data)).sec_link('1 bad"id')
 
+    def test_kl_lessons(self):
+        # a leg with no road route is refused: the map would draw a straight line
+        d = example()
+        key = next(iter(d['legs']))
+        d['legs'][key].pop('path', None)
+        with self.assertRaises(build.KitError):
+            build.build(d)
+        # Commons file names are shown with spaces in the credits, so they wrap
+        d = example()
+        pid = next(p for p, x in d['photos'].items() if x.get('file') and x.get('host') and x.get('credit_url'))
+        d['photos'][pid]['file'] = 'A_very_long_file_name_with_underscores_only.jpg'
+        html = build.build(d)
+        self.assertIn('"A very long file name with underscores only.jpg"', html)
+        self.assertNotIn('A_very_long_file_name_with_underscores_only', html.split('id="credits"')[1].split('</section>')[0])
+        # a link chip's label longer than a phone allows fails the check
+        d = example()
+        sid = next(s for s, x in d['stops'].items() if any(l.get('kind', 'web') == 'web' for l in x.get('links') or []))
+        lk = next(l for l in d['stops'][sid]['links'] if l.get('kind', 'web') == 'web')
+        lk['label'] = 'Book online (the venue\'s own booking page)'
+        self.assertIn('link label too long for a phone', [k for k, _ in build.check_html(build.build(d))])
+        self.assertNotIn('link label too long for a phone', [k for k, _ in build.check_html(build.build(example()))])
+
     def test_wikimedia_thumbnail_address(self):
         d = example()
         pid = next(iter(d['photos']))

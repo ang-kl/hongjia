@@ -207,3 +207,11 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
     when flat, busy and agreed by the owner, shown as "not marked", with a check-in.
   - The live check also opens a swap from Can't-miss, copies a stop's # address, opens a swap's own address, and looks
     at the opening screen and the data pins on an iPad and a phone.
+- **The second trip's lessons** (the owner, 9 November 2026: "update the template"; they chose all four):
+  - The data pin's spot is measured on each page, clear of every word and button at the site's phone frame, an iPad
+    and a wide screen; a longer title moves the buttons, so one fixed spot does not suit every page.
+  - Phone fit: Commons file names show with spaces in the credits (so they wrap), the credits and sources lists may
+    break long words, and `--check` flags a link chip's label over 28 characters.
+  - Every map leg needs its road route (`path`); the kit refuses a leg without one.
+  - The instructions add rideshare-only trips (each group books its own ride, with an estimated fare), a rating
+    only where the owner asks for one (dated, with its count), and research in parts with one assembly script.
