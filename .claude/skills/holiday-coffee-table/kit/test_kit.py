@@ -844,8 +844,24 @@ class KitTest(unittest.TestCase):
     def test_legend_categories(self):
         labels = [n.text().strip() for n in find(self.root, 'button', 'lg') if 'legend-compact' not in n.parent.classes()]
         self.assertEqual([l.split()[1] if len(l.split()) > 1 else l for l in labels],
-                         ['Stays', 'Transport', 'Weather', 'Food', 'Drinks', 'Snacks', 'Shopping', 'Fun', 'Sights', 'Worship'])
-        self.assertEqual(list(self.trip['cats']), ['stays', 'transport', 'weather', 'food', 'drinks', 'snacks', 'shopping', 'fun', 'sights', 'worship'])
+                         ['Stays', 'Transport', 'Weather', 'Food', 'Drinks', 'Snacks', 'Shopping', 'Massage', 'Nature', 'Fun', 'Sights', 'Worship'],
+                         'hair and pedicure are left out: no place in the sample uses them')
+        self.assertEqual(list(self.trip['cats']), ['stays', 'transport', 'weather', 'food', 'drinks', 'snacks', 'shopping', 'hair', 'nails',
+                                                   'massage', 'nature', 'fun', 'sights', 'worship'])
+        # the exact emoji (the owner, 9 November 2026)
+        icons = {k: v[0] for k, v in self.trip['cats'].items()}
+        self.assertEqual({k: icons[k] for k in ('hair', 'nails', 'massage', 'shopping', 'food', 'nature')},
+                         {'hair': '💇', 'nails': '💅', 'massage': '💆', 'shopping': '🛍️', 'food': '🍽️', 'nature': '🌳'})
+        self.assertEqual(build.LABELS['swap_icon_b'], '🌳', 'Plan B, hiking and nature, carries the nature mark')
+        svc = find(self.root, 'div', 'meal', data_service='massage')
+        self.assertEqual(len(svc), 1, 'the day\'s service choices, shown like meals')
+        self.assertIn('💆', svc[0].text())
+        self.assertEqual(len(find(svc[0], 'article', 'alt')), 2)
+        d = copy.deepcopy(self.data)
+        day = next(x for x in d['days'] if x.get('services'))
+        day['services'][0]['kind'] = 'tattoo'
+        with self.assertRaises(build.KitError):
+            build.build(d)
         for st in find(self.root, 'article', 'stop'):
             self.assertTrue(st.attrs.get('data-cats'), f'{st.attrs["id"]} carries its categories')
         self.assertEqual(find(self.root, 'article', 'stop', id='d2-market')[0].attrs['data-cats'], 'shopping snacks food', 'a list lights every category')

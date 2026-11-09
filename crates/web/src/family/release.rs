@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.09 (4)";
+pub const VERSION: &str = "2026.11.09 (5)";
 
-pub const SYNOPSIS: &str = "This version replaces the # beside every part of a trip page with the Share mark (three joined dots) and adds 🤙🏼 beside it, on every place, plan and part, every timed calendar card, every booking, every Near here place, every Gallery picture and each place's panel. For the owner's account 🤙🏼 opens WhatsApp's chat picker with that part's name, time, address and link already typed in; nothing is sent until the owner presses Send. For everyone else it is greyed and says why.";
+pub const SYNOPSIS: &str = "This version gives trip pages exact emoji, the same on every trip: 💇 hair, 💅 pedicure and nails, 💆 massage, 🛍️ shopping, 🍽️ food and 🌳 nature, each with its own legend button, so a salon is no longer marked as shopping and Plan B walks carry 🌳. A day can also list its salon, pedicure and massage choices the way it lists meals, with their prices, hours and links.";

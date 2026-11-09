@@ -126,7 +126,7 @@ LABELS = {
     'plan_a': 'As planned', 'plan_b': 'If it rains', 'plan_c': "If it's hot", 'plan': 'Plan {p}',
     'wx_icon_b': '☔', 'wx_icon_c': '☀️',
     'swap_b': 'Hiking & nature', 'swap_c': 'Shopping', 'swap_d': 'Early or late',
-    'swap_icon_b': '🥾', 'swap_icon_c': '🛍️', 'swap_icon_d': '🌙', 'swap_who_b': '', 'swap_who_c': '', 'swap_who_d': '',
+    'swap_icon_b': '🌳', 'swap_icon_c': '🛍️', 'swap_icon_d': '🌙', 'swap_who_b': '', 'swap_who_c': '', 'swap_who_d': '',
     'swaps_aria': 'Swaps for {name}', 'swap_when': 'When', 'swap_go': 'Getting there', 'swap_checkin': 'Check in',
     'swap_meet': 'Meet up', 'swap_rest': 'Everyone else carries on as planned.', 'swapped': 'Swapped: {plans}',
     'trail_grade_easy': 'easy', 'trail_grade_moderate': 'moderate', 'trail_grade_hard': 'hard',
@@ -151,8 +151,13 @@ LABELS = {
 
 # Legend categories, in the owner's order: (key, icon, label). A stop or nearby place may carry several.
 CATS = [('stays', '🏨', 'Stays'), ('transport', '🚗', 'Transport'), ('weather', '🌦️', 'Weather'), ('food', '🍽️', 'Food'),
-        ('drinks', '☕', 'Drinks'), ('snacks', '🍫', 'Snacks'), ('shopping', '🛍️', 'Shopping'), ('fun', '🎡', 'Fun'),
-        ('sights', '🏛️', 'Sights'), ('worship', '⛪', 'Worship')]
+        ('drinks', '☕', 'Drinks'), ('snacks', '🍫', 'Snacks'), ('shopping', '🛍️', 'Shopping'),
+        ('hair', '💇', 'Hair'), ('nails', '💅', 'Pedicure & nails'), ('massage', '💆', 'Massage'), ('nature', '🌳', 'Nature'),
+        ('fun', '🎡', 'Fun'), ('sights', '🏛️', 'Sights'), ('worship', '⛪', 'Worship')]
+# The kinds a trip may not have: their legend buttons show only when a place on the page uses them (9 November 2026).
+CATS_IF_USED = {'hair', 'nails', 'massage', 'nature'}
+# A day's service choices, shown like meals (the owner, 9 November 2026), with their exact emoji.
+SERVICES = {'hair': ('💇', 'svc_hair'), 'nails': ('💅', 'svc_nails'), 'massage': ('💆', 'svc_massage')}
 CAT_KEYS = [c[0] for c in CATS]
 CAT_ALIASES = {'dining': 'food'}  # the first legend had one Dining category
 # Official social links must point at the platform itself.
@@ -185,6 +190,8 @@ LABELS.update({
     # place panels, meals, photo spots, Share and Near me (6 November 2026)
     'sheet_close': 'Close', 'sheet_aria': 'Place details', 'photo_spot': 'Photo spot', 'planned': 'Planned',
     'meals': 'Meals', 'meals_aria': 'Meals for day {n}', 'meal_choices': '{n} choices',
+    'services': 'Hair, nails and massage', 'services_aria': 'Salon, pedicure and massage choices for day {n}',
+    'svc_hair': 'Salon', 'svc_nails': 'Pedicure & nails', 'svc_massage': 'Massage',
     'meal_breakfast': 'Breakfast', 'meal_brunch': 'Brunch', 'meal_lunch': 'Lunch', 'meal_dinner': 'Dinner', 'meal_snack': 'Snack',
     'share': 'Share', 'share_day': 'Share this day', 'shared': 'Shared.', 'copied': 'Link copied.',
     'sec_link': 'Share a link to this part',
@@ -592,6 +599,22 @@ class Page:
                         raise KitError(f'{w}.timeline[{j}]: unknown photo {pid!r}')
             for j, x in enumerate(day.get('nearby') or []):
                 norm_cats(x.get('cat'), f'{w}.nearby[{j}].cat')
+            for j, g in enumerate(day.get('services') or []):
+                wg = f'{w}.services[{j}]'
+                if g.get('kind') not in SERVICES:
+                    raise KitError(f'{wg}.kind must be one of {", ".join(SERVICES)}')
+                if not g.get('choices'):
+                    raise KitError(f'{wg}: list the choices')
+                for c, x in enumerate(g['choices']):
+                    if 'stop' in x:
+                        if x['stop'] not in self.stops:
+                            raise KitError(f'{wg}.choices[{c}]: unknown stop {x["stop"]!r}')
+                    else:
+                        for k in ('name', 'why', 'lat', 'lng', 'q'):
+                            if x.get(k) in (None, ''):
+                                raise KitError(f'{wg}.choices[{c}].{k} is required')
+                        if x.get('hours') and not x.get('source'):
+                            raise KitError(f'{wg}.choices[{c}]: hours need their source')
             want = (d.get('page') or {}).get('meal_choices')
             for j, m in enumerate(day.get('meals') or []):
                 if m.get('meal') not in MEALS:
@@ -1266,11 +1289,32 @@ class Page:
                         return f'd{n}-{it["stop"]}-{p}'
         return ''
 
+    def used_cats(self):
+        """Every category a place on the page carries (stops, swaps' places, meal and service choices, nearby)."""
+        if not hasattr(self, '_used_cats'):
+            found = set()
+
+            def walk(v):
+                if isinstance(v, dict):
+                    c = v.get('cat')
+                    if isinstance(c, str):
+                        found.add(CAT_ALIASES.get(c, c))
+                    elif isinstance(c, list):
+                        found.update(CAT_ALIASES.get(x, x) for x in c if isinstance(x, str))
+                    for x in v.values():
+                        walk(x)
+                elif isinstance(v, list):
+                    for x in v:
+                        walk(x)
+            walk({'stops': self.stops, 'days': self.days})
+            self._used_cats = found
+        return self._used_cats
+
     def legend(self, compact=False):
         btns = ''.join(f'<button type="button" class="lg" data-legend="{k}" aria-pressed="false"'
                        + (f' aria-label="{E(self.cat_labels[k])}" title="{E(self.cat_labels[k])}"' if compact else '')
                        + f'><span aria-hidden="true">{icon}</span>' + ('' if compact else f' {E(self.cat_labels[k])}<span class="lg-n"></span>') + '</button>'
-                       for k, icon, _ in CATS)
+                       for k, icon, _ in CATS if k not in CATS_IF_USED or k in self.used_cats())
         label = self.L['map_legend'] if compact else self.L['legend']
         return (f'<div class="legend{" legend-compact" if compact else ""}" role="group" aria-label="{E(label)}">{btns}</div>'
                 + ('' if compact else f'<p class="lg-status" aria-live="polite"><span class="lg-msg"></span> <button type="button" class="lg-next" hidden>{E(self.L["lg_next"])}</button>'
@@ -1786,6 +1830,7 @@ class Page:
                     + self.plan_head(p) + (f'<p class="plan-why">{self.rich(note, w + ".plan_notes")}</p>' if note else '')
                     + '<div class="stops">' + ''.join(self.stop_card(day, n, it, p) for it in day['plan_' + p]) + '</div></section>')
         out += self.meals_html(day, n)
+        out += self.services_html(day, n)
         out += self.tasteshop_html(day, n)
         out += self.nearby(day, n)
         return out + '</article>'
@@ -1885,6 +1930,38 @@ class Page:
             head = f'{MEAL_ICONS[m["meal"]]} {E(self.L["meal_" + m["meal"]])}' + (f' · {E(m["time"])}' if m.get('time') else '')
             out += (f'<div class="meal" data-meal="{m["meal"]}"><h4 class="meal-h">{head} <span class="meal-n">{E(self.fmt("meal_choices", n=len(cards)))}</span></h4>'
                     + (f'<p class="meal-note">{self.rich(m["note"], f"{w}[{j}].note")}</p>' if m.get('note') else '')
+                    + f'<div class="alts-grid">{"".join(cards)}</div></div>')
+        return out + '</section>'
+
+    def services_html(self, day, n):
+        """The day's salon, pedicure and massage choices (the owner, 9 November 2026), shown like meals: the planned place
+        first, then the others with their prices, hours and links."""
+        groups = day.get('services') or []
+        if not groups:
+            return ''
+        w = f'days[{n - 1}].services'
+        out = f'<section class="meals services" aria-label="{E(self.fmt("services_aria", n=n))}"><p class="mono kicker">{E(self.L["services"])}</p>'
+        for j, g in enumerate(groups):
+            icon, label = SERVICES[g['kind']]
+            cards = []
+            for c, x in enumerate(g['choices']):
+                if 'stop' in x:
+                    st = self.stops[x['stop']]
+                    pid = self.place_pid[st['place']]
+                    cats = self.stop_cats.get(x['stop']) or [g['kind']]
+                    pl = self.places[st['place']]
+                    role = x.get('role') or self.first_role(x['stop'])
+                    planned = f' <span class="badge">{E(self.L["planned"])}</span>' if c == 0 else ''
+                    cards.append(f'<article class="alt{" alt-planned" if c == 0 else ""}"{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{self.cat_icons[cats[0]]}</span> '
+                                 f'<b>{self.pl_link(pid, E(st["name"]), self.panels[pid]["anchor"])}</b>{planned}</p>'
+                                 + (f'<p>{self.rich(role, f"{w}[{j}].choices[{c}].role")}</p>' if role else '')
+                                 + f'<p class="alt-links"><button type="button" class="linkish show-map" data-day="{n - 1}" data-idx="-1" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" '
+                                   f'data-name="{E(st["name"])}" data-note="{E(self.L[label])}">{E(self.L["alt_map"])}</button></p></article>')
+                else:
+                    cards.append(self.alt_card(x, n, f'{w}[{j}].choices[{c}]', default=g['kind']))
+            head = f'{icon} {E(g.get("title") or self.L[label])}' + (f' · {E(g["time"])}' if g.get('time') else '')
+            out += (f'<div class="meal" data-service="{g["kind"]}"><h4 class="meal-h">{head} <span class="meal-n">{E(self.fmt("meal_choices", n=len(cards)))}</span></h4>'
+                    + (f'<p class="meal-note">{self.rich(g["note"], f"{w}[{j}].note")}</p>' if g.get('note') else '')
                     + f'<div class="alts-grid">{"".join(cards)}</div></div>')
         return out + '</section>'
 
@@ -2070,7 +2147,8 @@ class Page:
         """🤙🏼: opens WhatsApp with this part's name, time, address and link, for the owner's account only; everyone
         else sees it greyed (the owner, 9 November 2026). The family site says who is reading. The part's address and
         name are read from the Share link beside it, so 200 of them add little weight."""
-        return ('<button type="button" class="wa-btn"' + (f' data-wa-when="{E(when)}"' if when else '')
+        # no type: the page has no forms, and 200 of them would add 3 KB
+        return ('<button class="wa-btn"' + (f' data-wa-when="{E(when)}"' if when else '')
                 + f' aria-disabled="true" aria-label="{E(self.L["wa_label"])}"></button>')
 
     def share_pair(self, anchor, name, when=''):

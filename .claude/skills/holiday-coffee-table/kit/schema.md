@@ -111,9 +111,18 @@ category, on the page and on the map:
 | `drinks` | ☕ Drinks | cafes, coffee, bars, breweries, wineries, cellar doors |
 | `snacks` | 🍫 Snacks | bakeries, chocolate, ice cream, market food stalls, quick bites |
 | `shopping` | 🛍️ Shopping | shops, malls, markets, boutiques |
-| `fun` | 🎡 Fun | beaches, cruises, attractions, spas, play |
-| `sights` | 🏛️ Sights | lookouts, museums, galleries, heritage, nature |
+| `hair` | 💇 Hair | hair salons and barbers (never `shopping`) |
+| `nails` | 💅 Pedicure & nails | pedicure, manicure and nail salons |
+| `massage` | 💆 Massage | spas, massage and foot reflexology |
+| `nature` | 🌳 Nature | parks, gardens, forests, walks, beaches kept for nature |
+| `fun` | 🎡 Fun | beaches, cruises, attractions, play |
+| `sights` | 🏛️ Sights | lookouts, museums, galleries, heritage |
 | `worship` | ⛪ Worship | churches, mosques, temples, synagogues, chapels |
+
+The emoji are exact and the same on every trip (the owner, 9 November 2026: "Your use of emoji for hair, shopping,
+food, nature, must be exact for both trips and template"): 💇 hair, 💅 pedicure and nails, 💆 massage, 🛍️ shopping,
+🍽️ food, 🌳 nature; Plan B (hiking and nature) carries 🌳. Hair, nails, massage and nature show in the legend only
+when a place on the page uses them.
 
 `"dining"` (the first legend's single category) is still read, as `food`. The stays, transport
 and holidays sections carry `stays`, `transport` and `weather` unless their own `cat` says otherwise.
@@ -451,6 +460,16 @@ addresses `https://www.instagram.com/(p|reel)/<code>/embed/captioned/` and
 Posts on a Plan B or Plan C stop come after the day's main plan, marked with their plan ("Plan B · If it
 rains"), and a post shown twice in a day appears once. A playing post keeps a small link to the post itself,
 in case the service shows an error or a limit in place of the post.
+
+## Hair, nails and massage (`days[].services`)
+
+A day's service choices, shown like meals (the owner, 9 November 2026, for a trip that is about shopping,
+hair, pedicure and massage): a list of `{kind, time, title, note, choices}`. `kind` is `hair` (💇 Salon), `nails`
+(💅 Pedicure & nails) or `massage` (💆 Massage). Each choice is `{stop, role}` (a stop; the first is the planned one)
+or an alternative card `{name, cat, why, hours, source, lat, lng, q, links, photo}` as in meals. Put each place's
+prices, its dated Google rating (allowed for services, with its count and where it was read), how to book and its
+own Instagram or TikTok in `why` and `links`; its own posts go in the stop's `embeds` or `social`. Anything to
+book ahead also goes in Before we go.
 
 ## Before we go (`pretrip`)
 

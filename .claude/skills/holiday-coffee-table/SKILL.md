@@ -48,7 +48,13 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
   with the part's name, time, address, map link and page link typed in; nothing is sent until they press
   Send. For everyone else it is greyed, and a tap says why.
 - **Legend** that lights up places on the page and the map by category (stays, transport, weather,
-  food, drinks, snacks, shopping, fun, sights, worship).
+  food, drinks, snacks, shopping, hair, nails, massage, nature, fun, sights, worship), with **exact emoji, the same on
+  every trip** (the owner, 9 November 2026): 💇 hair, 💅 pedicure and nails, 💆 massage, 🛍️ shopping, 🍽️ food,
+  🌳 nature (Plan B, hiking and nature, carries 🌳). A salon is `hair`, never `shopping`; a park or a walk is
+  `nature`. Hair, nails, massage and nature show in the legend only when the page uses them.
+- **Hair, nails and massage** (a day's `services`), shown like meals with their choices, prices, dated Google
+  ratings, hours on the dates and the places' own Instagram and TikTok posts; never Google Maps photos copied in
+  (they belong to their uploaders): link the place on Google Maps instead.
 - **Days**, one article each: the day's photo band, route line with every place linked, badges,
   Plan A stops with 2 to 4 credited photos each, timeline items pointing at their stops, the four
   info boxes (Getting around, Meals, Style & photo moments, Make it easier), the weather swaps

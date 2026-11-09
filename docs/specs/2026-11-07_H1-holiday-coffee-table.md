@@ -239,3 +239,9 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
   WhatsApp settings on the server are not used). The site tells the page whether the reader is the owner; the owner's
   tap opens WhatsApp with the part's name, time, address, map link and page link typed in, and nothing is sent until
   they press Send. This is the one exception to "link only", for the owner alone.
+- **Exact emoji and service choices** (the owner, 9 November 2026: "Your use of emoji for hair, shopping, food, nature,
+  must be exact for both trips and template"; they chose 💇 hair, 💅 pedicure and nails, 💆 massage, 🛍️ shopping,
+  🍽️ food, 🌳 nature, each its own legend button): a salon is never tagged shopping; Plan B carries 🌳; the four new
+  kinds show in the legend only when a page uses them. A day's salon, pedicure and massage choices show like meals
+  (for a trip that is about shopping, hair, pedicure and massage). Pictures of a service come from the place's own
+  website, Instagram or TikTok; Google Maps photos are linked, never copied.
