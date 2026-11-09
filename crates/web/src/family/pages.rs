@@ -174,7 +174,7 @@ pub fn signin(profiles: &[Profile], csrf: &str, message: Option<&str>) -> String
 <label>Family password <input type="password" name="passphrase" autocomplete="current-password" required maxlength="256"></label>
 <button type="submit">Sign in</button>
 </form>
-<p class="small"><a href="/privacy">What we collect</a>.</p>"#,
+<p class="small"><a href="/privacy">What we collect</a>. Location is off unless you turn it on under ☰ Settings, This device.</p>"#,
             notice = notice(message),
             csrf = escape(csrf)
         ),
@@ -211,7 +211,7 @@ pub fn consent(
         "",
         &format!(
             r#"<h1>This device</h1>
-<p>Before you continue on this device, here is what the site records and who can see it. The full list is on <a href="/privacy">What we collect</a>.</p>
+<p>Here is what the site records on this device and who can see it. The full list is on <a href="/privacy">What we collect</a>.</p>
 <ul>
 <li>Each sign-in: the profile chosen, the time, a short description of this browser, and a device code. All four profiles can see this in the journal.</li>
 <li>While the page is open and you are using it, an estimate of active time. An open tab does not prove anyone was reading.</li>
@@ -225,7 +225,7 @@ pub fn consent(
 </fieldset>
 <p class="small">If you choose Yes, your browser asks its own question first; nothing is shared unless you allow it there too.</p>
 <label>Name this device (optional) <input type="text" name="device_label" maxlength="40" value="{label}" placeholder="for example: my phone"></label>
-<button type="submit">Save and continue</button>
+<button type="submit">Save</button>
 </form>
 <p class="small">You can change this at any time from ☰ Settings, This device. Choosing No also removes locations already stored from this device.</p>"#,
             csrf = escape(nav.csrf),
