@@ -70,3 +70,10 @@ test('a pin keeps the end of a long file name, so two versions never look the sa
   assert.match(css, /\.ov-attachment \.clip-head \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; \}/);
   assert.match(css, /\.ov-attachment \.clip-tail \{ flex: none; \}/);
 });
+
+test('pins and notes step aside while a trip page plays its tour (9 November 2026)', async () => {
+  const css = (await readFile(new URL('../assets/site.css', import.meta.url), 'utf8')).replace(/\s+/g, ' ');
+  assert.match(css, /html\.tour-on \.doc-overlay \{ visibility: hidden; \}/);
+  const js = await readFile(new URL('../assets/doc-view.mjs', import.meta.url), 'utf8');
+  assert.match(js, /root\.classList\.toggle\('tour-on', on\)/, 'the tour message sets and clears the class');
+});

@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.09 (6)";
+pub const VERSION: &str = "2026.11.09 (7)";
 
-pub const SYNOPSIS: &str = "This version keeps the end of a long file name in sight on its pin: a pin now shortens the middle of the name, not its end, so the pins of two versions of the same file, such as \"Holiday-plan-data-v3.txt\" and \"Holiday-plan-data-v4.txt\", no longer look the same on a phone. A name that fits still shows whole.";
+pub const SYNOPSIS: &str = "This version keeps a trip page's Play the trip clear: while the tour plays, the family's pins and notes on the page step aside, so nothing covers its pictures or its map, and they come back as soon as it closes.";
