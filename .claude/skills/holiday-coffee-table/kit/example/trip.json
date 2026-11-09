@@ -3141,6 +3141,13 @@
    "url": "https://example.com/example-ridge",
    "tier": "checked",
    "opened": "2026-11-07 10:00 SGT"
+  },
+  "ex_mill_menu": {
+   "label": "venue",
+   "title": "Midway Mill Bakery Café: menu (fictional)",
+   "url": "https://example.com/midway-mill/menu",
+   "opened": "3 May 2027, 10:05 local",
+   "tier": "checked"
   }
  },
  "places": {
@@ -5274,7 +5281,60 @@
      "body": "Example Food Guide (fictional)",
      "source": "ex_tourism"
     }
-   ]
+   ],
+   "taste": {
+    "venue": "Midway Mill Bakery Café",
+    "cuisine": "Country bakery café: pies, cakes and coffee",
+    "eat": [
+     {
+      "name": "Steak and pepper pie",
+      "note": "EB$9.50"
+     },
+     {
+      "name": "Apple crumble slice",
+      "note": "EB$6"
+     },
+     {
+      "name": "Mill breakfast roll",
+      "note": "EB$12"
+     }
+    ],
+    "drink": [
+     {
+      "name": "Flat white",
+      "note": "EB$5"
+     },
+     {
+      "name": "Cloudy apple juice",
+      "note": "EB$6"
+     }
+    ],
+    "menu": {
+     "source": "ex_mill_menu",
+     "read": "3 May 2027, 10:05 local"
+    },
+    "rating": {
+     "stars": 4.6,
+     "count": 812,
+     "site": "Example Maps",
+     "read": "3 May 2027, 10:06 local",
+     "url": "https://example.com/maps/midway-mill"
+    },
+    "say": [
+     {
+      "quote": "The pies alone are worth the stop, and the coffee is far better than you expect on a country road.",
+      "site": "Example Maps",
+      "when": "Apr 2027",
+      "url": "https://example.com/maps/midway-mill/reviews"
+     },
+     {
+      "quote": "Warm apple slice, a flat white and the river out the window. Exactly the break we needed.",
+      "site": "Example Maps",
+      "when": "Mar 2027",
+      "url": "https://example.com/maps/midway-mill/reviews"
+     }
+    ]
+   }
   },
   "lodge": {
    "name": "Ridge Lodge",

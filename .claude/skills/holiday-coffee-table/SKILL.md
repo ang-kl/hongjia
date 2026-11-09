@@ -5,7 +5,8 @@ description: Use when the family shares a briefing note, document, PDF or pictur
 
 # Holiday coffee-table pages
 
-Version 3, 8 November 2026: the family's swaps at each stop (Plans B, C and D). Version 2, the same day:
+Version 4, 9 November 2026: restaurants in Play the trip say what to eat and drink, their dated rating and what
+diners say. Version 3, 8 November 2026: the family's swaps at each stop (Plans B, C and D). Version 2, the same day:
 Direction A, "River" (the owner's redesign: "A"). Version 1, 7 November
 2026, was rebuilt from the family's v15 trip page, which is the standard every new trip page meets for
 content. The owner's words: "create a fresh construct template based on v15 ... I will give you a
@@ -52,6 +53,13 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
   every trip** (the owner, 9 November 2026): 💇 hair, 💅 pedicure and nails, 💆 massage, 🛍️ shopping, 🍽️ food,
   🌳 nature (Plan B, hiking and nature, carries 🌳). A salon is `hair`, never `shopping`; a park or a walk is
   `nature`. Hair, nails, massage and nature show in the legend only when the page uses them.
+- **Restaurants in Play the trip** (the owner, 9 November 2026: "I cannot see the name of the restaurant and what
+  type of food and drinks, I am not excited seeing just the premise. Include like what to eat, drink and what people
+  say"): every food or drink stop in the tour has a `taste` block: the venue's name and kind of food, about three
+  dishes and two drinks from its own current menu (non-alcoholic first; alcohol marked for adults), the menu's link and
+  when it was read, its Google rating with the review count and the date it was read, and one or two diners' words,
+  quoted exactly, with the site and the month, never a reviewer's name. Its pictures lead with food and drink from the
+  venue's own website, with the room or building last.
 - **Hair, nails and massage** (a day's `services`), shown like meals with their choices, prices, dated Google
   ratings, hours on the dates and the places' own Instagram and TikTok posts; never Google Maps photos copied in
   (they belong to their uploaders): link the place on Google Maps instead.
@@ -122,8 +130,13 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
      age-restricted accounts (alcohol venues), which do not show to people who are not logged in.
      Facebook is a link only (its embeds do not run in the frame).
    - **"Highest star"** means published awards and guide listings (`awards`), never Google or other
-     star ratings in the page. The one exception is where the owner asks for a rating (for example the
-     salons on one trip, 8 November 2026): then show it dated, with its review count and where it was read. Say "from the official accounts", not "most popular", unless
+     star ratings in the page. The exceptions are where the owner asks for a rating (the salons on one trip,
+     8 November 2026; restaurants in Play the trip, 9 November 2026): then show it dated, with its review count
+     and where it was read.
+   - **What diners say** (9 November 2026, the owner chose "diners only"): short quotes from diners' reviews
+     on Google Maps or Tripadvisor, word for word (cut only at the start or end, marked "…"), with the site and
+     the month written; never a name, photo or profile, never a quote we wrote or reworded, and none that is
+     unfair to the rating. Say "from the official accounts", not "most popular", unless
      popularity was measured.
    - **A full trip is researched in parts** (8 November 2026): food; shopping and groceries;
      services the family asked for (for example salons); logistics, holidays and the season; places and

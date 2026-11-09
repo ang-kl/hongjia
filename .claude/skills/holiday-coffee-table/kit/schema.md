@@ -193,6 +193,7 @@ Shown on the map when the reader ticks the safety box.
 | `instagram_tag` | | Adds `#tag` (Instagram photos), letters and digits only. |
 | `awards` | | Published awards or guide listings only, never star ratings: `[{award, year, body, source}]`; `award` and `source` (a source key or an https page, preferably the awarding body's) required. Shown as "🏆" chips on the card and in the panel. Also allowed on nearby alternatives and meal choices. |
 | `social` | | Posts for the Gallery view, from official accounts only (the venue's own, linked from its website, or the official tourism body): `[{kind, url, by}]`. `kind` `instagram` (`https://www.instagram.com/p/<code>/` or `/reel/<code>/`), `tiktok` (`https://www.tiktok.com/@<handle>/video/<id>`) or `facebook` (any https facebook.com link, shown as a link only); `by` is the account's handle. Each post loads only when tapped. Never label posts "most popular" unless that was measured. |
+| `taste` | | For a food or drink stop, shown in Play the trip (the owner, 9 November 2026): `{venue, cuisine, eat, drink, menu, rating, say}`. `cuisine` (one plain line, in the venue's own words) is required; `venue` names the eating place when the stop is wider (a foreshore, a market, a town). `eat` (up to 4) and `drink` (up to 3) are `{name, note}` from the venue's own current menu, exactly as named there, with a short `note` (what it is, or the price as printed); a drink may be `adults: true`, and a non-alcoholic one comes first. With either, `menu` is `{url or source, read}`. `rating` is `{stars, count, site, read, url or source}`: dated, with its review count and where it was read. `say` holds up to two diners' words, `{quote, site, when, url or source}`: exactly as written (cut only at the ends, with "…"), without quotation marks (the page adds them), with the site and the month it was written, never a reviewer's name. Lead the stop's `photos` with its food and drink. |
 | `photo_spot` | | The place's best photo spot, as an official source names it: `{spot, tip, source}`; `spot` and `source` (a source key or an https page) required. Shown on the card ("📸 Photo spot") and in the place's panel. Never from popularity or guesswork. |
 | `tiktok_search` | | Adds a TikTok search. |
 | `details` | | `{text, source}` or `{text, url}`: the "Details" links under the link row. |
@@ -432,7 +433,10 @@ with the arrow keys, and stands still under reduced motion. The credits section 
 "Play the trip" opens a guided tour: the globe flies from home to the destination, then it goes day by
 day, stop by stop. Each stop fills the screen with a collage of its own pictures (up to three from its
 `photos`, the first large with a slow zoom, each with its credit), with the route map small in a corner
-flying to the stop, and its name and `line` in a caption card. A stop with no picture shows the map. It pauses, steps
+flying to the stop, and its name and `line` in a caption card. A stop with a `taste` block adds the venue and its
+kind of food, Eat and Drink, the dated rating and the menu (both open in a new tab) and the diners' words with their
+site and month; on a phone it shows one quote and the venue line stands in for the stop's own line, so the pictures
+keep over half the screen. A stop with no picture shows the map. It pauses, steps
 with Back and Next, closes with Esc, and under reduced motion does not play by itself.
 
 ## Worship

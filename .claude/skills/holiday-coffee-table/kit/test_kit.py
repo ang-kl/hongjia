@@ -315,6 +315,45 @@ const { chromium } = require('playwright');
 '''
 
 
+TASTE_JS = r'''
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const out = {};
+  for (const [w, h] of [[1280, 800], [390, 844]]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+    const p = await ctx.newPage();
+    const errors = []; p.on('pageerror', e => errors.push(e.message));
+    await p.route(/^https?:/, r => r.request().url().startsWith('https://unpkg.com/leaflet@') ? r.continue() : r.abort());
+    await p.goto('file://' + process.argv[2], { waitUntil: 'load' });
+    await p.waitForTimeout(400);
+    await p.click('#play-trip'); await p.waitForTimeout(300);
+    await p.click('#tour .tour-pause');
+    const k = await p.evaluate(() => { const tour = JSON.parse(document.getElementById('trip-data').textContent).tour;
+      return { i: tour.findIndex(s => s.taste), plain: tour.findIndex(s => !s.taste), globe: document.getElementById('tour').dataset.view === 'globe' ? 1 : 0 }; });
+    const look = () => p.evaluate(() => {
+      const t = document.getElementById('tour'), x = t.querySelector('.tour-taste'), r = e => e.getBoundingClientRect();
+      return { hidden: x.hidden, venue: (x.querySelector('.tt-venue b') || {}).textContent || '', rows: [...x.querySelectorAll('.tt-row')].map(e => e.textContent),
+        rating: [...x.querySelectorAll('a.tt-rate')].map(a => ({ text: a.textContent, href: a.getAttribute('href'), target: a.target, rel: a.rel })),
+        menu: [...x.querySelectorAll('a.tt-menu')].map(a => a.getAttribute('href')),
+        say: [...x.querySelectorAll('.tt-say')].filter(q => getComputedStyle(q).display !== 'none').map(q => ({ text: q.querySelector('p').textContent, cite: q.querySelector('cite').textContent })),
+        stage: r(t.querySelector('.tour-stage')).height, vh: innerHeight, line: getComputedStyle(t.querySelector('.tour-l')).display,
+        wide: document.documentElement.scrollWidth > innerWidth + 1 || t.scrollWidth > t.clientWidth + 1 }; });
+    for (let c = 0; c < k.plain + k.globe; c++) { await p.click('#tour .tour-next'); await p.waitForTimeout(100); }
+    out[w + '_plain'] = await look();
+    for (let c = k.plain; c < k.i; c++) { await p.click('#tour .tour-next'); await p.waitForTimeout(100); }
+    if (k.i < k.plain) { for (let c = k.i; c < k.plain; c++) { await p.click('#tour .tour-prev'); await p.waitForTimeout(100); } }
+    await p.waitForTimeout(400);
+    out[w] = await look();
+    out[w + '_errors'] = errors;
+    await ctx.close();
+  }
+  await browser.close();
+  process.stdout.write(JSON.stringify(out));
+})().catch(e => { console.error(e); process.exit(1); });
+'''
+
+
 TOUR_JS = r'''
 const { chromium } = require('playwright');
 (async () => {
@@ -1579,7 +1618,17 @@ class KitTest(unittest.TestCase):
             d['stops']['harbour']['awards'] = bad
             with self.assertRaises(build.KitError):
                 build.build(d)
-        self.assertNotIn('★', self.html, 'no star ratings: awards and guide listings only')
+        # No star ratings: awards and guide listings only. The one place a rating shows is a restaurant's dated rating in
+        # Play the trip, where the owner asked for it (9 November 2026).
+        page = self.html.split('id="trip-data">', 1)[0] + self.html.split('id="trip-data">', 1)[1].split('</script>', 1)[1]
+        self.assertNotIn('★', page, 'no star ratings: awards and guide listings only')
+        tour = copy.deepcopy(self.trip['tour'])
+        for s in tour:
+            if s.get('taste', {}).get('rating'):
+                self.assertRegex(s['taste']['rating']['text'], r'^★ [0-5]\.\d on .+ · [\d,]+ reviews · read .+')
+                del s['taste']['rating']
+        rest = dict(self.trip, tour=tour)
+        self.assertNotIn('★', json.dumps(rest, ensure_ascii=False), 'a rating only on a restaurant in the tour, dated')
 
     def test_gallery_markup(self):
         g = find(self.root, 'section', id='gallery')[0]
@@ -2105,6 +2154,78 @@ class KitTest(unittest.TestCase):
             self.assertLess(c['card'], 108, c)
             self.assertEqual(c['add'], 'none', 'a narrow card gives its Add button\'s room to its words')
             self.assertGreaterEqual(c['words'], c['card'] - 20, c)
+
+    def test_restaurant_taste_in_the_tour(self):
+        """A restaurant in Play the trip says what to eat and drink, its dated rating and what diners say (the owner,
+        9 November 2026: "I cannot see the name of the restaurant and what type of food and drinks ... include like what to
+        eat, drink and what people say"; diners' words only, with the site and month, and the rating with its date)."""
+        step = next(s for s in self.trip['tour'] if s.get('taste'))
+        x = step['taste']
+        self.assertEqual(x['venue'], 'Midway Mill Bakery Café')
+        self.assertEqual(x['eat'][0], ['Steak and pepper pie', 'EB$9.50'])
+        self.assertEqual(x['drink'][0], ['Flat white', 'EB$5', False])
+        self.assertEqual(x['rating']['text'], '★ 4.6 on Example Maps · 812 reviews · read 3 May 2027, 10:06 local')
+        self.assertEqual(x['menu']['href'], 'https://example.com/midway-mill/menu', 'a sources key gives its address')
+        self.assertEqual(x['say'][0]['cite'], 'Example Maps review, Apr 2027')
+        self.assertFalse(any(s.get('taste') for s in self.trip['tour'] if 'mill' not in s['id']), 'only a stop with a taste block has one')
+        stop = self.data['stops']['mill']['taste']
+        bad = [
+            ('cuisine', lambda t: t.pop('cuisine')),
+            ('menu', lambda t: t['menu'].pop('read')),
+            ('menu', lambda t: t.update(menu={'url': 'http://example.com/menu', 'read': 'today'})),
+            ('eat', lambda t: t.update(eat=[{'note': 'no name'}])),
+            ('eat', lambda t: t.update(eat=[{'name': str(n)} for n in range(5)])),
+            ('rating', lambda t: t['rating'].pop('read')),
+            ('rating', lambda t: t['rating'].update(stars=6)),
+            ('rating', lambda t: t['rating'].update(count='812')),
+            ('rating', lambda t: t['rating'].pop('url')),
+            ('say', lambda t: t['say'][0].pop('when')),
+            ('say', lambda t: t['say'][0].update(quote='“Lovely”')),
+            ('say', lambda t: t['say'][0].update(quote='x' * 221)),
+            ('say', lambda t: t.update(say=t['say'] * 2)),
+        ]
+        for where, change in bad:
+            d = copy.deepcopy(self.data)
+            t = copy.deepcopy(stop)
+            change(t)
+            d['stops']['mill']['taste'] = t
+            with self.assertRaisesRegex(build.KitError, where, msg=where):
+                build.build(d)
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_restaurant_taste_shows_in_the_tour(self):
+        """The tour's caption shows the venue, Eat and Drink, the dated rating (linked, a new tab) and the diners' words
+        with their site and month; a stop without a taste block shows none, and a phone keeps room for the pictures."""
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            script = os.path.join(tmp, 'taste.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(TASTE_JS)
+            out = subprocess.run([NODE, script, page], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        for w in ('1280', '390'):
+            r = res[w]
+            self.assertEqual(res[w + '_errors'], [], w)
+            self.assertTrue(res[w + '_plain']['hidden'], f'{w}: no taste block on a stop without one')
+            self.assertFalse(r['hidden'], w)
+            self.assertEqual(r['venue'], 'Midway Mill Bakery Café', w)
+            self.assertEqual(len(r['rows']), 2, w)
+            self.assertTrue(r['rows'][0].startswith('Eat') and 'Steak and pepper pie EB$9.50' in r['rows'][0], r['rows'])
+            self.assertTrue(r['rows'][1].startswith('Drink') and 'Flat white' in r['rows'][1], r['rows'])
+            self.assertEqual(r['rating'][0]['text'], '★ 4.6 on Example Maps · 812 reviews · read 3 May 2027, 10:06 local', w)
+            self.assertEqual((r['rating'][0]['target'], r['rating'][0]['rel']), ('_blank', 'noopener noreferrer'), w)
+            self.assertEqual(r['menu'], ['https://example.com/midway-mill/menu'], w)
+            self.assertTrue(r['say'] and r['say'][0]['text'].startswith('“') and r['say'][0]['text'].endswith('”'), w)
+            self.assertEqual(r['say'][0]['cite'], 'Example Maps review, Apr 2027', w)
+            self.assertFalse(r['wide'], w)
+        self.assertEqual(len(res['1280']['say']), 2, 'a wide screen shows both diners\' quotes')
+        self.assertEqual(len(res['390']['say']), 1, 'a phone shows one, to keep room for the pictures')
+        self.assertEqual(res['390']['line'], 'none', 'on a phone the venue line stands in for the stop\'s own line')
+        self.assertGreaterEqual(res['390']['stage'], res['390']['vh'] * 0.55, 'a phone keeps over half the screen for the pictures')
 
     @unittest.skipUnless(BROWSER, 'needs node and Playwright')
     def test_play_the_trip_as_a_collage(self):
