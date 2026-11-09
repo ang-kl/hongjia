@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.09 (5)";
+pub const VERSION: &str = "2026.11.09 (6)";
 
-pub const SYNOPSIS: &str = "This version gives trip pages exact emoji, the same on every trip: 💇 hair, 💅 pedicure and nails, 💆 massage, 🛍️ shopping, 🍽️ food and 🌳 nature, each with its own legend button, so a salon is no longer marked as shopping and Plan B walks carry 🌳. A day can also list its salon, pedicure and massage choices the way it lists meals, with their prices, hours and links.";
+pub const SYNOPSIS: &str = "This version keeps the end of a long file name in sight on its pin: a pin now shortens the middle of the name, not its end, so the pins of two versions of the same file, such as \"Holiday-plan-data-v3.txt\" and \"Holiday-plan-data-v4.txt\", no longer look the same on a phone. A name that fits still shows whole.";

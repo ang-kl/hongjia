@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fileSize, typeWords, unavailable, MAX_ATTACHMENTS } from '../assets/doc-view.mjs';
+import { fileSize, typeWords, unavailable, MAX_ATTACHMENTS, nameParts } from '../assets/doc-view.mjs';
 
 test('file sizes read as the panel shows them', () => {
   assert.equal(fileSize(0), '0 bytes');
@@ -51,4 +51,22 @@ test('the picker offers the same types the server allows', async () => {
   const accept = /pub const ACCEPT: &str = "([^"]+)";/.exec(attach)[1].split(',');
   assert.deepEqual(accept, ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.docx', '.xlsx', '.pptx', '.doc', '.xls', '.ppt', '.txt', '.csv']);
   for (const ext of ['.html', '.htm', '.svg', '.js', '.exe', '.zip']) assert.equal(accept.includes(ext), false, ext);
+});
+
+test('a pin keeps the end of a long file name, so two versions never look the same (9 November 2026)', async () => {
+  assert.deepEqual(nameParts('Kuala-Lumpur-trip-data-v4.txt'), ['Kuala-Lumpur-trip-data', '-v4.txt']);
+  assert.deepEqual(nameParts('Kuala-Lumpur-trip-data-v1.txt'), ['Kuala-Lumpur-trip-data', '-v1.txt']);
+  assert.deepEqual(nameParts('Trip_notes_final_v12.pdf'), ['Trip_notes_final', '_v12.pdf']);
+  assert.deepEqual(nameParts('Packing list 2.docx'), ['Packing list', ' 2.docx']);
+  assert.deepEqual(nameParts('report.pdf'), ['report', '.pdf'], 'no "-", "_" or space: the file type stays');
+  assert.deepEqual(nameParts('notes'), ['notes', ''], 'nothing to keep: the name shrinks from its end as before');
+  assert.deepEqual(nameParts('-v2.txt'), ['-v2', '.txt'], 'a name that starts with "-" keeps more than its end');
+  assert.deepEqual(nameParts('a-averyveryverylongendpart.txt'), ['a-averyveryverylongendpart', '.txt'], 'a very long end: only the file type stays');
+  assert.deepEqual(nameParts(''), ['', '']);
+  assert.deepEqual(nameParts(null), ['', '']);
+  for (const n of ['Kuala-Lumpur-trip-data-v4.txt', 'report.pdf', 'notes', 'Packing list 2.docx']) assert.equal(nameParts(n).join(''), n, 'the two parts are the whole name');
+  // the start shrinks with "…" and the end never does
+  const css = (await readFile(new URL('../assets/site.css', import.meta.url), 'utf8')).replace(/\s+/g, ' ');
+  assert.match(css, /\.ov-attachment \.clip-head \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; \}/);
+  assert.match(css, /\.ov-attachment \.clip-tail \{ flex: none; \}/);
 });

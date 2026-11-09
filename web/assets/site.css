@@ -1031,7 +1031,10 @@ body.inking .loupe-chip { display: none; }
   transform: translate(-12px, -50%);
 }
 .ov-attachment .clip-icon { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.ov-attachment .clip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ov-attachment .clip-name { display: flex; min-width: 0; overflow: hidden; }
+/* A long name loses letters from its middle, never its end ("Kuala-Lumpur-trip-d…-v4.txt"): the version stays in sight. */
+.ov-attachment .clip-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ov-attachment .clip-tail { flex: none; }
 @media print { .ov-attachment { box-shadow: none; } }
 
 /* ==== Direction A, "River" (the owner, 8 November 2026) ====

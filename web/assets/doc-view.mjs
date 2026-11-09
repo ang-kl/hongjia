@@ -313,6 +313,18 @@ export const MENU = {
 };
 /// Most files a document may have attached (as on the server).
 export const MAX_ATTACHMENTS = 100;
+
+/// A pin's file name in two parts (the owner, 9 November 2026: "Shorten the middle of pin names instead"): the start,
+/// which the pin may shorten with "…", and the end it always shows, from the last "-", "_" or space (as "-v4.txt"), or
+/// else the file type, so the pins of two versions of a long name never look the same. A name that fits shows whole.
+export function nameParts(name) {
+  const s = String(name || '');
+  const m = s.match(/[-_ ][^-_ ]{1,16}$/);
+  let tail = '';
+  if (m && m.index > 0) tail = m[0];
+  else if (s.lastIndexOf('.') > 0 && s.length - s.lastIndexOf('.') <= 9) tail = s.slice(s.lastIndexOf('.'));
+  return [s.slice(0, s.length - tail.length), tail];
+}
 /// Why a menu item cannot be used right now, or '' when it can. Unavailable items are greyed out
 /// and show this reason (the owner's choice (b), 6 November 2026).
 export function unavailable(needs, s) {
@@ -940,7 +952,9 @@ function start() {
         if (shape.dataset.name !== li.dataset.text) {
           shape.dataset.name = li.dataset.text;
           shape.title = li.dataset.text;
-          shape.replaceChildren(paperclip(document), element('span', { className: 'clip-name', textContent: li.dataset.text }));
+          const [head, tail] = nameParts(li.dataset.text);
+          shape.replaceChildren(paperclip(document), element('span', { className: 'clip-name' },
+            element('span', { className: 'clip-head', textContent: head }), element('span', { className: 'clip-tail', textContent: tail })));
         }
       } else if (kind === 'signature') {
         // The signature (drawn strokes or the typed name) and its caption from the server.
