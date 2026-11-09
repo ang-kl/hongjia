@@ -749,6 +749,7 @@ button.pill[hidden] { display: none; }
 .pick-item[aria-current="page"]::before { content: "✓"; }
 .pick-file { display: block; padding: 2px 10px 8px 30px; font-size: 0.85rem; color: var(--river); overflow-wrap: anywhere; }
 .pick-more { margin: 6px 8px 2px; font-size: 0.85rem; }
+.pick-more a { color: var(--river); }
 /* While a trip page's Play the trip tour is open, the family's pins and notes step aside, so nothing covers its
    pictures or its map; they come back when it closes (the owner, 9 November 2026: "Hide pins during Play"). */
 html.tour-on .doc-overlay { visibility: hidden; }
@@ -1156,6 +1157,9 @@ button.chip[aria-pressed="true"] { border-color: var(--river); color: var(--rive
   .doc-tabs { flex: 1 1 100%; flex-wrap: nowrap; margin-left: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
   .doc-tabs::-webkit-scrollbar { display: none; }
   .doc-tabs button { flex: 0 0 auto; }
+  /* The title takes its own line under Back and the version, so a small phone shows it, not a sliver
+     (the owner, 9 November 2026: "Fix both"). */
+  .doc-pick-t { flex: 1 1 100%; }
 }
 body[data-tab="details"] .panel [data-group]:not([data-group="details"]),
 body[data-tab="versions"] .panel [data-group]:not([data-group="versions"]),
