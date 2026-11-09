@@ -152,12 +152,12 @@ const path = require('path');
 (async () => {
   const b = await chromium.launch();
   const res = { errors: [] };
-  for (const who of ['owner', 'family']) {
+  for (const who of ['owner', 'family', 'late']) {
     const p = await b.newPage({ viewport: { width: 1100, height: 900 } });
     await p.route(/^https?:/, r => r.abort());
     p.on('pageerror', e => res.errors.push(String(e.message).slice(0, 160)));
     await p.goto('file://' + path.join(process.argv[2], who + '.html'), { waitUntil: 'load' });
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(who === 'late' ? 4000 : 700);
     const f = p.frames().find(x => x.url().endsWith('page.html'));
     const btn = '#day-1 h3 .wa-btn';
     const disabled = await f.getAttribute(btn, 'aria-disabled');
@@ -857,6 +857,12 @@ class KitTest(unittest.TestCase):
         self.assertEqual(len(svc), 1, 'the day\'s service choices, shown like meals')
         self.assertIn('💆', svc[0].text())
         self.assertEqual(len(find(svc[0], 'article', 'alt')), 2)
+        d = copy.deepcopy(self.data)
+        day = next(x for x in d['days'] if x.get('services'))
+        for c in day['services'][0]['choices']:
+            c.pop('cat', None)
+        legend = [n.attrs.get('data-legend') for n in find(build.parse_html(build.build(d)), 'button', 'lg')]
+        self.assertIn('massage', legend, 'a choice drawn as its group\'s kind keeps its legend button (Codex review)')
         d = copy.deepcopy(self.data)
         day = next(x for x in d['days'] if x.get('services'))
         day['services'][0]['kind'] = 'tattoo'
@@ -1746,11 +1752,13 @@ class KitTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with open(os.path.join(tmp, 'page.html'), 'w', encoding='utf-8') as f:
                 f.write(self.html)
-            for who in ('owner', 'family'):
+            for who in ('owner', 'family', 'late'):
+                listen = ('window.__msgs=[];addEventListener("message",function(e){window.__msgs.push(e.data);'
+                          'if(e.data&&e.data.type==="hj:who"){e.source.postMessage({type:"hj:who",owner:' + ('false' if who == 'family' else 'true') + '},"*");}});')
+                if who == 'late':  # the site's own script starts listening only after the trip page is ready
+                    listen = 'setTimeout(function(){' + listen + '},2000);window.__msgs=[];'
                 with open(os.path.join(tmp, f'{who}.html'), 'w', encoding='utf-8') as f:
-                    f.write('<!doctype html><script>window.__msgs=[];addEventListener("message",function(e){window.__msgs.push(e.data);'
-                            'if(e.data&&e.data.type==="hj:who"){e.source.postMessage({type:"hj:who",owner:' + ('true' if who == 'owner' else 'false') + '},"*");}});</script>'
-                            '<iframe src="page.html" style="width:1000px;height:800px"></iframe>')
+                    f.write('<!doctype html><script>' + listen + '</script><iframe src="page.html" style="width:1000px;height:800px"></iframe>')
             script = os.path.join(tmp, 'wa.cjs')
             with open(script, 'w', encoding='utf-8') as f:
                 f.write(WA_JS)
@@ -1767,6 +1775,7 @@ class KitTest(unittest.TestCase):
         self.assertEqual(res['family']['disabled'], 'true')
         self.assertIn("owner's account", res['family']['toast'])
         self.assertIn('family site', res['alone']['toast'], 'opened on its own, 🤙🏼 says where it works')
+        self.assertEqual(res['late']['disabled'], 'false', 'the page asks again until the site answers (Codex review)')
         self.assertEqual(res['errors'], [])
 
     @unittest.skipUnless(BROWSER, 'needs node and Playwright')

@@ -1051,7 +1051,7 @@ if(sheet){
     } else if(a.type==='hj:shared'){
       if(a.how==='share'){ toast(t('shared','Shared.')); } else if(a.how==='copy'){ toast(t('copied','Link copied.')); }
     } else if(a.type==='hj:who'){
-      WA_OWNER=a.owner===true; waState();
+      waAnswered=true; WA_OWNER=a.owner===true; waState();
     }
   }); }
 }
@@ -1124,7 +1124,12 @@ document.addEventListener('click',function(e){
   waSend(name||(p&&p.name)||'',lines,id);
 });
 waState();
-if(inFrame){ try{ window.parent.postMessage({type:'hj:who'},'*'); }catch(e){} }
+/* Ask the site who is reading until it answers: the trip page can be ready before the site's own script is
+   listening, and a single question would then be lost (Codex review, 9 November 2026). */
+var waAnswered=false, waTries=0;
+function waAsk(){ if(waAnswered||!inFrame||waTries>=10){ return; } waTries++;
+  try{ window.parent.postMessage({type:'hj:who'},'*'); }catch(e){} setTimeout(waAsk,waTries<4?400:1500); }
+waAsk();
 function goToHash(){
   var id=decodeURIComponent(String(location.hash||'').slice(1));
   if(!ANCHOR_OK.test(id)){ return; }
