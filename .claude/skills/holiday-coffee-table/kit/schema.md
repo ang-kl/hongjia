@@ -465,7 +465,7 @@ in case the service shows an error or a limit in place of the post.
 
 A day's service choices, shown like meals (the owner, 9 November 2026, for a trip that is about shopping,
 hair, pedicure and massage): a list of `{kind, time, title, note, choices}`. `kind` is `hair` (💇 Salon), `nails`
-(💅 Pedicure & nails) or `massage` (💆 Massage). Each choice is `{stop, role}` (a stop; the first is the planned one)
+(💅 Pedicure & nails) or `massage` (💆 Massage). Each choice is `{stop, role}` (a stop; it shows as planned only when it is one of the day's own stops)
 or an alternative card `{name, cat, why, hours, source, lat, lng, q, links, photo}` as in meals. Put each place's
 prices, its dated Google rating (allowed for services, with its count and where it was read), how to book and its
 own Instagram or TikTok in `why` and `links`; its own posts go in the stop's `embeds` or `social`. Anything to

@@ -1951,8 +1951,10 @@ class Page:
                     cats = self.stop_cats.get(x['stop']) or [g['kind']]
                     pl = self.places[st['place']]
                     role = x.get('role') or self.first_role(x['stop'])
-                    planned = f' <span class="badge">{E(self.L["planned"])}</span>' if c == 0 else ''
-                    cards.append(f'<article class="alt{" alt-planned" if c == 0 else ""}"{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{self.cat_icons[cats[0]]}</span> '
+                    # "Planned" only for a place that is one of the day's own stops, not for the first of a list of options
+                    is_plan = any(it.get('stop') == x['stop'] for it in day.get('stops') or [])
+                    planned = f' <span class="badge">{E(self.L["planned"])}</span>' if is_plan else ''
+                    cards.append(f'<article class="alt{" alt-planned" if is_plan else ""}"{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{self.cat_icons[cats[0]]}</span> '
                                  f'<b>{self.pl_link(pid, E(st["name"]), self.panels[pid]["anchor"])}</b>{planned}</p>'
                                  + (f'<p>{self.rich(role, f"{w}[{j}].choices[{c}].role")}</p>' if role else '')
                                  + f'<p class="alt-links"><button type="button" class="linkish show-map" data-day="{n - 1}" data-idx="-1" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" '
