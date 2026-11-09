@@ -421,14 +421,17 @@ document.addEventListener('click',function(e){
 /* The Calendar shows the chosen swaps and stretches each day to fit: at least 8 to 8 and Plan A's own hours, earlier,
    later or past midnight for a chosen swap (the owner, 8 November 2026). Cards that overlap share the width. */
 function calNum(e,k){ var v=parseFloat(e.style.getPropertyValue(k)); return isFinite(v)?v:0; }
+// Start and length are written to 3 decimals of an hour, so a card that ends as the next begins (10:25 to 12:35, then
+// 12:35) can look up to 4 seconds long: an overlap that small counts as touching, not side by side.
+var CAL_EPS=0.002;
 function calLanes(track){
   var evs=$$('.cal-ev',track).filter(function(e){ return !e.hidden; }).map(function(e){ var top=calNum(e,'--top'); return {e:e,top:top,end:top+Math.max(calNum(e,'--len'),0.5)}; });
   evs.sort(function(a,b){ return a.top-b.top; });
   var groups=[], cur=[], end=-1;
-  evs.forEach(function(x){ if(cur.length&&x.top>=end-1e-9){ groups.push(cur); cur=[]; end=-1; } cur.push(x); end=Math.max(end,x.end); });
+  evs.forEach(function(x){ if(cur.length&&x.top>=end-CAL_EPS){ groups.push(cur); cur=[]; end=-1; } cur.push(x); end=Math.max(end,x.end); });
   if(cur.length){ groups.push(cur); }
   groups.forEach(function(g){ var lanes=[];
-    g.forEach(function(x){ var i=-1; for(var k=0;k<lanes.length;k++){ if(lanes[k]<=x.top+1e-9){ i=k; break; } } if(i<0){ lanes.push(x.end); i=lanes.length-1; } else { lanes[i]=x.end; } x.lane=i; });
+    g.forEach(function(x){ var i=-1; for(var k=0;k<lanes.length;k++){ if(lanes[k]<=x.top+CAL_EPS){ i=k; break; } } if(i<0){ lanes.push(x.end); i=lanes.length-1; } else { lanes[i]=x.end; } x.lane=i; });
     g.forEach(function(x){ x.e.style.setProperty('--lane',String(x.lane)); x.e.style.setProperty('--lanes',String(lanes.length)); }); });
 }
 function calLayout(){

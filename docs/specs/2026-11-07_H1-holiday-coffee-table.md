@@ -245,3 +245,9 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
   kinds show in the legend only when a page uses them. A day's salon, pedicure and massage choices show like meals
   (for a trip that is about shopping, hair, pedicure and massage). Pictures of a service come from the place's own
   website, Instagram or TikTok; Google Maps photos are linked, never copied.
+- **Calendar cards that touch, and narrow cards** (9 November 2026, found while checking a trip page on an iPad; the
+  owner: "Fix the calendar first"): a card that ends as the next begins (10:25 to 12:35, then one from 12:35) is not
+  side by side with it; the times are written rounded, so an overlap of a few seconds counts as
+  touching. A narrow card (two side by side in a narrow column) gives its words the whole width and hides its own
+  Add button, as its Share and 🤙🏼 already were; "Add this day" still adds it. Before, its words had about 12px and
+  broke letter by letter.
