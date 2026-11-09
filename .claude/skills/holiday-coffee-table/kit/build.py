@@ -186,6 +186,9 @@ LABELS.update({
     'ig_drawer': 'Instagram: @{h}', 'ig_profile': 'Instagram profile of @{h}', 'stop_details': 'Details below',
     'tour': 'Play the trip', 'tour_pause': 'Pause', 'tour_play': 'Play', 'tour_next': 'Next', 'tour_prev': 'Back',
     'tour_close': 'Close the tour', 'tour_from': 'From {home} to {dest}', 'tour_way': 'The way there',
+    # what to eat, drink and what diners say, in Play the trip (9 November 2026)
+    'tt_eat': 'Eat', 'tt_drink': 'Drink', 'tt_adults': 'adults', 'tt_menu': 'Menu', 'tt_menu_read': 'From the menu, read {read}',
+    'tt_rating': '★ {stars} on {site} · {count} reviews · read {read}', 'tt_say': 'What diners say', 'tt_cite': '{site} review, {when}',
     'globe_credit': 'Globe: land outlines from Natural Earth (public domain), 1:110m, via world-atlas 2.0.2 (ISC licence).',
     # place panels, meals, photo spots, Share and Near me (6 November 2026)
     'sheet_close': 'Close', 'sheet_aria': 'Place details', 'photo_spot': 'Photo spot', 'planned': 'Planned',
@@ -539,6 +542,8 @@ class Page:
             if st.get('photo_spot'):
                 self.check_spot(st['photo_spot'], f'stops.{key}.photo_spot')
             self.check_awards(st.get('awards'), f'stops.{key}.awards')
+            if st.get('taste') is not None:
+                self.check_taste(st['taste'], f'stops.{key}.taste')
             self.check_social(st.get('social'), f'stops.{key}.social')
             for i, x in enumerate(st.get('nearby') or []):
                 self.check_alt(x, f'stops.{key}.nearby[{i}]')
@@ -701,6 +706,66 @@ class Page:
                 raise KitError(f'{where}[{i}]: an award needs "award" and its "source"')
             if a['source'] not in self.sources:
                 check_url(a['source'], f'{where}[{i}].source')
+
+    def taste_href(self, x, where):
+        """A taste fact's page: a sources key (its address) or an https address."""
+        if x.get('source') in self.sources:
+            return self.sources[x['source']].get('url') or ''
+        url = x.get('url') or x.get('source')
+        if not url:
+            raise KitError(f'{where}: name where it was read ("url", or "source" as a sources key)')
+        check_url(url, where)
+        return url
+
+    def check_taste(self, x, where):
+        """What to eat and drink, the rating and what diners say, shown in Play the trip (the owner, 9 November 2026:
+        "include like what to eat, drink and what people say"). Dishes and drinks come from the venue's own menu, the
+        rating is dated with its count and where it was read, and a diner's words are quoted exactly, without a name."""
+        if not isinstance(x, dict) or not isinstance(x.get('cuisine'), str) or not x['cuisine'].strip():
+            raise KitError(f'{where}.cuisine: one plain line saying what kind of food it is')
+        for k, most in (('eat', 4), ('drink', 3)):
+            items = x.get(k) or []
+            if not isinstance(items, list) or len(items) > most or any(not isinstance(i, dict) or not i.get('name') for i in items):
+                raise KitError(f'{where}.{k}: up to {most} items, each with a "name" from the menu')
+        if (x.get('eat') or x.get('drink')):
+            m = x.get('menu')
+            if not isinstance(m, dict) or not m.get('read'):
+                raise KitError(f'{where}.menu: dishes and drinks come from the venue\'s menu: give its "url" (or "source") and when it was "read"')
+            self.taste_href(m, f'{where}.menu')
+        r = x.get('rating')
+        if r is not None:
+            stars, count = r.get('stars'), r.get('count')
+            if isinstance(stars, bool) or not isinstance(stars, (int, float)) or not 0 < stars <= 5 \
+                    or isinstance(count, bool) or not isinstance(count, int) or count < 1 or not r.get('site') or not r.get('read'):
+                raise KitError(f'{where}.rating: a rating is dated: "stars" (up to 5), "count" (reviews), "site" and when it was "read"')
+            self.taste_href(r, f'{where}.rating')
+        say = x.get('say') or []
+        if not isinstance(say, list) or len(say) > 2:
+            raise KitError(f'{where}.say: at most two diners\' quotes')
+        for i, q in enumerate(say):
+            w = f'{where}.say[{i}]'
+            if not isinstance(q, dict) or not q.get('quote') or not q.get('site') or not q.get('when'):
+                raise KitError(f'{w}: a diner\'s words exactly as written, with the "site" and the month it was written ("when")')
+            if len(q['quote']) > 220:
+                raise KitError(f'{w}.quote: keep a quote short (220 characters at most)')
+            if re.search(r'[“”"]', q['quote']):
+                raise KitError(f'{w}.quote: give the words without quotation marks; the page adds them')
+            self.taste_href(q, w)
+
+    def taste_step(self, x, where):
+        """The taste block for one step of the tour, ready to show."""
+        out = dict(venue=x.get('venue') or '', cuisine=x['cuisine'],
+                   eat=[[i['name'], i.get('note') or ''] for i in x.get('eat') or []],
+                   drink=[[i['name'], i.get('note') or '', bool(i.get('adults'))] for i in x.get('drink') or []])
+        if x.get('menu'):
+            out['menu'] = dict(href=self.taste_href(x['menu'], f'{where}.menu'), title=self.fmt('tt_menu_read', read=x['menu']['read']))
+        r = x.get('rating')
+        if r:
+            out['rating'] = dict(href=self.taste_href(r, f'{where}.rating'),
+                                 text=self.fmt('tt_rating', stars=f'{r["stars"]:.1f}', site=r['site'], count=f'{r["count"]:,}', read=r['read']))
+        out['say'] = [dict(q=q['quote'], cite=self.fmt('tt_cite', site=q['site'], when=q['when']), href=self.taste_href(q, f'{where}.say'))
+                      for q in x.get('say') or []]
+        return out
 
     def check_social(self, items, where):
         """Posts for the Gallery: official accounts' Instagram posts or Reels, TikTok videos, or Facebook links."""
@@ -2361,7 +2426,8 @@ class Page:
                 f'<div class="tour-stage"><div class="tour-globe">{self.globe_svg("g-sea-2", self.L["tour_way"])}</div><div class="tour-col"></div><div class="tour-map"></div>'
                 f'<figure class="tour-big"><img alt="" referrerpolicy="no-referrer"></figure></div>'
                 f'<div class="tour-card"><figure class="tour-ph"><img alt="" referrerpolicy="no-referrer"><figcaption><span class="credit tour-credit"></span></figcaption></figure>'
-                f'<div class="tour-txt"><p class="mono kicker tour-k"></p><h2 class="tour-t" id="tour-title"></h2><p class="tour-l"></p></div>'
+                f'<div class="tour-txt"><p class="mono kicker tour-k"></p><h2 class="tour-t" id="tour-title"></h2><p class="tour-l"></p>'
+                f'<div class="tour-taste" hidden></div></div>'
                 f'<div class="tour-ctl"><button type="button" class="tour-prev">‹ {E(self.L["tour_prev"])}</button>'
                 f'<button type="button" class="tour-pause">{E(self.L["tour_pause"])}</button>'
                 f'<button type="button" class="tour-next">{E(self.L["tour_next"])} ›</button>'
@@ -2401,8 +2467,11 @@ class Page:
                 st = self.stops[it['stop']]
                 idx = day['route'].index(st['place']) if st['place'] in day['route'] else -1
                 pl = self.places[st['place']]
-                steps.append(dict(d=i, idx=idx, id=f'd{i + 1}-{it["stop"]}', name=st['name'], line=st.get('line') or it.get('role') or '',
-                                  when=f'{self.L["day"]} {i + 1} · {day["when"]}', lat=pl['lat'], lng=pl['lng']))
+                step = dict(d=i, idx=idx, id=f'd{i + 1}-{it["stop"]}', name=st['name'], line=st.get('line') or it.get('role') or '',
+                            when=f'{self.L["day"]} {i + 1} · {day["when"]}', lat=pl['lat'], lng=pl['lng'])
+                if st.get('taste'):
+                    step['taste'] = self.taste_step(st['taste'], f'stops.{it["stop"]}.taste')
+                steps.append(step)
         return steps
 
     # ------------------------------------------------------------------ fixed sections
@@ -3001,7 +3070,7 @@ class Page:
                                      'wx_frame', 'wx_credit', 'wx_licence', 'wx_rain', 'wx_gust', 'wx_wind', 'wx_uv', 'wx_suggests', 'wx_fits',
                                      'wx_no_plan', 'wx_max_min', 'plans_rules', 'lens_fits', 'lens_check', 'lens_unknown', 'lens_for', 'rail_start', 'to',
                                      'cd_to_go', 'cd_one', 'cd_today', 'cd_during', 'local_time', 'lg_lit', 'lg_none', 'tour_pause', 'tour_play',
-                                     'tour_from', 'tour_way', 'nearby_pins', 'photo_spot', 'share', 'share_day', 'shared', 'copied',
+                                     'tour_from', 'tour_way', 'tt_eat', 'tt_drink', 'tt_adults', 'tt_menu', 'tt_say', 'nearby_pins', 'photo_spot', 'share', 'share_day', 'shared', 'copied',
                                      'near_me', 'near_title', 'near_wait', 'near_note', 'near_declined', 'near_denied', 'near_unavailable',
                                      'near_unsupported', 'near_none', 'about_km', 'new_tab', 'ig_posts', 'address', 'website', 'google_maps',
                                      'alt_map', 'hours', 'embed_note', 'call', 'stop_details', 'swapped',

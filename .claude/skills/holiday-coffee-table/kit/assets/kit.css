@@ -607,6 +607,21 @@ html[data-mode=print] .plan-tag,html[data-mode=print] .sugg-tag{background:#fff;
 .tour-txt h2{font-size:clamp(1.25rem,1.05rem + .8vw,1.8rem);margin:0 0 .15em}
 .tour-txt p{margin:0;color:var(--ink2);font-size:.92rem}
 .tour-k{margin:0 0 .2em}
+/* A restaurant: its name and food, what to eat and drink, the dated rating and what diners say (9 November 2026). */
+.tour-taste{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 28px;margin-top:8px}
+.tour-taste[hidden]{display:none}
+.tour-txt .tour-taste p{margin:0;color:var(--ink);font-size:.9rem;line-height:1.4}
+.tour-txt .tour-taste .tt-venue{font-size:1rem}
+.tt-venue b{font-weight:700}
+.tt-h{display:inline-block;min-width:3.4em;margin-right:4px;color:var(--gold-ink);font-weight:700}
+.tour-txt .tour-taste .tt-i small{color:var(--ink2);font-size:.82em}
+.tour-txt .tour-taste .tt-meta{margin-top:2px;font-size:.8rem;color:var(--ink2)}
+.tt-meta a{color:var(--ink2)}
+.tt-voice{display:flex;flex-direction:column;gap:6px;align-self:center}
+.tt-say{margin:0;padding:2px 0 2px 12px;border-left:3px solid var(--gold)}
+.tour-txt .tour-taste .tt-say p{font-style:italic;font-size:.92rem}
+.tt-say cite{display:block;font-style:normal;font-size:.75rem;color:var(--ink2)}
+.tt-say cite a{color:inherit}
 .tour-ctl{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
 .tour-ctl button{min-height:44px;min-width:44px;padding:0 15px;border-radius:999px;border:1px solid var(--gold);background:#fff;color:var(--gold-ink);font-weight:600;cursor:pointer}
 .tour-ctl button[hidden]{display:none}
@@ -648,9 +663,22 @@ body{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
   .tour[data-view=collage] .tour-map,.tour[data-view=collage]:not([data-n='1']) .tour-map{right:10px;width:40%}
   .tour[data-view=collage]:not([data-n='1']) .tour-map{bottom:calc(38% + 10px)}
   .tour[data-view=collage] .tour-card{grid-template-columns:minmax(0,1fr)}
+  .tour-taste{grid-template-columns:minmax(0,1fr);gap:3px;margin-top:4px}
+  .tour-txt .tour-taste p{font-size:.84rem}
+  .tt-say+.tt-say{display:none}
+  .tour-txt .tour-taste .tt-say p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;font-size:.86rem}
+  .tour[data-taste] .tour-l{display:none}
+  .tour[data-taste] .tour-txt h2{font-size:1.2rem}
+  .tour[data-taste] .tour-card{padding-top:10px;gap:8px}
   .tour-ph{width:84px}
   .tour-ctl{grid-column:1 / -1;justify-content:space-between}
   .legend .lg{padding:0 11px;font-size:.84rem}
+}
+/* a short phone keeps more of the pictures: one line of a diner's words is enough to want more */
+@media (max-width:640px) and (max-height:720px){
+  .tour-txt .tour-taste .tt-say p{-webkit-line-clamp:2}
+  .tour-txt .tour-taste p{font-size:.8rem}
+  .tour-txt .tour-taste .tt-meta{font-size:.72rem}
 }
 @media (prefers-reduced-motion:reduce){
   .hero-slide.on img{animation:none}

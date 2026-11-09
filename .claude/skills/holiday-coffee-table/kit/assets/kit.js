@@ -785,7 +785,42 @@ if(tourEl&&playBtn){
   var tk=tourEl.querySelector('.tour-k'), tt=tourEl.querySelector('.tour-t'), tl=tourEl.querySelector('.tour-l'), tImg=tourEl.querySelector('.tour-ph img'),
       tCredit=tourEl.querySelector('.tour-credit'), tBig=tourEl.querySelector('.tour-big img'), tBar=tourEl.querySelector('.tour-bar i'),
       tPause=tourEl.querySelector('.tour-pause'), tNext=tourEl.querySelector('.tour-next'), tPrev=tourEl.querySelector('.tour-prev'), tClose=tourEl.querySelector('.tour-close'),
-      tCol=tourEl.querySelector('.tour-col');
+      tCol=tourEl.querySelector('.tour-col'), tTaste=tourEl.querySelector('.tour-taste');
+  // A restaurant says what to eat and drink, its dated rating and what diners say (the owner, 9 November 2026:
+  // "I cannot see the name of the restaurant and what type of food and drinks ... include like what to eat, drink and
+  // what people say").
+  var link=function(cls,text,href,title){ var a=el('a',cls,text); a.href=href; a.target='_blank'; a.rel='noopener noreferrer'; if(title){ a.title=title; } return a; };
+  var fillTaste=function(x){
+    clear(tTaste); tTaste.hidden=!x; if(!x){ return; }
+    var what=el('div','tt-what'), voice=el('div','tt-voice');
+    var head=el('p','tt-venue'); if(x.venue){ head.appendChild(el('b','',x.venue)); head.appendChild(document.createTextNode(' · ')); }
+    head.appendChild(el('span','',x.cuisine)); what.appendChild(head);
+    var row=function(label,items){
+      if(!items||!items.length){ return; }
+      var p=el('p','tt-row'); p.appendChild(el('b','tt-h',label));
+      items.forEach(function(it,i){
+        if(i){ p.appendChild(document.createTextNode(' · ')); }
+        var s=el('span','tt-i',it[0]); var note=[it[1],it[2]?t('tt_adults','adults'):''].filter(Boolean).join(', ');
+        if(note){ s.appendChild(document.createTextNode(' ')); s.appendChild(el('small','',note)); }
+        p.appendChild(s);
+      });
+      what.appendChild(p);
+    };
+    row(t('tt_eat','Eat'),x.eat); row(t('tt_drink','Drink'),x.drink);
+    if(x.rating||x.menu){
+      var meta=el('p','tt-meta');
+      if(x.rating){ meta.appendChild(link('tt-rate',x.rating.text,x.rating.href)); }
+      if(x.menu){ if(x.rating){ meta.appendChild(document.createTextNode(' · ')); } meta.appendChild(link('tt-menu',t('tt_menu','Menu')+' ↗',x.menu.href,x.menu.title)); }
+      what.appendChild(meta);
+    }
+    tTaste.appendChild(what);
+    (x.say||[]).forEach(function(s){
+      var q=el('blockquote','tt-say'); q.appendChild(el('p','','“'+s.q+'”'));
+      var c=el('cite',''); c.appendChild(link('',s.cite,s.href)); q.appendChild(c); voice.appendChild(q);
+    });
+    if(voice.childNodes.length){ voice.setAttribute('aria-label',t('tt_say','What diners say')); tTaste.appendChild(voice); }
+    tourEl.setAttribute('data-taste',x.say&&x.say.length?'say':'plain');
+  };
   // Each stop plays as a collage of its own pictures, each with its credit, the map small in a corner (the owner,
   // 9 November 2026: "the Play ... should have multiple pics on the screen"; a full-screen map is no trip preview).
   var fillCol=function(imgs){
@@ -810,6 +845,7 @@ if(tourEl&&playBtn){
     if(tAnim){ var old=tAnim; tAnim=null; old.cancel(); }
     var s=steps[tAt]; if(!s){ return; }
     var dur=5200;
+    fillTaste(!s.globe&&s.taste||null); if(s.globe||!s.taste){ tourEl.removeAttribute('data-taste'); }
     if(s.globe){
       if(map){ map.stop(); }  // the map is hidden behind the globe: no animation may run on a hidden map
       tourEl.setAttribute('data-view','globe');
