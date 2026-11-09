@@ -2156,6 +2156,19 @@ class KitTest(unittest.TestCase):
             self.assertEqual(c['add'], 'none', 'a narrow card gives its Add button\'s room to its words')
             self.assertGreaterEqual(c['words'], c['card'] - 20, c)
 
+    def test_opening_pictures_are_planned_places(self):
+        """The opening slideshow: the first two pictures are the city or the place, every one after them is of a stop on a
+        day's plan, never a Near-here place (the owner, 9 November 2026)."""
+        planned = {pid for day in self.data['days'] for it in day['stops'] for pid in self.data['stops'][it['stop']].get('photos') or []}
+        off_plan = next(p for p in self.data['photos'] if p not in planned)
+        d = copy.deepcopy(self.data)
+        d['opener']['hero'] = [off_plan] + d['opener']['hero'][1:]
+        build.build(d)  # the first two may be any picture of the city or the place
+        d = copy.deepcopy(self.data)
+        d['opener']['hero'] = d['opener']['hero'][:2] + [off_plan]
+        with self.assertRaisesRegex(build.KitError, r'opener\.hero\[2\].*day'):
+            build.build(d)
+
     def test_restaurant_taste_in_the_tour(self):
         """A restaurant in Play the trip says what to eat and drink, its dated rating and what diners say (the owner,
         9 November 2026: "I cannot see the name of the restaurant and what type of food and drinks ... include like what to

@@ -31,7 +31,9 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
 - **Opener:** the v15 opening screen in today's type (the owner, 8 November 2026: "I prefer the v15
   landing screen", then "v15 layout, today's type"): the photo slideshow fills the screen, with the
   trip's title, the water line, the dates, a countdown and local time and **Play the trip** (the tour)
-  on it, and the credit at the top right. Then the trip in three lines, alert chips (a public holiday
+  on it, and the credit at the top right. Its pictures (the owner, 9 November 2026): the first two are the city or
+  the place, then one of each kind we planned where the trip has it (a sight, a restaurant, a drive, a night view, the
+  stay), each a stop on a day's plan; never a Near-here place (police, hospital, pharmacy, clinic, supermarket). Then the trip in three lines, alert chips (a public holiday
   goes here), **Where we stay** cards, **Can't-miss, day by day** (one row per day in date order; a day
   with nothing marked says what the day is; under each day's picks, its Plan B, C and D, one of each
   at most, each with its photo and credit and a "Plan B" link that opens that swap at its stop), and
