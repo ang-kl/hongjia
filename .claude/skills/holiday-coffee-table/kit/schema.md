@@ -413,7 +413,7 @@ with the masthead as before.
 
 | Field | Required | What |
 |---|---|---|
-| `hero` | **yes** | 1 to 8 photo ids: they fill the first screen and cross-fade (still under reduced motion); the photos do not zoom. |
+| `hero` | **yes** | 1 to 8 photo ids: they fill the first screen and cross-fade (still under reduced motion); the photos do not zoom. The first two are the city or the place; each one after them is a picture of a stop on a day's plan (the kit refuses any other), one of each kind we planned where the trip has it: a sight, a restaurant, a drive, a night view and the stay. Never a Near-here place (police, hospital, pharmacy, clinic, supermarket). |
 | `title`, `kicker` | | Default: the masthead's. The hero title is the page's only `h1`; the kicker is not shown on the page. |
 | `dates` | | The dates as shown, for example "Saturday 12 to Saturday 19 June 2027". |
 | `start`, `end` | | `YYYY-MM-DD` for the countdown ("134 days to go", "Day 3 of 8" during, hidden after); default: the first and last day's `iso`. |

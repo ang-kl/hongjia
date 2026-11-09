@@ -798,6 +798,14 @@ class Page:
             raise KitError('opener.hero: list 1 to 8 photo ids for the opening slideshow')
         if len(o['hero']) > 8 or any(p not in self.photos for p in o['hero']):
             raise KitError('opener.hero: at most 8 known photo ids')
+        # The first two pictures are the city or the place; every one after them is of a place we planned (a sight, a
+        # restaurant, a drive, a night view, the stay), never a Near-here place such as a police station, hospital,
+        # pharmacy, clinic or supermarket (the owner, 9 November 2026).
+        planned = {pid for day in self.days for it in day.get('stops') or [] for pid in (self.stops.get(it.get('stop')) or {}).get('photos') or []}
+        for i, pid in enumerate(o['hero'][2:], 2):
+            if pid not in planned:
+                raise KitError(f'opener.hero[{i}]: after the first two pictures (the city or the place), each one is of a place '
+                               f'on a day\'s plan; {pid!r} is not')
         for k in ('stays', 'highlights'):
             for sid in o.get(k) or []:
                 if sid not in self.stops:
