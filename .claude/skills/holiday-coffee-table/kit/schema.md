@@ -76,6 +76,11 @@ makes sense). Pictures may also be `data:image/…` URIs. Plain `http://` is ref
 `facts`: a list of `{label, value, status}`; `status: true` colours the value gold (use it for the
 booking status).
 
+With an `opener`, the opening screen's title is the page's title and the masthead does not repeat it (the
+owner, 9 November 2026): the opening's body is marked **Part 1**, and the masthead becomes the start of the
+details, a deep band reading **Part 2 · The plan in detail** with the `lede`, the `facts` and the `edition`.
+Without an `opener`, the masthead shows `title` as the page's heading.
+
 ### `page`, `nav`, `labels`
 
 - `page.meal_choices`: when set (for example `4`), every meal in `days[].meals` must list exactly
@@ -446,6 +451,30 @@ addresses `https://www.instagram.com/(p|reel)/<code>/embed/captioned/` and
 Posts on a Plan B or Plan C stop come after the day's main plan, marked with their plan ("Plan B · If it
 rains"), and a post shown twice in a day appears once. A playing post keeps a small link to the post itself,
 in case the service shows an error or a limit in place of the post.
+
+## Before we go (`pretrip`)
+
+What has to be booked before the trip (the owner, 9 November 2026: "if we need to reserve ahead like salon,
+you need to indicate a pre-trip activity"): a list of
+`{id, what, by, opens, cards, meals, text, link, source}`.
+
+| Key | Required | What it is |
+|---|---|---|
+| `id` | yes | Short, lower-case letters, digits and hyphens; the line's address is `#pt-<id>`. |
+| `what` | yes | The booking, as a to-do: "Book three chairs at the salon for 10:00 on Tue 29 Dec". |
+| `by` | yes | The date to book by (`YYYY-MM-DD`), before the trip starts: our own date, set early enough (say why in `text`). |
+| `opens` | | The date bookings open, if later than today; shown as "Bookings open …". |
+| `cards` | | Plan A stop cards it belongs to, as `d<day>-<stop>` (the card's own address): each gets a "Book ahead by …" mark. |
+| `meals` | | Meal choices it belongs to, by their `name`: each gets the same mark. |
+| `text` | | How and why (*rich*, with `[[src:…]]` tags). |
+| `link` | | The booking page (https). |
+| `source` | | A `sources` key for the facts in `text`. |
+
+They show as **Before we go**, the first column of the Calendar, in book-by order, each with a reminder to add
+(09:00 on its book-by date) and **Add all**. Each time the page opens (or comes back into view), it counts
+from today, in the trip's time zone: "9 days left", "Due today", "5 days late: book now" (marked in red), with a
+**Today** line among them; once the trip has started the counts stop. Needs `meta.tz` as `UTC+H` and the
+Calendar.
 
 ## The calendar
 

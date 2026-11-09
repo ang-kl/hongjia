@@ -92,6 +92,8 @@ WMO = {0: ('☀️', 'Clear'), 1: ('🌤️', 'Mainly clear'), 2: ('⛅', 'Partl
        82: ('⛈️', 'Violent showers'), 85: ('🌨️', 'Snow showers'), 86: ('🌨️', 'Snow showers'), 95: ('⛈️', 'Thunderstorm'),
        96: ('⛈️', 'Thunderstorm with hail'), 99: ('⛈️', 'Thunderstorm with hail')}
 MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+DATE_ISO = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
 
 # Every visible string the kit itself writes. A data file may override any of them in "labels".
 LABELS = {
@@ -206,6 +208,14 @@ LABELS.update({
     'cal_add': 'Add', 'cal_add_day': 'Add this day', 'cal_add_aria': 'Add {title} to your calendar',
     'cal_add_day_aria': 'Add all of day {n}, {when}, to your calendar', 'cal_loose': 'No set time',
     'cal_off': 'Add to calendar works when this page is opened on the family site.',
+    # Before we go: what to book ahead (the owner, 9 November 2026)
+    'pt_kicker': 'Pre-trip', 'pt_title': 'Before we go', 'pt_by': 'Book by {date}', 'pt_mark': 'Book ahead by {date}',
+    'pt_opens': 'Bookings open {date}.', 'pt_book': 'Booking page', 'pt_add_all': 'Add all', 'pt_reminder': 'Book: {what}',
+    'pt_add_aria': 'Add a reminder for {what} on {date}', 'pt_add_all_aria': 'Add every booking reminder to your calendar',
+    'pt_left': '{n} days left', 'pt_left1': '1 day left', 'pt_due': 'Due today', 'pt_late': '{n} days late: book now',
+    'pt_late1': '1 day late: book now', 'pt_today': 'Today · {date}', 'pt_started': 'The trip has started',
+    # the two parts of a page with an opening screen (the owner, 9 November 2026)
+    'part1': 'Part 1', 'part2': 'Part 2', 'part2_title': 'The plan in detail',
     'g_embed_note': 'Instagram and TikTok see your device\'s internet address when a post loads.',
 })
 # Times in a timeline item, for the calendar: "09:15", "10:15 to 11:30", "11:25 → 16:35", "Around 18:30",
@@ -617,6 +627,7 @@ class Page:
                     check_url(x['source'], f'{w}.bring_home[{i}].source')
         self.validate_weather()
         self.validate_near()
+        self.validate_pretrip()
         self.validate_plans()
         self.validate_audience()
         self.validate_opener()
@@ -763,6 +774,115 @@ class Page:
                 missing.insert(1, '2 hospitals in all (er and hospital)')
             if missing:
                 raise KitError(f'{w}: every area needs its essentials; missing: {", ".join(missing)}')
+
+    def validate_pretrip(self):
+        """What to book before the trip (the owner, 9 November 2026: "if we need to reserve ahead like salon, you need
+        to indicate a pre-trip activity"), each with its book-by date: our own date, early enough to get it."""
+        self.pretrip = self.d.get('pretrip') or []
+        if not self.pretrip:
+            return
+        if not tz_offset(self.d['meta'].get('tz')):
+            raise KitError('pretrip: meta.tz must be written as UTC+H (the page counts the days left in the trip\'s time zone)')
+        isos = [str(d.get('iso') or '') for d in self.days]
+        if not isos or not all(DATE_ISO.match(i) for i in isos):
+            raise KitError('pretrip: every day needs its iso date')
+        first = min(isos)
+        cards = {f'd{n}-{it["stop"]}' for n, day in enumerate(self.days, 1) for it in day.get('stops') or [] if it.get('stop')}
+        names = {c.get('name') for day in self.days for m in day.get('meals') or [] for c in m.get('choices') or [] if c.get('name')}
+        seen = set()
+        for i, x in enumerate(self.pretrip):
+            w = f'pretrip[{i}]'
+            pid = str(x.get('id') or '')
+            if not re.match(r'^[a-z0-9][a-z0-9-]{0,40}$', pid):
+                raise KitError(f'{w}.id must be short: lower-case letters, digits and hyphens')
+            if pid in seen:
+                raise KitError(f'{w}.id {pid!r} is used twice')
+            seen.add(pid)
+            if not x.get('what'):
+                raise KitError(f'{w}.what is required')
+            for k in ('by', 'opens'):
+                v = x.get(k)
+                if v is not None:
+                    try:
+                        ok = bool(DATE_ISO.match(str(v))) and datetime.date.fromisoformat(str(v))
+                    except ValueError:
+                        ok = False
+                    if not ok:
+                        raise KitError(f'{w}.{k} must be a date like 2026-12-01')
+            if not x.get('by'):
+                raise KitError(f'{w}.by is required: the date to book by')
+            if str(x['by']) >= first:
+                raise KitError(f'{w}.by must be before the trip starts ({first})')
+            if x.get('opens') and str(x['opens']) > str(x['by']):
+                raise KitError(f'{w}.opens is after its book-by date')
+            for c in x.get('cards') or []:
+                if c not in cards:
+                    raise KitError(f'{w}.cards: no Plan A stop card {c!r} (a stop card is "d<day>-<stop>")')
+            for nm in x.get('meals') or []:
+                if nm not in names:
+                    raise KitError(f'{w}.meals: no meal choice is named {nm!r}')
+            if x.get('link'):
+                check_url(x['link'], w + '.link')
+            if x.get('source') and x['source'] not in self.sources:
+                raise KitError(f'{w}: unknown source {x["source"]!r}')
+        order = (self.d.get('page') or {}).get('order') or SECTION_ORDER
+        if 'calendar' not in order or not self.cal_days():
+            raise KitError('pretrip: shown first in the Calendar, which needs meta.tz, clock times on the timeline and "calendar" in page.order')
+
+    def pt_date(self, iso):
+        d = datetime.date.fromisoformat(str(iso))
+        months = self.L.get('months') or MONTHS
+        return f'{WEEKDAYS[d.weekday()]} {d.day} {months[d.month - 1]}'
+
+    def pt_marks(self, card=None, name=None):
+        """A book-ahead mark on a stop or a meal choice: links to its line in Before we go; the page adds the days left."""
+        out = []
+        for x in getattr(self, 'pretrip', None) or []:
+            if (card and card in (x.get('cards') or [])) or (name and name in (x.get('meals') or [])):
+                out.append(f'<p class="pt-mark"><a href="#pt-{E(x["id"])}"><span aria-hidden="true">📅</span> '
+                           f'{E(self.fmt("pt_mark", date=self.pt_date(x["by"])))}<span class="pt-left" data-by="{E(x["by"])}"></span></a></p>')
+        return ''.join(out)
+
+    def pretrip_col(self):
+        """Before we go, first in the Calendar: each booking by its book-by date, with a reminder to add."""
+        if not getattr(self, 'pretrip', None):
+            return ''
+        items, events = [], []
+        for i, x in sorted(enumerate(self.pretrip), key=lambda p: (str(p[1]['by']), p[0])):
+            w = f'pretrip[{i}]'
+            by = datetime.date.fromisoformat(str(x['by']))
+            what = self.unaccent(self.plain(x['what']))
+            cards = x.get('cards') or []
+            stop = re.sub(r'^d[0-9]+-', '', cards[0]) if cards else None
+            title = self.fmt('pt_reminder', what=what)
+            note = ' '.join(p for p in (self.plain(x.get('text') or ''), x.get('link') or '') if p)
+            ev = self.cal_event(dict(title=title, stop=stop, text=note), by, (9 * 60, 9 * 60 + 30))
+            events.append(ev)
+            label = self.fmt('pt_add_aria', what=what, date=self.pt_date(x['by']))
+            add = (f'<a class="cal-add cal-add-one" href="{E(self.cal_href(title, [ev]))}" target="_blank" rel="noopener" data-ics'
+                   f' aria-label="{E(label)}" title="{E(label)}"><span aria-hidden="true">＋</span></a>')
+            what_html = f'<a href="#{E(cards[0])}">{E(x["what"])}</a>' if cards else E(x['what'])
+            src = (' ' + self.src_tag(x['source'], where=w)) if x.get('source') else ''
+            how = ''
+            if x.get('text'):
+                how += f'<p class="pt-how">{self.rich(x["text"], w + ".text")}{src}</p>'
+                src = ''
+            if x.get('opens'):
+                how += f'<p class="pt-how">{E(self.fmt("pt_opens", date=self.pt_date(x["opens"])))}{src}</p>'
+                src = ''
+            if x.get('link'):
+                how += f'<p class="pt-how">{self.ext_link(x["link"], self.L["pt_book"])} ↗{src}</p>'
+                src = ''
+            elif src:
+                how += f'<p class="pt-how">{src.strip()}</p>'
+            items.append(f'<li class="pt" id="pt-{E(x["id"])}" data-by="{E(x["by"])}">'
+                         f'<p class="cal-time">{E(self.fmt("pt_by", date=self.pt_date(x["by"])))}<span class="pt-left" data-by="{E(x["by"])}"></span></p>'
+                         f'<p class="pt-what">{what_html}</p>{how}{add}</li>')
+        add_all = (f'<a class="cal-add cal-add-day" href="{E(self.cal_href(self.L["pt_title"], events))}" target="_blank" rel="noopener" data-ics'
+                   f' aria-label="{E(self.L["pt_add_all_aria"])}">＋ {E(self.L["pt_add_all"])}</a>')
+        return (f'<section class="cal-day cal-pre" id="pretrip" aria-labelledby="cal-h-pre"><header class="cal-dh">'
+                f'<h3 id="cal-h-pre"><span class="mono">{E(self.L["pt_kicker"])}</span> {E(self.L["pt_title"])}{self.sec_link("pretrip", self.L["pt_title"])}</h3>{add_all}</header>'
+                f'<ol class="pt-list">{"".join(items)}</ol></section>')
 
     def near_items(self, aid):
         order = [k for k, _ in NEAR_KINDS]
@@ -1375,7 +1495,7 @@ class Page:
         swaps = self.swaps_html(day, n, item, did) if plan == 'a' else ''
         out = (f'<article class="stop" id="{E(did)}"{self.cats_attr(cats)}{" data-swaps=" + chr(34) + chr(34) if swaps else ""}>'
                f'<header class="stop-h"><span class="pin-letter" aria-hidden="true">{letter}</span>'
-               f'<div><h4>{self.pl_link(self.place_pid[st["place"]], E(st["name"]), did)}{self.sec_link(did, st["name"])}</h4><p class="role">{E(role)}</p>{self.cat_chips(cats)}</div>'
+               f'<div><h4>{self.pl_link(self.place_pid[st["place"]], E(st["name"]), did)}{self.sec_link(did, st["name"])}</h4><p class="role">{E(role)}</p>{self.cat_chips(cats)}{self.pt_marks(card=did)}</div>'
                f'<button type="button" class="btn-ghost show-map" data-day="{n - 1}" data-idx="{idx if plan == "a" else -1}" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" data-name="{E(st["name"])}" data-note="{E(note)}">{E(self.L["show_on_map"])}</button></header>'
                f'{swaps}'
                f'{self.suits(st, sid)}'
@@ -1751,7 +1871,11 @@ class Page:
                                  + f'<p class="alt-links"><button type="button" class="linkish show-map" data-day="{n - 1}" data-idx="-1" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" '
                                    f'data-name="{E(st["name"])}" data-note="{E(self.L["planned"])}">{E(self.L["alt_map"])}</button></p></article>')
                 else:
-                    cards.append(self.alt_card(x, n, f'{w}[{j}].choices[{c}]', default='food'))
+                    card = self.alt_card(x, n, f'{w}[{j}].choices[{c}]', default='food')
+                    mark = self.pt_marks(name=x.get('name'))
+                    if mark:
+                        card = card[:card.rindex('</article>')] + mark + '</article>'
+                    cards.append(card)
             head = f'{MEAL_ICONS[m["meal"]]} {E(self.L["meal_" + m["meal"]])}' + (f' · {E(m["time"])}' if m.get('time') else '')
             out += (f'<div class="meal" data-meal="{m["meal"]}"><h4 class="meal-h">{head} <span class="meal-n">{E(self.fmt("meal_choices", n=len(cards)))}</span></h4>'
                     + (f'<p class="meal-note">{self.rich(m["note"], f"{w}[{j}].note")}</p>' if m.get('note') else '')
@@ -2116,7 +2240,7 @@ class Page:
                 + (f'<p class="hero-live">{live}</p>' if live else '')
                 + f'<p class="hero-ctas"><button type="button" class="btn-gold btn-hero" id="play-trip"><span aria-hidden="true">▶</span> {E(self.L["op_play"])}</button>'
                 f'<a class="btn-hero2" href="#top">{E(self.L["op_read"])} <span aria-hidden="true">↓</span></a></p></div></div>'
-                f'<div class="op-body"><div class="op-grid"><div class="op-tldr"><h2 id="op-glance">{E(self.L["op_tldr"])}{self.sec_link("op-glance", self.L["op_tldr"])}</h2>'
+                f'<div class="op-body"><p class="mono op-part">{E(self.L["part1"])}</p><div class="op-grid"><div class="op-tldr"><h2 id="op-glance">{E(self.L["op_tldr"])}{self.sec_link("op-glance", self.L["op_tldr"])}</h2>'
                 + (f'<ol class="tldr">{tldr}</ol>' if tldr else '')
                 + (f'<ul class="op-alerts" aria-label="{E(self.L["op_alerts"])}">{alerts}</ul>' if alerts else '')
                 + f'</div>{globe}</div>'
@@ -2180,8 +2304,14 @@ class Page:
         m = self.d['masthead']
         facts = ''.join(f'<li><span class="mono">{E(f.get("label"))}</span><b{" class=" + chr(34) + "status" + chr(34) if f.get("status") else ""}>{E(f.get("value"))}</b></li>'
                         for f in m.get('facts') or [])
-        return (f'<header class="mast" id="top"><div class="mast-in">'
-                + (f'<h2 class="mast-h">{self.accent(m["title"])}</h2>' if self.opener_d else f'<h1>{self.accent(m["title"])}</h1>')
+        # With an opening screen, the details start with their own band, "Part 2 · The plan in detail", and the title is
+        # not repeated (the owner, 9 November 2026: "it should not be repeated heading that confuse user").
+        if self.opener_d:
+            head = (f'<p class="mono mast-kick">{E(self.L["part2"])}</p>'
+                    f'<h2 class="mast-h">{E(self.L["part2_title"])}{self.sec_link("top", self.L["part2_title"])}</h2>')
+        else:
+            head = f'<h1>{self.accent(m["title"])}</h1>'
+        return (f'<header class="mast{" mast-part" if self.opener_d else ""}" id="top"><div class="mast-in">' + head
                 + (f'<p class="lede">{E(m["lede"])}</p>' if m.get('lede') else '')
                 + (f'<ul class="facts" aria-label="{E(self.L["trip_facts"])}">{facts}</ul>' if facts else '')
                 + f'<div class="mast-bar"><p class="mono edition">{E(m.get("edition"))}</p>'
@@ -2434,11 +2564,12 @@ class Page:
             cols.append(f'<section class="cal-day" aria-labelledby="cal-h-{d["n"]}"><header class="cal-dh">'
                         f'<h3 id="cal-h-{d["n"]}"><a href="#day-{d["n"]}"><span class="mono">{E(self.L["day"])} {d["n"]}</span> {E(when)}</a></h3>{add_day}</header>'
                         f'<div class="cal-track">{"".join(html)}{"".join(swap_html)}</div></section>')
+        pre = self.pretrip_col()
         return (f'<section id="calendar" class="sec">{head}<p class="fine cal-off" hidden>{E(self.L["cal_off"])}</p>'
                 f'<div class="cal-scroll" tabindex="0" aria-label="{E(self.L["cal_kicker"])}" data-first="{first}" data-win-from="{win_first}" data-win-to="{win_last}"'
-                f' style="--hours:{hours};--from:{win_first - first}"><div class="cal-grid" style="--days:{len(days)}">'
+                f' style="--hours:{hours};--from:{win_first - first}"><div class="cal-grid" style="--days:{len(days) + (1 if pre else 0)}">'
                 f'<div class="cal-axis" aria-hidden="true"><div class="cal-dh"></div><div class="cal-track">{axis}</div></div>'
-                + ''.join(cols) + '</div></div></section>')
+                + pre + ''.join(cols) + '</div></div></section>')
 
     def pl_text(self, x, title):
         """A timeline item's title, linked to its place's panel when it has a stop."""
@@ -2761,7 +2892,9 @@ class Page:
                                      'tour_from', 'tour_way', 'nearby_pins', 'photo_spot', 'share', 'share_day', 'shared', 'copied',
                                      'near_me', 'near_title', 'near_wait', 'near_note', 'near_declined', 'near_denied', 'near_unavailable',
                                      'near_unsupported', 'near_none', 'about_km', 'new_tab', 'ig_posts', 'address', 'website', 'google_maps',
-                                     'alt_map', 'hours', 'embed_note', 'call', 'stop_details', 'swapped')}
+                                     'alt_map', 'hours', 'embed_note', 'call', 'stop_details', 'swapped',
+                                     'pt_left', 'pt_left1', 'pt_due', 'pt_late', 'pt_late1', 'pt_today', 'pt_started')}
+        ui['weekdays'] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
         ui['months'] = self.L.get('months') or MONTHS
         ui['wmo'] = {str(k): list(v) for k, v in WMO.items()}
         ui['marks'] = MARK_NAMES

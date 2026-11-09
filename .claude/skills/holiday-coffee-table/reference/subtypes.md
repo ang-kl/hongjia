@@ -34,6 +34,8 @@ a fact needs a source on the page.
 - **Days**
   - [ ] Plan B (rain) and Plan C (heat, wind, storm) for every day, each naming what it replaces.
   - [ ] Clock times on the timeline, so the Calendar can offer Add for each item.
+  - [ ] Everything to book ahead (tables, classes, salons, tickets, transport, a booking to cancel) as a
+        Before we go item, with its book-by date and why that date, linked to its stop or meal.
   - [ ] A forecast place for every base and its dates.
 - **Gallery**
   - [ ] Official accounts' posts that show the place and match the page's words, each once a day.
