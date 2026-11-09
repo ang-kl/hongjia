@@ -960,6 +960,10 @@ function placeOpen(pid,from){
   if(typeof p.lat==='number'&&typeof p.lng==='number'){ var sm=el('button','btn-gold','📍 '+t('alt_map','Show on map')); sm.type='button';
     sm.addEventListener('click',function(){ sheetClose(); showOnMap(p.day,p.idx,p.lat,p.lng,p.name,catLabel((p.cats||[])[0]||'')); }); acts.appendChild(sm); }
   if(canShare()){ var sh=el('button','btn-ghost','↗ '+t('share','Share')); sh.type='button'; sh.addEventListener('click',function(){ sharePlace(p); }); acts.appendChild(sh); }
+  var wb=el('button','btn-ghost wa-btn wa-text',t('wa_label','Send on WhatsApp')); wb.type='button';
+  wb.setAttribute('aria-disabled',WA_OWNER?'false':'true'); wb.title=WA_OWNER?t('wa_label','Send on WhatsApp'):waWhy();
+  wb.addEventListener('click',function(){ waSend(p.name,[p.addr||'',/^https:/.test(p.maps||'')?p.maps:'',/^https:/.test(p.web||'')?p.web:''],p.anchor||''); });
+  acts.appendChild(wb);
   if(acts.firstChild){ b.appendChild(acts); }
   var out=el('p','sh-out');
   [[p.web,'🌐 '+t('website','Website')],[p.maps,'📍 '+t('google_maps','Google Maps')],[p.ig?'https://www.instagram.com/'+p.ig+'/':'','📸 @'+(p.ig||'')]].forEach(function(x){
@@ -1046,6 +1050,8 @@ if(sheet){
       else { nearShow({ok:false,reason:typeof a.reason==='string'?a.reason:'unavailable'}); }
     } else if(a.type==='hj:shared'){
       if(a.how==='share'){ toast(t('shared','Shared.')); } else if(a.how==='copy'){ toast(t('copied','Link copied.')); }
+    } else if(a.type==='hj:who'){
+      WA_OWNER=a.owner===true; waState();
     }
   }); }
 }
@@ -1089,10 +1095,36 @@ if(gallery){
    opened from the device) the # is an ordinary link, so the address bar shows it. A link that names a part of
    the Gallery opens the Gallery there; any other part opens the reading view. ==== */
 document.addEventListener('click',function(e){
-  var a=e.target.closest&&e.target.closest('a[data-sec-link]'); if(!a||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey){ return; }
-  var h=a.parentNode, words=String((h&&h.textContent)||'').replace(/\s+/g,' ').trim();
-  if(shareAnchor(a.getAttribute('data-sec-link'),String((D.trip||'')+(words?' · '+words:'')).slice(0,120))){ e.preventDefault(); }
+  var a=e.target.closest&&e.target.closest('a[data-sec-link],a[data-share]'); if(!a||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey){ return; }
+  var h=a.closest('h1,h2,h3,h4,h5,h6'), words=String(a.getAttribute('data-name')||(h&&h.textContent)||'').replace(/\s+/g,' ').trim();
+  if(shareAnchor(a.getAttribute('data-sec-link')||a.getAttribute('data-share'),String((D.trip||'')+(words?' · '+words:'')).slice(0,120))){ e.preventDefault(); }
 });
+/* ==== 🤙🏼 (the owner, 9 November 2026): WhatsApp, for the owner's account only; everyone else sees it greyed. The
+   family site says whether the reader is the owner; a tap sends the part's name, time and address (and the site adds
+   its link) and the site opens WhatsApp, where the owner picks a chat. Nothing is sent until they press Send. ==== */
+var WA_OWNER=false;
+function waWhy(){ return inFrame?t('wa_owner',"Only the owner's account can send on WhatsApp."):t('wa_site','WhatsApp works when this page is opened on the family site.'); }
+function waState(){
+  $$('.wa-btn').forEach(function(b){ b.setAttribute('aria-disabled',WA_OWNER?'false':'true'); b.title=WA_OWNER?t('wa_label','Send on WhatsApp'):waWhy(); });
+  root.classList.toggle('wa-on',WA_OWNER);
+}
+function waSend(title,lines,hash){
+  if(!WA_OWNER){ toast(waWhy()); return; }
+  var text=lines.filter(function(s){ return typeof s==='string'&&s.trim(); }).join('\n').slice(0,600);
+  try{ window.parent.postMessage({type:'hj:wa-want',title:String(title||'').slice(0,120),text:text,hash:ANCHOR_OK.test(hash||'')?hash:''},'*'); }catch(e){}
+}
+document.addEventListener('click',function(e){
+  var b=e.target.closest&&e.target.closest('.sec-pair .wa-btn'); if(!b){ return; }
+  e.preventDefault(); e.stopPropagation();
+  var s=b.parentNode.querySelector('a[data-sec-link],a[data-share]'); if(!s){ return; }
+  var id=s.getAttribute('data-sec-link')||s.getAttribute('data-share'), host=document.getElementById(id), h=s.closest('h1,h2,h3,h4,h5,h6');
+  var name=String(s.getAttribute('data-name')||(h&&h.textContent)||'').replace(/\s+/g,' ').trim(), lines=[b.getAttribute('data-wa-when')||''];
+  var a=host&&host.querySelector('a.pl[data-place]'), p=a?P[a.getAttribute('data-place')]:null;
+  if(p&&!/^nh-/.test(id)){ lines.push(p.addr||''); if(/^https:/.test(p.maps||'')){ lines.push(p.maps); } }
+  waSend(name||(p&&p.name)||'',lines,id);
+});
+waState();
+if(inFrame){ try{ window.parent.postMessage({type:'hj:who'},'*'); }catch(e){} }
 function goToHash(){
   var id=decodeURIComponent(String(location.hash||'').slice(1));
   if(!ANCHOR_OK.test(id)){ return; }

@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.09 (3)";
+pub const VERSION: &str = "2026.11.09 (4)";
 
-pub const SYNOPSIS: &str = "This version adds Before we go to trip pages: everything to book ahead, such as a salon, a class or a table, is listed first in the Calendar by the date to book by, with a reminder to add, and marked on its stop or meal; each time the page opens it counts the days left from today and marks any that are late. Trip pages now come in two clear parts: the opening at a glance, then Part 2, the plan in detail, on its own band, without repeating the trip's title.";
+pub const SYNOPSIS: &str = "This version replaces the # beside every part of a trip page with the Share mark (three joined dots) and adds 🤙🏼 beside it, on every place, plan and part, every timed calendar card, every booking, every Near here place, every Gallery picture and each place's panel. For the owner's account 🤙🏼 opens WhatsApp's chat picker with that part's name, time, address and link already typed in; nothing is sent until the owner presses Send. For everyone else it is greyed and says why.";

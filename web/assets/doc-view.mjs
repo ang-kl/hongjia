@@ -15,7 +15,7 @@ import { createSignaturePad, signatureNodes } from './signature.mjs';
 export const LIMITS = { key: 200, value: 4000, storage: 8000, label: 200, quote: 1000, around: 64, id: 20, text: 500, body: 4000, path: 400 };
 export const COLORS = ['yellow', 'green', 'blue', 'pink', 'orange'];
 export const STAMPS = [['check', '✓'], ['cross', '✗'], ['approved', 'Approved'], ['reviewed', 'Reviewed'], ['signedoff', 'Signed off']];
-const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape', 'hj:weather-want', 'hj:tiles-want', 'hj:share-want', 'hj:near-want', 'hj:tour']);
+const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape', 'hj:weather-want', 'hj:tiles-want', 'hj:share-want', 'hj:near-want', 'hj:tour', 'hj:who', 'hj:wa-want']);
 /// A trip page may ask for the forecast of up to this many places (travel kit, Phase 1).
 export const MAX_WEATHER_PLACES = 12;
 /// A trip page may ask which of up to this many places are nearest ("Near me", 6 November 2026).
@@ -24,6 +24,8 @@ export const MAX_NEAR_PLACES = 200;
 export const NEAR_ANSWERS = 20;
 /// Lengths a trip page may ask this page to share (the Web Share API, 6 November 2026).
 export const SHARE_LIMITS = { title: 120, text: 300, url: 2000 };
+/// Lengths a trip page may put in a WhatsApp message for the owner (🤙🏼, 9 November 2026).
+export const WA_LIMITS = { title: 120, text: 600 };
 const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 const PLACE_KEY = /^[a-z0-9][a-z0-9-]{0,29}$/;
 /// One part of a trip page, named after the # at the end of a link to it (7 November 2026).
@@ -123,6 +125,15 @@ export function validMessage(data) {
     case 'hj:tiles-want':
       // A trip page's map asks for a ticket to load its map pictures through this site.
       return { type: data.type };
+    case 'hj:who':
+      // A trip page asks whether the reader is the owner, to show 🤙🏼 in colour or greyed (9 November 2026).
+      return { type: data.type };
+    case 'hj:wa-want':
+      // 🤙🏼: the owner sends a part of a trip page on WhatsApp, choosing the chat there (9 November 2026). The page
+      // gives the part's name, a few lines (time, address, map link) and its #; this page adds its own link.
+      if (!isText(data.title, WA_LIMITS.title) || !data.title.trim() || !isText(data.text ?? '', WA_LIMITS.text)) return null;
+      if (data.hash !== undefined && data.hash !== '' && (typeof data.hash !== 'string' || !PART_ID.test(data.hash))) return null;
+      return { type: data.type, title: data.title, text: data.text ?? '', ...(data.hash ? { hash: data.hash } : {}) };
     case 'hj:tour':
       // A trip page's tour opened or closed: the page's right-hand buttons fold away meanwhile.
       if (typeof data.open !== 'boolean') return null;
@@ -155,6 +166,13 @@ export function validMessage(data) {
     }
   }
   return null;
+}
+
+/// The WhatsApp address for a part of a trip page: no number, so WhatsApp asks which chat (the owner's choice,
+/// 9 November 2026: "Pick a chat each time"); the words are typed in, and nothing is sent until Send is pressed.
+export function waLink(message, pageUrl) {
+  const words = [message.title, message.text, pageUrl].filter(s => typeof s === 'string' && s.trim()).join('\n');
+  return `https://wa.me/?text=${encodeURIComponent(words)}`;
 }
 
 /// An address a trip page may ask to share: https only, no user name or password in it.
@@ -529,6 +547,25 @@ function start() {
       sharing = false;
     }
     toFrame({ type: 'hj:shared', ok: how === 'share' || how === 'copy', how });
+  };
+
+  // 🤙🏼 WhatsApp for the owner's account only (9 November 2026); the server says who is reading.
+  const isOwner = document.body.dataset.owner === 'true';
+  const allowWa = rateLimiter(1, 2_000);
+  const waFrom = async message => {
+    if (!isOwner || !allowWa(Date.now())) return;
+    const url = waLink(message, `${location.origin}${base}${message.hash ? `#${message.hash}` : ''}`);
+    // A tap in the frame usually lets this page open WhatsApp at once; when the browser says no, the owner taps here.
+    const w = window.open(url, '_blank');
+    if (w) {
+      w.opener = null;
+      return;
+    }
+    const choice = await ask('WhatsApp', `Open WhatsApp with “${message.title}”?`, [['open', 'Open WhatsApp', true], ['no', 'Cancel', false]]);
+    if (choice === 'open') {
+      const again = window.open(url, '_blank');
+      if (again) again.opener = null;
+    }
   };
 
   // Near me: asked once per load of the document, in this page's words; the reading is coarse
@@ -1528,6 +1565,12 @@ function start() {
         break;
       case 'hj:share-want':
         shareFrom(message);
+        break;
+      case 'hj:who':
+        toFrame({ type: 'hj:who', owner: isOwner });
+        break;
+      case 'hj:wa-want':
+        waFrom(message);
         break;
       case 'hj:tour':
         tourMode(message.open);

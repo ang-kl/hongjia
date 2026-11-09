@@ -504,7 +504,15 @@ or a tap outside closes it, and the reader is back where they were.
 - **Share**: on the family site the locked page cannot share, so it asks the site
   (`hj:share-want`): a place by its public facts and an https link; a day only by the document's
   link on the site (the owner, 6 November 2026: "link only"). Opened elsewhere, it uses the
-  browser's share menu or copies the link.
+  browser's share menu or copies the link. Every part's Share is drawn as three joined dots
+  (the owner, 9 November 2026: "Share replaces #").
+- **🤙🏼 WhatsApp, the owner's account only** (the owner, 9 November 2026): beside every Share, on every
+  timed calendar card, booking, Near here place and Gallery picture, and in each place's panel. The page
+  asks the site who is reading (`hj:who`); only for the owner is 🤙🏼 in colour. A tap sends the part's
+  name and a few lines (its time, address and map link) and its # (`hj:wa-want`); the site adds its own
+  link and opens `https://wa.me/?text=…`, with no number, so WhatsApp asks which chat. This is the one
+  place a trip's details leave in a message, and only when the owner chooses to send them. For everyone
+  else, and on a copy opened away from the site, 🤙🏼 is greyed and a tap says why.
 - **Hungry? and Shop nearby** (the plain "📍 Near me" button was removed, the owner, 7 November 2026):
   on the family site the site asks the person in its own words, takes a rough reading
   (never high accuracy) and sends back only the nearest places' keys and distances to the nearest

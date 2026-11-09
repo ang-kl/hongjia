@@ -498,6 +498,7 @@ pub fn privacy(owner: &str, journal_days: i32, location_days: i32) -> String {
 <p>Trip pages can show Instagram and TikTok posts, in a place's panel or in the Gallery view. Each loads from Instagram or TikTok only when you open that panel or tap that post, and Instagram or TikTok then sees your device's network address, as with any visit to them. Facebook posts are links that open Facebook.</p>
 <p>Trip pages can have Add to calendar buttons. The button opens a link on this site that holds the event's title, times, place and note; the site turns it into a calendar file for your device and keeps nothing.</p>
 <p>Trip pages have Hungry? and Shop nearby buttons, which list the nearest food or shops. If you agree when the site asks, your device gives a rough location, used on that device only to sort the trip's places by distance. It is not sent to the site, passed to the trip page or kept.</p>
+<p>Trip pages show 🤙🏼 beside each place and part. For the owner's account it opens WhatsApp with that part's name, time, address and link already typed in, and WhatsApp asks which chat; nothing is sent until the owner presses Send. This site sends nothing to WhatsApp. For everyone else 🤙🏼 is greyed.</p>
 <p>Questions or corrections: ask {owner}.</p>
 <p class="small"><a href="/">Back</a></p>"#,
             owner = escape(owner)
@@ -1277,8 +1278,9 @@ pub fn document_view(
         Some(nav),
         "app viewer-page",
         &format!(
-            r#" data-csrf="{csrf}" data-doc-key="{key}" data-viewer="{viewer}" data-doc-kind="{kind}" data-manager="{manager}" data-can-redact="{redact}""#,
+            r#" data-csrf="{csrf}" data-doc-key="{key}" data-viewer="{viewer}" data-owner="{owner}" data-doc-kind="{kind}" data-manager="{manager}" data-can-redact="{redact}""#,
             viewer = escape(nav.handle),
+            owner = nav.is_owner,
             kind = escape(&doc.kind),
             manager = can_manage,
             redact = review.can_redact,

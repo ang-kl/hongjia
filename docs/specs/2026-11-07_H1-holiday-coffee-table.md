@@ -233,3 +233,9 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
     days left from today in the trip's time zone each time it opens, marks late ones, and puts a Today line among them.
   - "The trip at a glance" and the details "should have distinct web style"; the details should not repeat the
     trip's title. They chose "Part 2 · The plan in detail" on a deep band, with the opening's body marked Part 1.
+- **Share and 🤙🏼** (the owner, 9 November 2026): "every place has the ability to whatsapp for OWNER Account only. emoji is
+  🤙🏼"; they chose "everyone signed in sees 🤙🏼, but gray off", the standard Share mark everywhere ("Share replaces #"),
+  "everywhere including calendar post", and "Pick a chat each time" (no number: WhatsApp asks which chat, so the
+  WhatsApp settings on the server are not used). The site tells the page whether the reader is the owner; the owner's
+  tap opens WhatsApp with the part's name, time, address, map link and page link typed in, and nothing is sent until
+  they press Send. This is the one exception to "link only", for the owner alone.

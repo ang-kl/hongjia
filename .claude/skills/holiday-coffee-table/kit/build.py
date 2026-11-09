@@ -93,6 +93,7 @@ WMO = {0: ('☀️', 'Clear'), 1: ('🌤️', 'Mainly clear'), 2: ('⛅', 'Partl
        96: ('⛈️', 'Thunderstorm with hail'), 99: ('⛈️', 'Thunderstorm with hail')}
 MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+# The Share mark (three joined dots) in place of the # is drawn by the style sheet (the owner, 9 November 2026).
 DATE_ISO = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
 
 # Every visible string the kit itself writes. A data file may override any of them in "labels".
@@ -187,6 +188,8 @@ LABELS.update({
     'meal_breakfast': 'Breakfast', 'meal_brunch': 'Brunch', 'meal_lunch': 'Lunch', 'meal_dinner': 'Dinner', 'meal_snack': 'Snack',
     'share': 'Share', 'share_day': 'Share this day', 'shared': 'Shared.', 'copied': 'Link copied.',
     'sec_link': 'Share a link to this part',
+    'wa_label': 'Send on WhatsApp', 'wa_owner': "Only the owner's account can send on WhatsApp.",
+    'wa_site': 'WhatsApp works when this page is opened on the family site.',
     'near_me': 'Near me', 'near_title': 'Nearest to you', 'near_wait': 'Waiting for your answer…',
     'near_note': 'Straight-line distances, to the nearest half kilometre. Your location stays on your device.',
     'near_declined': 'Nothing was shared.', 'near_denied': 'Location is turned off for this page in your browser settings.',
@@ -875,9 +878,10 @@ class Page:
                 src = ''
             elif src:
                 how += f'<p class="pt-how">{src.strip()}</p>'
+            acts = self.share_pair(f'pt-{x["id"]}', x['what'], self.fmt('pt_by', date=self.pt_date(x['by'])))
             items.append(f'<li class="pt" id="pt-{E(x["id"])}" data-by="{E(x["by"])}">'
                          f'<p class="cal-time">{E(self.fmt("pt_by", date=self.pt_date(x["by"])))}<span class="pt-left" data-by="{E(x["by"])}"></span></p>'
-                         f'<p class="pt-what">{what_html}</p>{how}{add}</li>')
+                         f'<p class="pt-what">{what_html}</p>{how}{add}<span class="cal-acts">{acts}</span></li>')
         add_all = (f'<a class="cal-add cal-add-day" href="{E(self.cal_href(self.L["pt_title"], events))}" target="_blank" rel="noopener" data-ics'
                    f' aria-label="{E(self.L["pt_add_all_aria"])}">＋ {E(self.L["pt_add_all"])}</a>')
         return (f'<section class="cal-day cal-pre" id="pretrip" aria-labelledby="cal-h-pre"><header class="cal-dh">'
@@ -894,8 +898,9 @@ class Page:
         if not items:
             return ''
         rows = []
-        for x in items:
+        for i, x in enumerate(items):
             k = x['kind']
+            nid = f'nh-{aid}-{i}'
             dist = (f' · <span class="nh-d"' + (f' title="{E(x["distance_note"])}"' if x.get('distance_note') else '') + f'>{E(x["distance"])}</span>') if x.get('distance') else ''
             extra = []
             if x.get('why'):
@@ -907,8 +912,9 @@ class Page:
                 links.append(f'<a href="tel:{E(re.sub(r"[^0-9+]", "", x["tel"]))}">{E(x["tel"])}</a>')
             if x.get('website'):
                 links.append(self.ext_link(x['website'], self.L['website']))
-            rows.append(f'<li class="nh" data-kind="{k}" data-fact><span class="nh-i" aria-hidden="true">{NEAR_ICON[k]}</span><div>'
+            rows.append(f'<li class="nh" id="{E(nid)}" data-kind="{k}" data-fact><span class="nh-i" aria-hidden="true">{NEAR_ICON[k]}</span><div>'
                         f'<b class="nh-l">{E(self.L["nh_" + k])}</b> {self.ext_link(self.gmaps(x.get("q") or x["name"]), x["name"])}{dist}'
+                        f'{self.share_pair(nid, x["name"], " · ".join(v for v in (x.get("address") or "", self.gmaps(x.get("q") or x["name"])) if v))}'
                         + (f'<br>{" · ".join(extra)}' if extra else '') + (f'<br>{" · ".join(links)}' if links else '')
                         + f' {self.src_tag(x["source"], where=f"areas.{aid}.near")}</div></li>')
         anchor = self.areas[aid].get('near_from')
@@ -2055,8 +2061,26 @@ class Page:
         if not ID_OK.match(anchor):
             raise KitError(f'section link {anchor!r}: not a usable anchor')
         label = self.L['sec_link'] + (f': {self.unaccent(name)}' if name else '')
-        return (f'<a class="sec-link" href="#{anchor}" data-sec-link="{anchor}" title="{E(self.L["sec_link"])}" '
-                f'aria-label="{E(label)}"></a>')
+        # Share (three joined dots) in place of the # and 🤙🏼 beside it (the owner, 9 November 2026); the marks are
+        # drawn without words, so a heading's own words stay as they are.
+        return (f'<span class="sec-pair"><a class="sec-link" href="#{anchor}" data-sec-link="{anchor}" title="{E(self.L["sec_link"])}" '
+                f'aria-label="{E(label)}"></a>{self.wa_btn(anchor, name)}</span>')
+
+    def wa_btn(self, anchor, name=None, when=''):
+        """🤙🏼: opens WhatsApp with this part's name, time, address and link, for the owner's account only; everyone
+        else sees it greyed (the owner, 9 November 2026). The family site says who is reading. The part's address and
+        name are read from the Share link beside it, so 200 of them add little weight."""
+        return ('<button type="button" class="wa-btn"' + (f' data-wa-when="{E(when)}"' if when else '')
+                + f' aria-disabled="true" aria-label="{E(self.L["wa_label"])}"></button>')
+
+    def share_pair(self, anchor, name, when=''):
+        """Share and 🤙🏼 for an item that is not the part's own heading (a calendar card, a Gallery picture)."""
+        if not ID_OK.match(anchor):
+            return ''
+        nm = self.unaccent(self.plain(name)) if name else ''
+        label = self.L['sec_link'] + (f': {nm}' if nm else '')
+        return (f'<span class="sec-pair sec-alt"><a class="share-alt" href="#{anchor}" data-share="{anchor}" data-name="{E(nm)}" '
+                f'title="{E(self.L["sec_link"])}" aria-label="{E(label)}"></a>{self.wa_btn(anchor, name, when)}</span>')
 
     def part_id(self, text):
         """A lasting anchor for a titled part inside a section: its title in plain letters, unique on the page."""
@@ -2487,6 +2511,7 @@ class Page:
         for d in days:
             cards, placed = [], []
             timed_events = []
+            day_when = str(d['day'].get('when') or '')
             n_items = len(d['items'])
             for k, it in enumerate(d['items']):
                 x = it['x']
@@ -2514,9 +2539,13 @@ class Page:
                 if it['span'] and SPAN_RE.match(re.sub(r'\s+', ' ', shown).strip()):
                     a, b = it['span']
                     shown = f'{a // 60:02d}:{a % 60:02d}-{b // 60 % 24:02d}:{b % 60:02d}'  # "09:00-09:30" fits a narrow column
+                card_id = f'd{d["n"]}-{x["stop"]}' if x.get('stop') and any(s.get('stop') == x['stop'] for s in d['day'].get('stops') or []) else f'day-{d["n"]}'
+                acts = self.share_pair(card_id, title, f'{self.L["day"]} {d["n"]} · {day_when} · {shown}') if it['span'] else ''
+                tiny = ' cal-tiny' if max(length, min_len) * 88 < 72 else ''
                 cards.append(dict(top=top, end=vis_end, html=(
                     f'<p class="cal-time" title="{E(x.get("time") or "")}">{E(shown)}</p>'
-                    f'<p class="cal-title" style="--lines:{lines}">{self.pl_text(x, title)}</p>{add}'), length=length, loose=loose))
+                    f'<p class="cal-title" style="--lines:{lines}">{self.pl_text(x, title)}</p>{add}'
+                    + (f'<span class="cal-acts">{acts}</span>' if acts else '')), length=length, loose=loose + tiny))
             # The day's swaps, hidden until chosen; the page's script gives them their lanes when they show.
             swap_html = []
             for s in swaps.get(d['n']) or []:
@@ -2747,7 +2776,8 @@ class Page:
         if plan:  # a post from a weather plan says so, so it never reads as the main plan
             kick = f'{self.plan_tag(plan[-1])} {self.plan_label(plan[-1])}'
         cap = (f'<figcaption><span class="g-k">{E(kick)}</span>'
-               f'<span class="g-name">{self.pl_link(pid, E(st["name"]), self.panels[pid]["anchor"])}</span>'
+               f'<span class="g-name">{self.pl_link(pid, E(st["name"]), self.panels[pid]["anchor"])}'
+               f'{self.share_pair(self.panels[pid]["anchor"], st["name"]) if self.panels[pid]["anchor"] else ""}</span>'
                + (f'<span class="g-line">{E(line)}</span>' if line else '')
                + (f'<span class="credit">{credit_html}</span>' if credit_html else '') + '</figcaption>')
         pic = (f'<img src="{E(img["src"])}" alt="{E(img["alt"])}" loading="lazy" decoding="async" referrerpolicy="no-referrer">' if img else '')
@@ -2893,7 +2923,8 @@ class Page:
                                      'near_me', 'near_title', 'near_wait', 'near_note', 'near_declined', 'near_denied', 'near_unavailable',
                                      'near_unsupported', 'near_none', 'about_km', 'new_tab', 'ig_posts', 'address', 'website', 'google_maps',
                                      'alt_map', 'hours', 'embed_note', 'call', 'stop_details', 'swapped',
-                                     'pt_left', 'pt_left1', 'pt_due', 'pt_late', 'pt_late1', 'pt_today', 'pt_started')}
+                                     'pt_left', 'pt_left1', 'pt_due', 'pt_late', 'pt_late1', 'pt_today', 'pt_started',
+                                     'wa_label', 'wa_owner', 'wa_site')}
         ui['weekdays'] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
         ui['months'] = self.L.get('months') or MONTHS
         ui['wmo'] = {str(k): list(v) for k, v in WMO.items()}
