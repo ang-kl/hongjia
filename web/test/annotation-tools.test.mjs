@@ -82,6 +82,13 @@ test('mentions: family handles only, not inside words', () => {
   assert.equal(mentionQuery('Ask @be now', 11), null, 'caret moved on');
 });
 
+test('a part going by is reported by its anchor only (9 November 2026)', () => {
+  assert.deepEqual(validMessage({ type: 'hj:passed', id: 'top', extra: 1 }), { type: 'hj:passed', id: 'top' });
+  assert.equal(validMessage({ type: 'hj:passed', id: 'two words' }), null);
+  assert.equal(validMessage({ type: 'hj:passed', id: 'x'.repeat(62) }), null);
+  assert.equal(validMessage({ type: 'hj:passed' }), null);
+});
+
 test('menu, position and locate messages are checked', () => {
   const menu = { type: 'hj:menu', input: 'mouse', x: 10, y: 20, quote: 'Two', prefix: 'a', suffix: 'b', ppre: '', psuf: '', path: 'body:1/p:2', fx: 0.5, fy: 0.25, field: '', label: '' };
   assert.deepEqual(validMessage(menu), menu);

@@ -750,6 +750,59 @@ fn check_section(latest: Option<&VersionRow>) -> String {
     )
 }
 
+/// A trip page's two parts, for the Contents list beside the title on a desktop (the owner, 9 November 2026: "Beside
+/// the Header ... to have dropdown of the Part 1 and Part 2 for quick jump"). Part 2 starts at the heading whose anchor
+/// is `top` ("The plan in detail"); the headings before it, after the title, are Part 1. A document without that
+/// heading has no list. `data-parts` names where each part starts, so the page can make 🔭 blink as each one passes.
+pub fn doc_parts(key: &str, version: Option<&VersionRow>) -> String {
+    let Some(v) = version else {
+        return String::new();
+    };
+    let heads: Vec<(&str, &str)> = v
+        .heading_levels
+        .iter()
+        .zip(&v.heading_ids)
+        .zip(&v.heading_texts)
+        .filter(|((level, id), text)| **level == 2 && !id.is_empty() && !text.trim().is_empty())
+        .map(|((_, id), text)| (id.as_str(), text.as_str()))
+        .collect();
+    let Some(split) = heads.iter().position(|(id, _)| *id == "top") else {
+        return String::new();
+    };
+    if split == 0 {
+        return String::new();
+    }
+    let key = escape(key);
+    let rows = |part: &[(&str, &str)]| -> String {
+        part.iter()
+            .take(30)
+            .map(|(id, text)| {
+                format!(
+                    r#"<li><a class="pick-item" href="/documents/{key}/raw#{a}" data-part-jump="{a}">{t}</a></li>"#,
+                    a = escape(id),
+                    t = escape(&tidy_heading(text)),
+                )
+            })
+            .collect()
+    };
+    format!(
+        r#"<details class="doc-pick doc-pick-c" data-doc-pick data-parts="{first} top"><summary class="doc-c">Contents</summary><div class="pick-list"><p class="pick-head">Part 1</p><ul>{one}</ul><p class="pick-head">Part 2</p><ul>{two}</ul></div></details>"#,
+        first = escape(heads[0].0),
+        one = rows(&heads[..split]),
+        two = rows(&heads[split..]),
+    )
+}
+
+/// A heading as read from the page, without the space its styled words leave before punctuation ("Ampang ." becomes
+/// "Ampang.").
+fn tidy_heading(text: &str) -> String {
+    let mut out = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    for mark in [".", ",", ":", ";", "!", "?", ")"] {
+        out = out.replace(&format!(" {mark}"), mark);
+    }
+    out
+}
+
 /// 📁 contents of a document page: its headings with anchors, as links that move the frame.
 fn document_contents(key: &str, latest: Option<&VersionRow>) -> String {
     let Some(v) = latest else {
@@ -772,7 +825,7 @@ fn document_contents(key: &str, latest: Option<&VersionRow>) -> String {
             r#"<li class="level-{level}"><a href="/documents/{key}/raw#{anchor}" data-frame-jump="{anchor}">{text}</a></li>"#,
             level = level.clamp(&1, &3),
             anchor = escape(id),
-            text = escape(text),
+            text = escape(&tidy_heading(text)),
         ));
     }
     let list = if items.is_empty() {
@@ -1252,7 +1305,7 @@ pub fn document_view(
     };
     let main = format!(
         r##"<div class="viewer-doc">
-<div class="doc-bar"><button type="button" class="back" data-back title="Back to the previous page (Esc)"><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button><span class="filing">{label}</span><details class="doc-pick doc-pick-v" data-doc-pick data-unpinned="{unpinned}"><summary class="doc-v" title="{v_title}">· {v_tag}</summary><div class="pick-list"><p class="pick-head">Versions</p><ul>{version_rows}</ul></div></details><details class="doc-pick doc-pick-t" data-doc-pick><summary><h1 class="doc-title">{title}</h1></summary><div class="pick-list"><p class="pick-head">Latest documents</p><ul>{title_rows}</ul><p class="pick-more"><a href="/documents">All documents</a></p></div></details><button type="button" class="pill comment-open" data-comment hidden>Comment</button><div class="doc-tabs" role="group" aria-label="This document" data-doc-tabs><button type="button" data-doc-tab="details" aria-pressed="false">Details</button><button type="button" data-doc-tab="versions" aria-pressed="false">Versions <span class="count">{n_versions}</span></button><button type="button" data-doc-tab="notes" aria-pressed="false">Notes</button><button type="button" data-doc-tab="files" aria-pressed="false">Files</button>{manage_tab}</div></div>
+<div class="doc-bar"><button type="button" class="back" data-back title="Back to the previous page (Esc)"><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button><span class="filing">{label}</span><details class="doc-pick doc-pick-v" data-doc-pick data-unpinned="{unpinned}"><summary class="doc-v" title="{v_title}">· {v_tag}</summary><div class="pick-list"><p class="pick-head">Versions</p><ul>{version_rows}</ul></div></details><details class="doc-pick doc-pick-t" data-doc-pick><summary><h1 class="doc-title">{title}</h1></summary><div class="pick-list"><p class="pick-head">Latest documents</p><ul>{title_rows}</ul><p class="pick-more"><a href="/documents">All documents</a></p></div></details>{parts}<button type="button" class="pill comment-open" data-comment hidden>Comment</button><div class="doc-tabs" role="group" aria-label="This document" data-doc-tabs><button type="button" data-doc-tab="details" aria-pressed="false">Details</button><button type="button" data-doc-tab="versions" aria-pressed="false">Versions <span class="count">{n_versions}</span></button><button type="button" data-doc-tab="notes" aria-pressed="false">Notes</button><button type="button" data-doc-tab="files" aria-pressed="false">Files</button>{manage_tab}</div></div>
 {notice}{hidden_notice}{older_note}
 <div class="doc-stage" data-doc-stage><iframe class="doc-frame" src="/documents/{key}/raw{raw_v}" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe><div class="doc-overlay" data-doc-overlay aria-hidden="true"{overlay_hidden}></div></div>
 </div>
@@ -1266,6 +1319,7 @@ pub fn document_view(
         unpinned = picks.unpinned,
         version_rows = picks.versions,
         title_rows = picks.titles,
+        parts = doc_parts(&doc.key, older.or(versions.first())),
         raw_v = older
             .map(|v| format!("?v={}", v.version_no))
             .unwrap_or_default(),
@@ -1424,6 +1478,19 @@ mod tests {
         assert_eq!(active_time(0), "under a minute");
         assert_eq!(active_time(89), "about 1 min");
         assert_eq!(active_time(3725), "about 1 h 2 min");
+    }
+
+    #[test]
+    fn headings_lose_the_space_before_punctuation() {
+        assert_eq!(
+            tidy_heading("Five nights on Jalan Ampang ."),
+            "Five nights on Jalan Ampang."
+        );
+        assert_eq!(
+            tidy_heading("New Year in Kuala Lumpur : what changes."),
+            "New Year in Kuala Lumpur: what changes."
+        );
+        assert_eq!(tidy_heading("  Taste &  Shop "), "Taste & Shop");
     }
 
     #[test]

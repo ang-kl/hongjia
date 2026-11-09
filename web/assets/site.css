@@ -749,6 +749,23 @@ button.pill[hidden] { display: none; }
 .pick-item[aria-current="page"]::before { content: "✓"; }
 .pick-file { display: block; padding: 2px 10px 8px 30px; font-size: 0.85rem; color: var(--river); overflow-wrap: anywhere; }
 .pick-more { margin: 6px 8px 2px; font-size: 0.85rem; }
+/* Contents beside the title, on a desktop only (the owner, 9 November 2026). */
+.doc-pick-c { display: none; }
+.doc-pick-c > summary { min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); font: 500 0.9375rem/1 var(--sans); color: var(--ink); }
+.doc-pick-c .pick-list { max-height: min(72vh, 680px); overflow: auto; }
+.doc-pick-c .pick-head + ul + .pick-head { margin-top: 10px; }
+@media (hover: hover) and (pointer: fine) and (min-width: 1024px) {
+  .doc-pick-c { display: block; flex: none; }
+  /* The title gives way first (it shortens with …), so the tabs keep their row; Contents stays right beside it. */
+  .doc-pick-t { flex: 1 1 0%; max-width: max-content; }
+}
+/* 🔭 blinks for 3 seconds as the start of Part 1 or Part 2 goes by (the owner, 9 November 2026). */
+html.fabs-fold .fab-scope.fab-blink { animation: scope-blink 1s ease-in-out 3; }
+@keyframes scope-blink {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.22); background: #4b9be8; box-shadow: 0 0 0 6px rgb(75 155 232 / 0.35), 0 0 24px rgb(75 155 232 / 0.9); }
+}
+@media (prefers-reduced-motion: reduce) { html.fabs-fold .fab-scope.fab-blink { outline: 3px solid #4b9be8; outline-offset: 3px; } }
 .pick-more a { color: var(--river); }
 /* While a trip page's Play the trip tour is open, the family's pins and notes step aside, so nothing covers its
    pictures or its map; they come back when it closes (the owner, 9 November 2026: "Hide pins during Play"). */

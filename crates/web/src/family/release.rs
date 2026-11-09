@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.10 (1)";
+pub const VERSION: &str = "2026.11.10 (2)";
 
-pub const SYNOPSIS: &str = "This version no longer stops at This device after sign-in: a browser with no saved choice goes straight to the latest document with location off, and the choice stays under ☰ Settings, This device, where it can be turned on.";
+pub const SYNOPSIS: &str = "This version adds Contents beside a trip page's title on a desktop, listing Part 1 and Part 2 so a click goes straight to that part without reloading, and makes 🔭 blink for 3 seconds as the start of each part goes by while reading down.";

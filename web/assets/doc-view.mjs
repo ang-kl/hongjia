@@ -15,7 +15,7 @@ import { createSignaturePad, signatureNodes } from './signature.mjs';
 export const LIMITS = { key: 200, value: 4000, storage: 8000, label: 200, quote: 1000, around: 64, id: 20, text: 500, body: 4000, path: 400 };
 export const COLORS = ['yellow', 'green', 'blue', 'pink', 'orange'];
 export const STAMPS = [['check', '✓'], ['cross', '✗'], ['approved', 'Approved'], ['reviewed', 'Reviewed'], ['signedoff', 'Signed off']];
-const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape', 'hj:weather-want', 'hj:tiles-want', 'hj:share-want', 'hj:near-want', 'hj:tour', 'hj:who', 'hj:wa-want']);
+const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape', 'hj:weather-want', 'hj:tiles-want', 'hj:share-want', 'hj:near-want', 'hj:tour', 'hj:who', 'hj:wa-want', 'hj:passed']);
 /// A trip page may ask for the forecast of up to this many places (travel kit, Phase 1).
 export const MAX_WEATHER_PLACES = 12;
 /// A trip page may ask which of up to this many places are nearest ("Near me", 6 November 2026).
@@ -45,6 +45,10 @@ export function validMessage(data) {
   switch (data.type) {
     case 'hj:ready':
       return { type: data.type };
+    case 'hj:passed':
+      // The start of a part of the page went by while reading down (9 November 2026).
+      if (!isText(data.id, 61) || !PART_ID.test(data.id)) return null;
+      return { type: data.type, id: data.id };
     case 'hj:field':
       if (!isText(data.key, LIMITS.key) || !data.key || !isText(data.value, LIMITS.value) || !isText(data.label ?? '', LIMITS.label)) return null;
       return { type: data.type, key: data.key, value: data.value, label: data.label ?? '' };
@@ -452,6 +456,27 @@ function start() {
     pick.open = false;
     pick.querySelector('summary')?.focus();
   });
+  // Contents beside the title, on a desktop (the owner, 9 November 2026): a heading moves the document there, with no
+  // reload; and as the start of Part 1 or Part 2 goes by while reading down, 🔭 blinks for 3 seconds.
+  const partIds = (document.querySelector('[data-parts]')?.dataset.parts || '').split(' ').filter(id => PART_ID.test(id));
+  document.addEventListener('click', event => {
+    const jump = event.target.closest?.('[data-part-jump]');
+    if (!jump || !PART_ID.test(jump.dataset.partJump)) return;
+    event.preventDefault();
+    closePicks();
+    toFrame({ type: 'hj:goto', id: jump.dataset.partJump });
+    frame.focus({ preventScroll: true });
+  });
+  let blinkTimer = 0;
+  const blinkScope = () => {
+    const scope = document.querySelector('[data-fab-scope]');
+    if (!scope) return;
+    scope.classList.remove('fab-blink');
+    void scope.offsetWidth;  // starts the blink again when the second part follows soon after the first
+    scope.classList.add('fab-blink');
+    clearTimeout(blinkTimer);
+    blinkTimer = setTimeout(() => scope.classList.remove('fab-blink'), 3000);
+  };
   const tourMode = on => {
     const root = document.documentElement;
     root.classList.toggle('tour-on', on);
@@ -1596,6 +1621,7 @@ function start() {
     switch (message.type) {
       case 'hj:ready':
         tourMode(false);
+        if (partIds.length) toFrame({ type: 'hj:watch', ids: partIds });
         sendAnchors();
         toFrame({ type: 'hj:tool', color });
         weatherAsked.clear();
@@ -1603,6 +1629,9 @@ function start() {
         break;
       case 'hj:tiles-want':
         askTiles();
+        break;
+      case 'hj:passed':
+        if (partIds.includes(message.id)) blinkScope();
         break;
       case 'hj:weather-want':
         askWeather(message.places);
