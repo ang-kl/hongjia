@@ -894,6 +894,46 @@ async fn today(pool: &PgPool) -> String {
 
 const SAMPLE: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Sample</title></head><body><h1>Sample trip</h1><img data-src=\"https://example.org/p.jpg\" alt=\"photo\"><button id=\"retry\">Retry photos</button><script>document.getElementById('retry').onclick=()=>{};</script></body></html>";
 
+/// A trip page shaped like the travel kit's: a title, Part 1's sections, then Part 2 from "The plan in detail".
+const TRIP_PARTS: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Trip</title></head><body><section id=\"opener\"><h1>The trip</h1><h2 id=\"op-glance\">The trip at a glance</h2><h2 id=\"op-stays\">Where we stay</h2></section><header id=\"top\"><h2>The plan in detail</h2></header><section id=\"days\"><h2>Our eight days</h2></section><section id=\"sources\"><h2>What was checked &amp; when</h2></section><div id=\"tour\"><h2 id=\"tour-title\"></h2></div></body></html>";
+
+/// Contents beside the title on a desktop (the owner, 9 November 2026): Part 1 and Part 2 from the document's own
+/// headings, each a jump within the frame; `data-parts` names where each part starts, for 🔭's blink. A document
+/// without Part 2's heading has no list.
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn trip_pages_get_contents_by_part(pool: PgPool) {
+    let port = start(pool, config()).await;
+    let mut o = owner(port).await;
+    let csrf = o.csrf().await;
+    let r = upload(&mut o, &csrf, "Trip", Some(("trip.html", TRIP_PARTS))).await;
+    let key = r.header("location").unwrap().to_string();
+    let view = o.get(&key).await.body;
+    assert!(view.contains(r#"<details class="doc-pick doc-pick-c" data-doc-pick data-parts="op-glance top"><summary class="doc-c">Contents</summary>"#));
+    let parts = between(
+        &view,
+        r#"<p class="pick-head">Part 1</p><ul>"#,
+        "</div></details>",
+    );
+    let (one, two) = parts
+        .split_once(r#"<p class="pick-head">Part 2</p>"#)
+        .expect("both parts");
+    assert!(one.contains(&format!(
+        r#"href="{key}/raw#op-glance" data-part-jump="op-glance">The trip at a glance</a>"#
+    )));
+    assert!(one.contains(r#"data-part-jump="op-stays">Where we stay</a>"#));
+    assert!(!one.contains("The trip</a>"), "the title is not a part");
+    assert!(two.contains(r#"data-part-jump="top">The plan in detail</a>"#));
+    assert!(two.contains(r#"data-part-jump="days">Our eight days</a>"#));
+    assert!(two.contains(r#"data-part-jump="sources">What was checked &amp; when</a>"#));
+    assert!(
+        !two.contains("tour-title"),
+        "a heading without words is left out"
+    );
+    let plain = upload(&mut o, &csrf, "Plain", Some(("plain.html", SAMPLE))).await;
+    let plain = o.get(plain.header("location").unwrap()).await.body;
+    assert!(!plain.contains("doc-pick-c") && !plain.contains("data-parts"));
+}
+
 #[sqlx::test(migrations = "../../db/migrations")]
 async fn documents_upload_list_view_and_sandboxed_raw(pool: PgPool) {
     let port = start(pool.clone(), config()).await;

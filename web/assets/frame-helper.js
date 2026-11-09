@@ -852,11 +852,43 @@
       if (d.zoom) loupeOpen(d.zoom); else loupeClose(false);
     } else if (d.type === 'hj:loupe-at' && isFinite(d.x) && isFinite(d.y)) {
       loupeAt(clamp(Number(d.x), 0, window.innerWidth), clamp(Number(d.y), 0, window.innerHeight), false);
+    } else if (d.type === 'hj:goto' && typeof d.id === 'string' && PART.test(d.id)) {
+      // Contents beside the title: to that part of the page, without loading it again.
+      var part = document.getElementById(d.id);
+      if (part) part.scrollIntoView({ block: 'start', behavior: reduceMotion() ? 'auto' : 'smooth' });
+    } else if (d.type === 'hj:watch' && Array.isArray(d.ids)) {
+      watchParts(d.ids.filter(function (id) { return typeof id === 'string' && PART.test(id); }).slice(0, 4));
     } else if (d.type === 'hj:scrollby' && isFinite(d.dx) && isFinite(d.dy)) {
       // The page's drawing surface covers the frame; a wheel or a finger there scrolls the document.
       window.scrollBy(clamp(Number(d.dx), -5000, 5000), clamp(Number(d.dy), -5000, 5000));
     }
   });
+
+  // Where each part of a trip page starts; the page says when one goes by the middle of the screen while reading down,
+  // and again after reading back up above it (9 November 2026).
+  var PART = /^[A-Za-z][A-Za-z0-9_-]{0,60}$/;
+  var watched = [], lastY = 0, watchQueued = false;
+  function reduceMotion() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+  function belowMiddle(el) { return el.getBoundingClientRect().top > window.innerHeight / 2; }
+  function watchParts(ids) {
+    watched = ids.map(function (id) { var el = document.getElementById(id); return el && { id: id, el: el, below: belowMiddle(el) }; }).filter(Boolean);
+    lastY = window.scrollY;
+  }
+  function checkParts() {
+    watchQueued = false;
+    var down = window.scrollY > lastY;
+    lastY = window.scrollY;
+    watched.forEach(function (w) {
+      var below = belowMiddle(w.el);
+      if (w.below && !below && down) send({ type: 'hj:passed', id: w.id });
+      w.below = below;
+    });
+  }
+  window.addEventListener('scroll', function () {
+    if (!watched.length || watchQueued) return;
+    watchQueued = true;
+    window.requestAnimationFrame(checkParts);
+  }, { passive: true });
 
   function ready() {
     restore();
