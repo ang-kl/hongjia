@@ -732,6 +732,9 @@ button.pill[hidden] { display: none; }
 .doc-stage { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
 .doc-stage .doc-frame { flex: 1 1 auto; min-width: 0; }
 .doc-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; border-radius: 10px; }
+/* While a trip page's Play the trip tour is open, the family's pins and notes step aside, so nothing covers its
+   pictures or its map; they come back when it closes (the owner, 9 November 2026: "Hide pins during Play"). */
+html.tour-on .doc-overlay { visibility: hidden; }
 .ov {
   position: absolute;
   pointer-events: auto;
