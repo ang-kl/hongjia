@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.08 (7)";
+pub const VERSION: &str = "2026.11.09 (1)";
 
-pub const SYNOPSIS: &str = "This version keeps the trip template up to date with what the owner learned while putting a trip on the site: Wikimedia pictures now load from its newer thumbnail address, which the kit uses by itself and the page check asks for; a trip's data file is pinned on the lower part of the opening photo, where it covers nothing on an iPad or a phone; a walk taken alone needs a formed, signed path, or the owner's agreement and a check-in; and the check after each upload now covers the family's swaps, the # links and the data pins.";
+pub const SYNOPSIS: &str = "This version carries the lessons of the latest trip page into the trip template: a trip's data pin is placed where it covers nothing on that page, at phone, iPad and wide sizes; long photo credits and link labels no longer make a page wider than a phone; every map leg must follow the roads; and the instructions cover trips by rideshare only, ratings shown only when the owner asks, and researching a trip in parts.";

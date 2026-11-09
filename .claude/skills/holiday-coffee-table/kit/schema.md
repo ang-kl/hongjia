@@ -136,8 +136,8 @@ Maps search text; `note` says how good the pin is ("Approximate: street-level ma
 ### `legs`
 
 `{"a>b": {km, min, path}}` for consecutive places in a day's `route`. `path` is a list of
-`[lat, lng]` points that follow the road. Every pair in a route needs a leg unless the day lists it
-in `walk`.
+`[lat, lng]` points that follow the road, and is required: without it the map would draw a straight
+line. Every pair in a route needs a leg unless the day lists it in `walk`.
 
 ### `safety`
 

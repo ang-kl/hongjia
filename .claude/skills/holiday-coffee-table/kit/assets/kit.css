@@ -253,7 +253,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .budget>div{border-top:2px solid var(--gold);padding:10px 0}
 .budget p{margin:.3em 0 0;font-size:.92rem;color:var(--ink2)}
 .credits,.srclist{font-size:.86rem;color:var(--ink2);padding-left:1.2em}
-.credits li,.srclist li{margin:.4em 0}
+.credits li,.srclist li{margin:.4em 0;overflow-wrap:anywhere}
 .srclist .mono{font-size:.66rem;margin-left:6px;text-transform:none;letter-spacing:.02em}
 .foot{border-bottom:0;padding-bottom:60px}
 @media (max-width:1199px){

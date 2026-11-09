@@ -358,6 +358,7 @@ def check_url(url, where, allow=('https',)):
 
 # Wikimedia limits its older thumbnail address for pages like ours (pictures came back "too many requests" on
 # 8 November 2026) and serves the same thumbnails from thumb.wikimedia.org, so the kit uses that address.
+CHIP_MAX = 28  # characters in a link chip's label, so the chip fits a phone (357 px in the family site's frame)
 OLD_THUMBS = 'https://upload.wikimedia.org/wikipedia/commons/thumb/'
 NEW_THUMBS = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/'
 
@@ -532,6 +533,9 @@ class Page:
                 k = f'{a}>{b}'
                 if k not in walk and k not in self.legs:
                     raise KitError(f'{w}: leg {k} is missing (add it to "legs", or list it in the day\'s "walk")')
+                if k not in walk and not (self.legs[k].get('path') or []):
+                    # without a path the map draws a straight line across the city (a lesson of 8 November 2026)
+                    raise KitError(f'legs.{k}: no road route ("path"): route it (for example OSRM, cited) or list it in the day\'s "walk"')
             if not day.get('stops'):
                 raise KitError(f'{w}.stops: Plan A needs at least one stop')
             for plan in ('stops', 'plan_b', 'plan_c'):
@@ -2424,7 +2428,8 @@ class Page:
             parts = [f'<b>{E(p["cap"])}</b>']
             if p.get('file') and p.get('host') and p.get('credit_url'):
                 lic = self.ext_link(p['licence_url'], p.get('licence') or 'licence') if p.get('licence_url') else E(p.get('licence') or '')
-                parts.append(f'"{E(p["file"])}" {E(self.L["by"])} {E(p["credit"])}, {self.ext_link(p["credit_url"], p["host"])}, {E(self.L["licensed"])} {lic}.')
+                # Commons shows a file's name with spaces; with underscores a long name cannot wrap on a phone
+                parts.append(f'"{E(p["file"].replace("_", " "))}" {E(self.L["by"])} {E(p["credit"])}, {self.ext_link(p["credit_url"], p["host"])}, {E(self.L["licensed"])} {lic}.')
                 note = p.get('note') or c.get('library_note')
             else:
                 who = self.ext_link(p['credit_url'], p['credit']) if p.get('credit_url') else E(p['credit'])
@@ -2891,6 +2896,13 @@ def check_html(html, name='page'):
         if n.tag == 'style':
             for m in re.finditer(r'(?i)(url\(\s*["\']?|@import\s+["\'])http://[^\s"\')]+', n.text()):
                 problems.append(('http link', f'stylesheet: {m.group(0)[:80]}'))
+    # 6a. a link chip is one line: a long label pushes the page wider than a phone (8 November 2026)
+    for n in nodes:
+        if n.tag == 'a' and 'lk' in n.classes():
+            labels = [s for s in n.iter() if s.tag == 'span' and ('l-narrow' in s.classes() or s.classes() == {'l'})]
+            for s in labels:
+                if len(s.text().strip()) > CHIP_MAX:
+                    problems.append(('link label too long for a phone', f'line {n.line}: "{s.text().strip()[:60]}" ({len(s.text().strip())} characters; at most {CHIP_MAX}, the rest goes in the link\'s note)'))
     # 6b. pictures at Wikimedia's older thumbnail address, which Wikimedia limits (8 November 2026)
     old = html.count(OLD_THUMBS)
     if old:

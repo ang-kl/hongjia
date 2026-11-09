@@ -94,18 +94,29 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
      age-restricted accounts (alcohol venues), which do not show to people who are not logged in.
      Facebook is a link only (its embeds do not run in the frame).
    - **"Highest star"** means published awards and guide listings (`awards`), never Google or other
-     star ratings in the page. Say "from the official accounts", not "most popular", unless
+     star ratings in the page. The one exception is where the owner asks for a rating (for example the
+     salons on one trip, 8 November 2026): then show it dated, with its review count and where it was read. Say "from the official accounts", not "most popular", unless
      popularity was measured.
+   - **A full trip is researched in parts** (8 November 2026): food; shopping and groceries;
+     services the family asked for (for example salons); logistics, holidays and the season; places and
+     the swaps. Each part writes a sourced JSON in the schema's shape, with a shared brief (the trip, the
+     owner's choices, the Plan A stop ids, the rules on sources, photos and words) and its own `notes`.
+     One assembly script then builds the data file, so it can be run again. Use one exchange rate for
+     every budget, with its source and date.
 4. **Build the data file** (`kit/schema.md`), copying the sample's shape: the opener first, then each
    day, each stop, each place, the legs (road distance and time per drive, cited), the forecast
-   places, the areas, Taste & Shop, worship near each base, and the prose sections. Food, snacks and
+   places, the areas, Taste & Shop, worship near each base, and the prose sections. Every leg needs its
+   road route (`path`, for example from OSRM, cited); the kit refuses a leg without one, because the map
+   would draw a straight line across the city. Food, snacks and
    shopping matter most to this family. Every meal (breakfast, lunch, dinner) gets four choices open
    on that date (`page.meal_choices: 4`). One photo spot per place, only where an official source
    names one. Route lines and notes link their places with `[[place:key|text]]`.
 5. **Render**: `python3 kit/build.py trip.json -o <Trip>-vNN-<dates>.html`.
 6. **Check**: `python3 kit/build.py --check <page>.html`, and fix every problem it reports.
 7. **Look at it as the family will.** Open the page in a local copy of the family site (a release
-   build and a test database) at phone, iPad and desktop widths: the tour, the Gallery, the
+   build and a test database) at phone (the site's frame is 357 px wide on an iPhone), iPad and desktop
+   widths, and check nothing makes the page wider than the screen (long unbroken words, long link
+   labels: `--check` flags link labels over 28 characters): the tour, the Gallery, the
    Calendar, a # link, Share, the map and the forecast. Send the owner the page and screenshots.
 8. **The owner's approval.** Nothing goes on hongjia.org until the owner writes
    "APPROVE upload <Trip> vNN". A new trip is filed as a new document; a revision is filed as the
@@ -120,12 +131,14 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
     file is private and lives outside the repository. After the owner's APPROVE for it, attach it to
     the trip's document on the family site as a `.txt` file (visible to signed-in family only), so
     the next version can start from it in a new session.
-    - **Where the pin goes** (the owner, 8 November 2026): on the lower part of the opening photo, about
-      30% across and 86% down, with older data pins under it (about 91% and 97% down). A pin keeps its
-      place as a share of what it is pinned to, so a pin beside a heading's words that fits on an iPad
-      covers them, or the heading's #, on a phone; the opening photo has room on every screen, clear of
-      the title, the buttons and the site's ☰ and 🔭. Show the owner the spot (a preview at iPad and
-      phone size) before pinning or moving anything, and check it on both after.
+    - **Where the pin goes** (the owner, 8 and 9 November 2026): on the opening photo, pinned to the
+      photo itself, at a spot **measured on that page**: clear of the title, the dates, the buttons, the
+      photo credit and the site's ☰ and 🔭 at the site's phone frame (357 px wide), an iPad and a wide
+      screen. A pin keeps its place as a share of what it is pinned to, so one spot does not suit every
+      page: one trip's short title left room below the buttons (about 30% across, 86% down), while
+      another's title ran to three lines on a phone and the clear spot was between the credit and the
+      title (about 30% across, 12% down). Older data pins go under the newest. Show the owner the spot (a preview at
+      iPad and phone size) unless they say to just attach, and check it on both after.
 
 ## Versions
 
@@ -239,7 +252,9 @@ accepts answers only from `window.parent`. The site checks every message's field
   sense; none at an airport or a check-in. Choosing B and C at once means the family splits up and
   meets again: every swap says when and where (`meet`).
   - The owner's rules so far (ask again for another trip): with one car, the car goes with the
-    shoppers, so a Plan B walk is reachable on foot or by taxi; someone walking alone gets only short,
+    shoppers, so a Plan B walk is reachable on foot or by taxi; with rideshare only (no car), each group
+    books its own ride, and every ride shows its time and an estimated fare ("estimate, not a quote",
+    with the method); someone walking alone gets only short,
     busy, well-marked walks, each with a check-in time; Plan D never drives country roads at dusk or at
     night. "Well-marked" includes a formed path with information signs. A walk with no waymarkers stays
     only when it is flat and busy and the owner agrees: its `trail` says `marked: false`, so the page
