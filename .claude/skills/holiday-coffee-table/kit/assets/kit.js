@@ -444,11 +444,14 @@ function calLayout(){
   });
   sc.style.setProperty('--from',String(lo-first)); sc.style.setProperty('--hours',String(Math.max(1,hi-lo)));
   var most=$$('.cal-day .cal-track',sc).map(function(tr){ calLanes(tr); return $$('.cal-ev',tr).filter(function(e){ return !e.hidden; }).reduce(function(m,e){ return Math.max(m,calNum(e,'--lanes')); },1); });
-  // A day with more than two cards side by side (Plan A beside a split) gets a wider column, so every card stays readable.
+  // A day with cards side by side gets a wider column, so every card stays readable: on a wider screen such as an iPad
+  // from two cards (the owner, 9 November 2026), at least 120px a card; on a phone, whose 62vw columns already fit two,
+  // from three. The Calendar then scrolls sideways a little more inside itself; the page never does.
   var grid=$('.cal-grid',sc), phone=!!window.matchMedia&&window.matchMedia('(max-width:760px)').matches;
   var preW=$('.cal-pre',sc)?(phone?'62vw ':'minmax(132px,1fr) '):'';
-  if(grid){ grid.style.gridTemplateColumns=most.some(function(n){ return n>2; })?'var(--axis) '+preW+most.map(function(n){
-      return n>2?(phone?'calc(31vw * '+n+')':'minmax('+(120*n)+'px,'+(n/2)+'fr)'):(phone?'62vw':'minmax(132px,1fr)'); }).join(' '):''; }
+  var wide=function(n){ return phone?n>2:n>1; };
+  if(grid){ grid.style.gridTemplateColumns=most.some(wide)?'var(--axis) '+preW+most.map(function(n){
+      return wide(n)?(phone?'calc(31vw * '+n+')':'minmax('+(120*n)+'px,'+(n/2)+'fr)'):(phone?'62vw':'minmax(132px,1fr)'); }).join(' '):''; }
 }
 calLayout();
 if(window.matchMedia){ var calMq=window.matchMedia('(max-width:760px)'); if(calMq.addEventListener){ calMq.addEventListener('change',calLayout); } }

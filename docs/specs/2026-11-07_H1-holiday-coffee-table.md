@@ -251,3 +251,7 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
   touching. A narrow card (two side by side in a narrow column) gives its words the whole width and hides its own
   Add button, as its Share and 🤙🏼 already were; "Add this day" still adds it. Before, its words had about 12px and
   broke letter by letter.
+- **Wider columns for cards side by side** (the owner, 9 November 2026: "Wider calendar columns for side-by-side
+  cards on iPad"): on a screen wider than a phone, a day with two or more cards side by side gets a column of at
+  least 120px a card, so a word such as "Boarding" is no longer cut; on a phone the rule still starts at three, as
+  its columns already fit two. The Calendar scrolls sideways a little more inside itself; the page never does.
