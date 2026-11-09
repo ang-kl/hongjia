@@ -209,7 +209,7 @@ LABELS.update({
     'cal_add_day_aria': 'Add all of day {n}, {when}, to your calendar', 'cal_loose': 'No set time',
     'cal_off': 'Add to calendar works when this page is opened on the family site.',
     # Before we go: what to book ahead (the owner, 9 November 2026)
-    'pt_kicker': 'Pre-trip', 'pt_title': 'Before we go', 'pt_by': 'Book by {date}', 'pt_mark': 'Book ahead by {date}',
+    'pt_kicker': 'Pre-trip', 'pt_title': 'Before we go', 'pt_by': 'By {date}', 'pt_mark': 'Book ahead by {date}',
     'pt_opens': 'Bookings open {date}.', 'pt_book': 'Booking page', 'pt_add_all': 'Add all', 'pt_reminder': 'Book: {what}',
     'pt_add_aria': 'Add a reminder for {what} on {date}', 'pt_add_all_aria': 'Add every booking reminder to your calendar',
     'pt_left': '{n} days left', 'pt_left1': '1 day left', 'pt_due': 'Due today', 'pt_late': '{n} days late: book now',
