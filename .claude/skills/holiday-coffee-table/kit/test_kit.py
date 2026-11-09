@@ -243,7 +243,13 @@ const { chromium } = require('playwright');
 (async () => {
   const browser = await chromium.launch();
   const out = {};
-  for (const w of [1194, 1024, 390]) {
+  const cards = () => [...document.querySelectorAll('.cal-day:not(.cal-pre)')].slice(1, 3).map(col => ({ col: col.getBoundingClientRect().width,
+    cards: [...col.querySelectorAll('.cal-ev:not([hidden])')].map(c => {
+      const t = c.querySelector('.cal-title'), a = c.querySelector('.cal-add-one'), cs = getComputedStyle(t);
+      return { title: t.textContent.trim(), lanes: c.style.getPropertyValue('--lanes'), card: c.getBoundingClientRect().width,
+        words: t.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), add: a ? getComputedStyle(a).display : null };
+    }) }));
+  for (const w of [1194, 1024, 834, 390]) {
     const ctx = await browser.newContext({ viewport: { width: w, height: 834 } });
     await ctx.route(/^https?:/, r => r.abort());
     const p = await ctx.newPage();
@@ -251,12 +257,15 @@ const { chromium } = require('playwright');
     await p.goto('file://' + process.argv[2], { waitUntil: 'load' });
     await p.evaluate(() => document.documentElement.classList.remove('cal-offsite'));  // as on the family site: Add buttons show
     await p.waitForTimeout(300);
-    out[w] = await p.evaluate(() => [...document.querySelectorAll('.cal-day:not(.cal-pre)')].slice(1, 3).map(col => [...col.querySelectorAll('.cal-ev:not([hidden])')].map(c => {
-      const t = c.querySelector('.cal-title'), a = c.querySelector('.cal-add-one'), cs = getComputedStyle(t);
-      return { title: t.textContent.trim(), lanes: c.style.getPropertyValue('--lanes'), card: c.getBoundingClientRect().width,
-        words: t.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), add: a ? getComputedStyle(a).display : null };
-    })));
+    out[w] = await p.evaluate(cards);
+    out[w + '_wide'] = await p.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
     out[w + '_errors'] = errors;
+    if (w === 1194) {
+      // a column squeezed narrower than the page ever makes it, to try the narrow-card rule itself
+      await p.evaluate(() => { const g = document.querySelector('.cal-grid'); g.style.gridTemplateColumns = 'var(--axis) repeat(' + g.querySelectorAll('.cal-day').length + ', 104px)'; });
+      await p.waitForTimeout(200);
+      out.squeezed = await p.evaluate(cards);
+    }
     await ctx.close();
   }
   await browser.close();
@@ -2016,9 +2025,10 @@ class KitTest(unittest.TestCase):
 
     @unittest.skipUnless(BROWSER, 'needs node and Playwright')
     def test_calendar_cards_touching_and_narrow(self):
-        """Cards that only touch stay full width, and a narrow card keeps its words readable (9 November 2026: on an
-        iPad a card from 10:25 to 12:35 and the next from 12:35 sat side by side, and narrow cards gave their
-        words about 12px, so they broke letter by letter)."""
+        """Cards that only touch stay full width; cards side by side get a column wide enough to read; and a card
+        squeezed narrow keeps its words readable (9 November 2026: on an iPad a card from 10:25 to 12:35 and the next
+        from 12:35 sat side by side, and two cards side by side had about 12px for their words; the owner then asked
+        for wider columns for side-by-side cards on an iPad)."""
         d = copy.deepcopy(self.data)
         t1, t2 = d['days'][1]['timeline'], d['days'][2]['timeline']
         t1[0]['time'], t1[1]['time'], t1[2]['time'], t1[3]['time'] = '09:00', '10:25 to 12:35', '12:35 to 13:15', 'From 16:00'
@@ -2034,21 +2044,23 @@ class KitTest(unittest.TestCase):
                                  env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
             self.assertEqual(out.returncode, 0, out.stderr[-2000:])
             res = json.loads(out.stdout)
-        narrow = 0
-        for w in ('1194', '1024', '390'):
+        for w in ('1194', '1024', '834', '390'):
             self.assertEqual(res[w + '_errors'], [], w)
+            self.assertFalse(res[w + '_wide'], f'{w}: the page never scrolls sideways')
             touching, overlapping = res[w]
-            self.assertEqual([c['lanes'] for c in touching], ['1'] * len(touching), f'{w}: cards that only touch stay full width')
-            self.assertEqual([c['lanes'] for c in overlapping[:2]], ['2', '2'], f'{w}: cards that really overlap sit side by side')
-            for c in overlapping[:2]:
-                if c['card'] <= 107:
-                    narrow += 1
-                    self.assertEqual(c['add'], 'none', f'{w}: a narrow card gives its Add button\'s room to its words')
-                    self.assertGreaterEqual(c['words'], c['card'] - 20, f'{w}: {c}')
-                else:
-                    self.assertNotEqual(c['add'], 'none', f'{w}: a card with room keeps its Add button')
-                    self.assertGreaterEqual(c['words'], c['card'] - 48, f'{w}: {c}')
-        self.assertGreater(narrow, 0, 'at least one width gives narrow cards, so both rules are tried')
+            self.assertEqual([c['lanes'] for c in touching['cards']], ['1'] * len(touching['cards']), f'{w}: cards that only touch stay full width')
+            pair = overlapping['cards'][:2]
+            self.assertEqual([c['lanes'] for c in pair], ['2', '2'], f'{w}: cards that really overlap sit side by side')
+            if w != '390':
+                self.assertGreaterEqual(overlapping['col'], 240, f'{w}: on a wider screen two cards side by side get a column of 240px or more')
+            for c in pair:
+                self.assertGreaterEqual(c['card'], 108, f'{w}: {c}')
+                self.assertNotEqual(c['add'], 'none', f'{w}: a card with room keeps its Add button')
+                self.assertGreaterEqual(c['words'], 60, f'{w}: {c}')
+        for c in res['squeezed'][1]['cards'][:2]:
+            self.assertLess(c['card'], 108, c)
+            self.assertEqual(c['add'], 'none', 'a narrow card gives its Add button\'s room to its words')
+            self.assertGreaterEqual(c['words'], c['card'] - 20, c)
 
     @unittest.skipUnless(BROWSER, 'needs node and Playwright')
     def test_tour_tells_the_site(self):
