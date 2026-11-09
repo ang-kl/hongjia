@@ -383,6 +383,9 @@ function fillWithMentions(el, text, mentions) {
 function start() {
   const frame = document.querySelector('.doc-frame');
   const body = document.body;
+  // An older version shown in place (view only), and the attached files the version list holds instead of pins.
+  const older = body.dataset.older === 'true';
+  const unpinned = new Set((document.querySelector('[data-unpinned]')?.dataset.unpinned || '').split(' ').filter(Boolean));
   const { csrf, docKey } = body.dataset;
   if (!frame || !csrf || !docKey) return;
   const base = `/documents/${encodeURIComponent(docKey)}`;
@@ -424,6 +427,31 @@ function start() {
   });
   const toFrame = message => frame.contentWindow?.postMessage(message, '*');
   // While the trip's tour is open, the 🛰️ globe 📁 buttons fold into 🔭 so they never cover the tour.
+  // The header's two lists (the owner, 9 November 2026): one open at a time; a click elsewhere or Esc closes it.
+  const picks = [...document.querySelectorAll('[data-doc-pick]')];
+  const closePicks = () => { for (const pick of picks) pick.open = false; };
+  for (const pick of picks) {
+    pick.addEventListener('toggle', () => {
+      if (!pick.open) return;
+      for (const other of picks) if (other !== pick) other.open = false;
+      // Kept inside the screen: a list opened near the right edge of a phone moves left.
+      const list = pick.querySelector('.pick-list');
+      if (!list) return;
+      list.style.left = '';
+      const box = list.getBoundingClientRect(), room = document.documentElement.clientWidth - 12;
+      if (box.right > room) list.style.left = `${Math.max(12 - box.left, room - box.right)}px`;
+    });
+  }
+  document.addEventListener('click', event => { for (const pick of picks) if (pick.open && !pick.contains(event.target)) pick.open = false; });
+  // A click in the document itself goes to its frame, not to this page: the frame taking focus closes the lists.
+  window.addEventListener('blur', closePicks);
+  document.addEventListener('keydown', event => {
+    const pick = event.key === 'Escape' && picks.find(p => p.open);
+    if (!pick) return;
+    event.preventDefault();
+    pick.open = false;
+    pick.querySelector('summary')?.focus();
+  });
   const tourMode = on => {
     const root = document.documentElement;
     root.classList.toggle('tour-on', on);
@@ -633,7 +661,7 @@ function start() {
     quote: li.dataset.quote || '', prefix: li.dataset.prefix || '', suffix: li.dataset.suffix || '',
     field: li.dataset.field || '', path: li.dataset.path || '', x: Number(li.dataset.x || 0), y: Number(li.dataset.y || 0)
   }));
-  const sendAnchors = () => { toFrame({ type: 'hj:anchors', items: anchors() }); drawOverlay(); };
+  const sendAnchors = () => { toFrame({ type: 'hj:anchors', items: older ? [] : anchors() }); drawOverlay(); };
   const refreshCount = () => {
     const n = list.querySelectorAll('li[data-annotation-id]').length;
     count.textContent = String(n);
@@ -932,11 +960,11 @@ function start() {
   const shapes = new Map();
   const frameOffset = () => ({ left: frame.clientLeft || 0, top: frame.clientTop || 0 });
   function drawOverlay() {
-    if (!overlay) return;
+    if (!overlay || older) return;
     const seen = new Set();
     for (const li of entries()) {
       const { annotationId: id, kind } = li.dataset;
-      if (!OVERLAID.has(kind)) continue;
+      if (!OVERLAID.has(kind) || unpinned.has(id)) continue;
       seen.add(id);
       let shape = shapes.get(id);
       if (!shape) {
@@ -1561,6 +1589,8 @@ function start() {
       for (const id of groups.keys()) placeDrawing(id);
       return;
     }
+    // An older version shown in place is view only: nothing typed is saved and no marks are made on it.
+    if (older && ['hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:menu'].includes(message.type)) return;
     const write = message.type === 'hj:field' || message.type === 'hj:storage';
     if (!(write ? allowWrite : allowOther)(Date.now())) return;
     switch (message.type) {

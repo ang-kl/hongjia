@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.09 (7)";
+pub const VERSION: &str = "2026.11.09 (8)";
 
-pub const SYNOPSIS: &str = "This version keeps a trip page's Play the trip clear: while the tour plays, the family's pins and notes on the page step aside, so nothing covers its pictures or its map, and they come back as soon as it closes.";
+pub const SYNOPSIS: &str = "This version turns a document's header into two lists. The version tag opens the last three versions: an older one shows in place, view only, with a way back to the latest, and a data file named for a version is listed under it to download instead of being pinned on the page. The title opens the five documents changed most recently.";

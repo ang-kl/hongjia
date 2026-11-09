@@ -531,17 +531,21 @@ fn kilobytes(bytes: i32) -> i32 {
 /// "2026-1106_#1 · v.##"): the number in the file's own name, such as the 13 in
 /// `Trip-Coffee-Table-v13-final.html`, or else its version on this site.
 pub fn version_tag(filename: &str, version_no: i32) -> String {
+    format!("v.{:02}", name_version(filename).unwrap_or(version_no))
+}
+
+/// The version number in a file's own name, if it has one: the 13 in `Trip-Coffee-Table-v13-final.html`
+/// or the 4 in `Kuala-Lumpur-trip-data-v4.txt` (a v and one to three digits, the last such word).
+pub fn name_version(filename: &str) -> Option<i32> {
     let stem = filename.rsplit_once('.').map_or(filename, |(stem, _)| stem);
-    let from_name = stem
-        .split(|c: char| !c.is_ascii_alphanumeric())
+    stem.split(|c: char| !c.is_ascii_alphanumeric())
         .filter_map(|word| {
             let digits = word.strip_prefix('v').or_else(|| word.strip_prefix('V'))?;
             (!digits.is_empty() && digits.len() <= 3 && digits.bytes().all(|b| b.is_ascii_digit()))
                 .then(|| digits.parse::<i32>().ok())
                 .flatten()
         })
-        .next_back();
-    format!("v.{:02}", from_name.unwrap_or(version_no))
+        .next_back()
 }
 
 /// ☰ Settings, Version: the program's version and one paragraph on what changed in it.
@@ -1100,6 +1104,7 @@ fn fields_section(key: &str, csrf: &str, review: &Review) -> String {
 
 /// One document, filling the window: the document frame and the management panel beside it
 /// (landscape) or in a sheet opened with Manage (portrait).
+#[allow(clippy::too_many_arguments)]
 pub fn document_view(
     nav: &Nav,
     doc: &DocumentRow,
@@ -1108,6 +1113,8 @@ pub fn document_view(
     owner: &str,
     message: Option<&str>,
     review: &Review,
+    older: Option<&VersionRow>,
+    recent: &[(String, String)],
 ) -> String {
     let key = escape(&doc.key);
     let csrf = escape(nav.csrf);
@@ -1223,10 +1230,21 @@ pub fn document_view(
     };
     let manage_grouped = format!(r#"<div data-group="manage">{manage}</div>"#);
     let latest = versions.iter().find(|v| v.version_no == doc.version_no);
-    let v_title = escape(&format!(
-        "{} · version {} on this site",
-        doc.filename, doc.version_no
-    ));
+    let (shown_no, shown_file) = older.map_or((doc.version_no, doc.filename.as_str()), |v| {
+        (v.version_no, v.filename.as_str())
+    });
+    let v_title = escape(&format!("{shown_file} · version {shown_no} on this site"));
+    let v_tag = version_tag(shown_file, shown_no);
+    let picks = header_picks(&key, doc, versions, review, shown_no, recent);
+    let older_note = older
+        .map(|v| {
+            format!(
+                r#"<p class="notice older-note">You are looking at {tag}, an older version: view only, without pins and notes. <a href="/documents/{key}">Back to the latest ({now})</a></p>"#,
+                tag = version_tag(&v.filename, v.version_no),
+                now = version_tag(&doc.filename, doc.version_no),
+            )
+        })
+        .unwrap_or_default();
     let hidden_notice = if doc.hidden {
         r#"<p class="notice">This document is hidden from the family's lists. Unhide it in Manage.</p>"#
     } else {
@@ -1234,9 +1252,9 @@ pub fn document_view(
     };
     let main = format!(
         r##"<div class="viewer-doc">
-<div class="doc-bar"><button type="button" class="back" data-back title="Back to the previous page (Esc)"><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button><span class="filing">{label}</span><span class="doc-v" title="{v_title}">· {v_tag}</span><h1 class="doc-title">{title}</h1><button type="button" class="pill comment-open" data-comment hidden>Comment</button><div class="doc-tabs" role="group" aria-label="This document" data-doc-tabs><button type="button" data-doc-tab="details" aria-pressed="false">Details</button><button type="button" data-doc-tab="versions" aria-pressed="false">Versions <span class="count">{n_versions}</span></button><button type="button" data-doc-tab="notes" aria-pressed="false">Notes</button><button type="button" data-doc-tab="files" aria-pressed="false">Files</button>{manage_tab}</div></div>
-{notice}{hidden_notice}
-<div class="doc-stage" data-doc-stage><iframe class="doc-frame" src="/documents/{key}/raw" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe><div class="doc-overlay" data-doc-overlay aria-hidden="true"></div></div>
+<div class="doc-bar"><button type="button" class="back" data-back title="Back to the previous page (Esc)"><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button><span class="filing">{label}</span><details class="doc-pick doc-pick-v" data-doc-pick data-unpinned="{unpinned}"><summary class="doc-v" title="{v_title}">· {v_tag}</summary><div class="pick-list"><p class="pick-head">Versions</p><ul>{version_rows}</ul></div></details><details class="doc-pick doc-pick-t" data-doc-pick><summary><h1 class="doc-title">{title}</h1></summary><div class="pick-list"><p class="pick-head">Latest documents</p><ul>{title_rows}</ul><p class="pick-more"><a href="/documents">All documents</a></p></div></details><button type="button" class="pill comment-open" data-comment hidden>Comment</button><div class="doc-tabs" role="group" aria-label="This document" data-doc-tabs><button type="button" data-doc-tab="details" aria-pressed="false">Details</button><button type="button" data-doc-tab="versions" aria-pressed="false">Versions <span class="count">{n_versions}</span></button><button type="button" data-doc-tab="notes" aria-pressed="false">Notes</button><button type="button" data-doc-tab="files" aria-pressed="false">Files</button>{manage_tab}</div></div>
+{notice}{hidden_notice}{older_note}
+<div class="doc-stage" data-doc-stage><iframe class="doc-frame" src="/documents/{key}/raw{raw_v}" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe><div class="doc-overlay" data-doc-overlay aria-hidden="true"{overlay_hidden}></div></div>
 </div>
 <aside class="panel" id="panel" aria-label="Manage this document">
 <div class="panel-head"><span class="panel-title">This document</span><a class="panel-close" href="#doc" data-sidebar-close title="Close the sidebar"><span aria-hidden="true">×</span><span class="visually-hidden">Close the sidebar</span></a></div>
@@ -1245,7 +1263,13 @@ pub fn document_view(
 <script type="module" src="/assets/doc-view.mjs"></script>"##,
         title = escape(&doc.title),
         notice = notice(message),
-        v_tag = version_tag(&doc.filename, doc.version_no),
+        unpinned = picks.unpinned,
+        version_rows = picks.versions,
+        title_rows = picks.titles,
+        raw_v = older
+            .map(|v| format!("?v={}", v.version_no))
+            .unwrap_or_default(),
+        overlay_hidden = if older.is_some() { " hidden" } else { "" },
         manage_top = if can_manage {
             manage_grouped.as_str()
         } else {
@@ -1278,7 +1302,8 @@ pub fn document_view(
         Some(nav),
         "app viewer-page",
         &format!(
-            r#" data-csrf="{csrf}" data-doc-key="{key}" data-viewer="{viewer}" data-owner="{owner}" data-doc-kind="{kind}" data-manager="{manager}" data-can-redact="{redact}""#,
+            r#" data-csrf="{csrf}" data-doc-key="{key}" data-viewer="{viewer}" data-owner="{owner}" data-doc-kind="{kind}" data-manager="{manager}" data-can-redact="{redact}" data-older="{older}""#,
+            older = older.is_some(),
             viewer = escape(nav.handle),
             owner = nav.is_owner,
             kind = escape(&doc.kind),
@@ -1289,6 +1314,90 @@ pub fn document_view(
         &main,
         Some(&document_contents(&doc.key, latest)),
     )
+}
+
+/// What the header's two lists hold.
+struct Picks {
+    versions: String,
+    titles: String,
+    /// The attached files listed with their version, by id: the page does not pin them.
+    unpinned: String,
+}
+
+/// The header's two lists (the owner, 9 November 2026): the version tag opens the last three versions, each with the
+/// data file named for it (such as `Kuala-Lumpur-trip-data-v4.txt` under v.04); the title opens the latest documents.
+/// An attached file whose name carries the number of one of this page's versions is not pinned on the page: it is
+/// listed under its version while that is one of the last three, and in Files always. Nothing is deleted.
+fn header_picks(
+    key: &str,
+    doc: &DocumentRow,
+    versions: &[VersionRow],
+    review: &Review,
+    shown_no: i32,
+    recent: &[(String, String)],
+) -> Picks {
+    let number = |v: &VersionRow| name_version(&v.filename).unwrap_or(v.version_no);
+    let data_files: Vec<(&AnnotationRow, i32)> = review
+        .annotations
+        .iter()
+        .filter(|a| a.kind == "attachment")
+        .filter_map(|a| {
+            let n = name_version(&a.text)?;
+            versions.iter().any(|v| number(v) == n).then_some((a, n))
+        })
+        .collect();
+    let current = |yes: bool| if yes { r#" aria-current="page""# } else { "" };
+    let versions_html = versions
+        .iter()
+        .take(3)
+        .map(|v| {
+            let n = number(v);
+            let files: String = data_files
+                .iter()
+                .filter(|(_, m)| *m == n)
+                .map(|(a, _)| {
+                    format!(
+                        r#"<a class="pick-file" href="/documents/{key}/attachments/{id}" download>↓ {name}</a>"#,
+                        id = a.id,
+                        name = escape(&a.text)
+                    )
+                })
+                .collect();
+            format!(
+                r#"<li><a class="pick-item" href="/documents/{key}{query}"{cur}><b>{tag}</b> <span class="small">{when}{latest}</span></a>{files}</li>"#,
+                query = if v.version_no == doc.version_no {
+                    String::new()
+                } else {
+                    format!("?v={}", v.version_no)
+                },
+                cur = current(v.version_no == shown_no),
+                tag = version_tag(&v.filename, v.version_no),
+                when = escape(&v.uploaded_at),
+                latest = if v.version_no == doc.version_no { " · latest" } else { "" },
+            )
+        })
+        .collect();
+    let titles = recent
+        .iter()
+        .map(|(k, t)| {
+            format!(
+                r#"<li><a class="pick-item" href="/documents/{k}"{cur}>{t}</a></li>"#,
+                cur = current(*k == doc.key),
+                k = escape(k),
+                t = escape(t),
+            )
+        })
+        .collect();
+    let unpinned = data_files
+        .iter()
+        .map(|(a, _)| a.id.to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    Picks {
+        versions: versions_html,
+        titles,
+        unpinned,
+    }
 }
 
 pub fn message(title: &str, text: &str, link: (&str, &str)) -> String {
@@ -1315,6 +1424,18 @@ mod tests {
         assert_eq!(active_time(0), "under a minute");
         assert_eq!(active_time(89), "about 1 min");
         assert_eq!(active_time(3725), "about 1 h 2 min");
+    }
+
+    #[test]
+    fn name_version_finds_a_data_files_number() {
+        assert_eq!(name_version("Kuala-Lumpur-trip-data-v4.txt"), Some(4));
+        assert_eq!(name_version("Perth-trip-data-v19.txt"), Some(19));
+        assert_eq!(name_version("notes.txt"), None);
+        assert_eq!(
+            name_version("visit-v2024.txt"),
+            None,
+            "four digits are not a version"
+        );
     }
 
     #[test]

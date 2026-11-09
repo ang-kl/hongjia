@@ -765,8 +765,25 @@ pub(super) async fn show(
     status: StatusCode,
     notice: Option<&str>,
 ) -> Result<Response, super::handlers::Fail> {
+    show_at(state, session, doc, status, notice, None).await
+}
+
+/// The document page, showing an older version in place when one is asked for (`?v=3`) and it exists: view only,
+/// without pins and notes (the owner, 9 November 2026).
+async fn show_at(
+    state: &FamilyState,
+    session: &Session,
+    doc: &DocumentRow,
+    status: StatusCode,
+    notice: Option<&str>,
+    asked: Option<i32>,
+) -> Result<Response, super::handlers::Fail> {
     let versions = versions(&state.pool, doc.id).await?;
     let review = review::page_data(&state.pool, doc, session).await?;
+    let older = asked
+        .filter(|n| *n != doc.version_no)
+        .and_then(|n| versions.iter().find(|v| v.version_no == n));
+    let recent = latest_documents(&state.pool, doc).await?;
     Ok(page(
         status,
         pages::document_view(
@@ -777,8 +794,24 @@ pub(super) async fn show(
             &state.config.owner,
             notice,
             &review,
+            older,
+            &recent,
         ),
     ))
+}
+
+/// The title's list on a document page: the five documents changed most recently, hidden ones left out; the page's
+/// own document is always in it (the owner, 9 November 2026: "Latest documents").
+async fn latest_documents(pool: &PgPool, doc: &DocumentRow) -> sqlx::Result<Vec<(String, String)>> {
+    let mut all = list_with(pool, false).await?;
+    all.sort_by(|a, b| b.changed_sort.cmp(&a.changed_sort));
+    let mut out: Vec<(String, String)> =
+        all.into_iter().take(5).map(|d| (d.key, d.title)).collect();
+    if !out.iter().any(|(k, _)| *k == doc.key) {
+        out.insert(0, (doc.key.clone(), doc.title.clone()));
+        out.truncate(5);
+    }
+    Ok(out)
 }
 
 pub async fn view(
@@ -791,8 +824,24 @@ pub async fn view(
         return Ok(see_other("/"));
     };
     let notice = redaction_notice(uri.query().unwrap_or(""));
+    let asked = uri
+        .query()
+        .unwrap_or("")
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("v="))
+        .and_then(|v| v.parse::<i32>().ok());
     match resolve(&state, &key, "").await? {
-        Ok(doc) => show(&state, &session, &doc, StatusCode::OK, notice.as_deref()).await,
+        Ok(doc) => {
+            show_at(
+                &state,
+                &session,
+                &doc,
+                StatusCode::OK,
+                notice.as_deref(),
+                asked,
+            )
+            .await
+        }
         Err(response) => Ok(response),
     }
 }
