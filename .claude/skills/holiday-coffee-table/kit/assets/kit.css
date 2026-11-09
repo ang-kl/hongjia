@@ -589,7 +589,7 @@ html[data-mode=print] .plan-tag,html[data-mode=print] .sugg-tag{background:#fff;
 /* A stop: its pictures as a collage, one large and up to two beside it, the map small in a corner (9 November 2026). */
 .tour-col{position:absolute;inset:0;display:none;gap:4px;grid-template:1fr 1fr/2fr 1fr}
 .tour[data-view=collage] .tour-col{display:grid}
-.tour-col figure{position:relative;margin:0;overflow:hidden;min-height:0}
+.tour-col figure{position:relative;margin:0;overflow:hidden;min-height:0;background:#14120f}  /* a picture still loading never shows the page behind */
 .tour-col figure:first-child{grid-row:1/-1}
 .tour-col[data-n='1'] figure{grid-column:1/-1}
 .tour-col[data-n='2'] figure:last-child{grid-row:1/-1}
