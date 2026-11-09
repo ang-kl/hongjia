@@ -499,8 +499,9 @@ Calendar.
 
 With `meta.tz` written as `UTC+H` and at least one timeline item with a clock time, the page gets a
 **Calendar** section after Days: one column per day, each timeline item drawn at its time on an hour grid,
-side by side where items overlap. The columns scroll sideways inside the section on a phone; the page never
-does. Times are read from each item's `time`: `09:15` and `Around 18:30` or `From 14:00` (30 minutes from
+side by side where items overlap (items that only touch, one ending as the next begins, are not). A card too
+narrow for its Add button gives its words the whole width instead; **Add this day** still adds it. The columns
+scroll sideways inside the section on a phone; the page never does. Times are read from each item's `time`: `09:15` and `Around 18:30` or `From 14:00` (30 minutes from
 then), `By 15:00` (the 30 minutes before), and `10:15 to 11:30` or `11:25 → 16:35` (a span; one that ends
 past midnight ends the next day). Anything else ("Morning") has no set time: it is drawn dashed between its
 neighbours, labelled with its own words, and is never added to a calendar or given a time.

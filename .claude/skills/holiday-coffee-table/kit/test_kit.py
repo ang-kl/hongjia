@@ -238,6 +238,32 @@ const { chromium } = require('playwright');
 '''
 
 
+CARDS_JS = r'''
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const out = {};
+  for (const w of [1194, 1024, 390]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 834 } });
+    await ctx.route(/^https?:/, r => r.abort());
+    const p = await ctx.newPage();
+    const errors = []; p.on('pageerror', e => errors.push(e.message));
+    await p.goto('file://' + process.argv[2], { waitUntil: 'load' });
+    await p.evaluate(() => document.documentElement.classList.remove('cal-offsite'));  // as on the family site: Add buttons show
+    await p.waitForTimeout(300);
+    out[w] = await p.evaluate(() => [...document.querySelectorAll('.cal-day:not(.cal-pre)')].slice(1, 3).map(col => [...col.querySelectorAll('.cal-ev:not([hidden])')].map(c => {
+      const t = c.querySelector('.cal-title'), a = c.querySelector('.cal-add-one'), cs = getComputedStyle(t);
+      return { title: t.textContent.trim(), lanes: c.style.getPropertyValue('--lanes'), card: c.getBoundingClientRect().width,
+        words: t.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), add: a ? getComputedStyle(a).display : null };
+    })));
+    out[w + '_errors'] = errors;
+    await ctx.close();
+  }
+  await browser.close();
+  process.stdout.write(JSON.stringify(out));
+})().catch(e => { console.error(e); process.exit(1); });
+'''
+
 TOUR_JS = r'''
 const { chromium } = require('playwright');
 (async () => {
@@ -1987,6 +2013,42 @@ class KitTest(unittest.TestCase):
             self.assertEqual((r['off'], r['adds']), (True, 'none'), f'{k}: away from the family site, a note and no Add buttons')
             self.assertGreater(r['cards'], 0, k)
             self.assertEqual(r['overlap'], 0, f'{k}: cards never cover each other')
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_calendar_cards_touching_and_narrow(self):
+        """Cards that only touch stay full width, and a narrow card keeps its words readable (9 November 2026: on an
+        iPad a card from 10:25 to 12:35 and the next from 12:35 sat side by side, and narrow cards gave their
+        words about 12px, so they broke letter by letter)."""
+        d = copy.deepcopy(self.data)
+        t1, t2 = d['days'][1]['timeline'], d['days'][2]['timeline']
+        t1[0]['time'], t1[1]['time'], t1[2]['time'], t1[3]['time'] = '09:00', '10:25 to 12:35', '12:35 to 13:15', 'From 16:00'
+        t2[0]['time'], t2[1]['time'] = '10:00 to 11:00', '10:20 to 11:20'
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(build.build(d))
+            script = os.path.join(tmp, 'cards.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(CARDS_JS)
+            out = subprocess.run([NODE, script, page], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        narrow = 0
+        for w in ('1194', '1024', '390'):
+            self.assertEqual(res[w + '_errors'], [], w)
+            touching, overlapping = res[w]
+            self.assertEqual([c['lanes'] for c in touching], ['1'] * len(touching), f'{w}: cards that only touch stay full width')
+            self.assertEqual([c['lanes'] for c in overlapping[:2]], ['2', '2'], f'{w}: cards that really overlap sit side by side')
+            for c in overlapping[:2]:
+                if c['card'] <= 107:
+                    narrow += 1
+                    self.assertEqual(c['add'], 'none', f'{w}: a narrow card gives its Add button\'s room to its words')
+                    self.assertGreaterEqual(c['words'], c['card'] - 20, f'{w}: {c}')
+                else:
+                    self.assertNotEqual(c['add'], 'none', f'{w}: a card with room keeps its Add button')
+                    self.assertGreaterEqual(c['words'], c['card'] - 48, f'{w}: {c}')
+        self.assertGreater(narrow, 0, 'at least one width gives narrow cards, so both rules are tried')
 
     @unittest.skipUnless(BROWSER, 'needs node and Playwright')
     def test_tour_tells_the_site(self):
