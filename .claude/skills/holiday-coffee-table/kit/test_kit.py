@@ -303,6 +303,7 @@ const { chromium } = require('playwright');
       return { view: t.dataset.view, want: Math.min(3, own.length), stage: { w: st.width, h: st.height }, figs: figs.map(box),
         srcs: figs.map(f => f.querySelector('img').getAttribute('src')), own: own.slice(0, 3).map(x => x.getAttribute('src')),
         credits: figs.map(f => !!f.querySelector('figcaption.credit a, figcaption.credit')),
+        solid: figs.map(f => getComputedStyle(f).backgroundColor),
         map: t.querySelector('.leaflet-container') && getComputedStyle(m).display !== 'none' ? box(m) : null,
         thumb: getComputedStyle(t.querySelector('.tour-ph')).display, wide: document.documentElement.scrollWidth > innerWidth + 1 };
     }, k.i);
@@ -2252,6 +2253,7 @@ class KitTest(unittest.TestCase):
             self.assertEqual(len(r['figs']), r['want'], f'{w}: up to three of the stop\'s own pictures')
             self.assertEqual(r['srcs'], r['own'][:r['want']], f'{w}: the stop\'s own pictures, in their order')
             self.assertTrue(all(r['credits']), f'{w}: every picture keeps its credit')
+            self.assertTrue(all(c.startswith('rgb(') for c in r['solid']), f'{w}: a picture still loading shows a dark tile, not the page behind')
             self.assertEqual(r['thumb'], 'none', f'{w}: no small picture in the bar repeats the large one')
             big = r['figs'][0]
             if w == '1280':
