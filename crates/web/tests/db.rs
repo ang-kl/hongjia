@@ -282,12 +282,12 @@ async fn owner(port: u16) -> Client {
     member(port, "delta").await
 }
 
-/// Signs in as a profile with the family password and saves consent; returns the client.
+/// Signs in as a profile with the family password and names the device under Settings; returns the client.
 async fn member(port: u16, handle: &str) -> Client {
     let mut c = Client::new(port);
     let r = c.signin(handle, FAMILY).await;
     assert_eq!(r.status, 303, "{}", r.body);
-    assert_eq!(r.header("location"), Some("/consent"));
+    assert_eq!(r.header("location"), Some("/documents/latest"));
     assert_eq!(c.consent("no").await.status, 303);
     c
 }
@@ -328,8 +328,8 @@ async fn signin_success_failure_and_rate_limit(pool: PgPool) {
     assert_eq!(ok.status, 303);
     assert_eq!(
         ok.header("location"),
-        Some("/consent"),
-        "a new device asks for consent first"
+        Some("/documents/latest"),
+        "a new device goes straight in, with location off"
     );
 
     let mut attacker = Client::new(port);
@@ -463,14 +463,88 @@ async fn location_needs_consent_and_is_rounded(pool: PgPool) {
     );
 }
 
+/// The owner, 9 November 2026: "Skip it; location off". Sign-in goes straight to the latest document with location
+/// off; "This device" under Settings shows that choice and changes it.
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn signin_skips_this_device_and_starts_with_location_off(pool: PgPool) {
+    let port = start(pool, config()).await;
+    let signin_page = Client::new(port).get("/").await.body;
+    assert!(
+        signin_page
+            .contains("Location is off unless you turn it on under ☰ Settings, This device.")
+    );
+    let mut c = Client::new(port);
+    let r = c.signin("alpha", FAMILY).await;
+    assert_eq!(
+        r.header("location"),
+        Some("/documents/latest"),
+        "no This device page at sign-in"
+    );
+    let page = c.get("/consent").await.body;
+    assert!(
+        page.contains(r#"value="no" required checked"#),
+        "location starts off"
+    );
+    assert!(!page.contains(r#"value="yes" required checked"#));
+    assert!(!page.contains("Before you continue") && page.contains(">Save</button>"));
+    assert_eq!(
+        c.get("/about").await.status,
+        200,
+        "About opens without a stop at This device"
+    );
+    let csrf = c.csrf().await;
+    async fn send(c: &mut Client, csrf: &str) -> u16 {
+        c.send(
+            "POST",
+            "/api/location",
+            "lat=1.3521&lon=103.8198",
+            &[("X-CSRF-Token", csrf)],
+        )
+        .await
+        .status
+    }
+    assert_eq!(
+        send(&mut c, &csrf).await,
+        403,
+        "location off: nothing is stored"
+    );
+    assert_eq!(c.consent("yes").await.status, 303);
+    assert_eq!(
+        send(&mut c, &csrf).await,
+        204,
+        "turned on under Settings: stored, rounded"
+    );
+    // Signing in again on the same browser (its device cookie, a new session) keeps the saved choice.
+    let mut again = Client::new(port);
+    again.cookies = c.cookies.clone();
+    again.cookies.retain(|k, _| k.contains("hj_dev"));
+    assert_eq!(again.cookies.len(), 1, "the device cookie");
+    assert_eq!(
+        again.signin("alpha", FAMILY).await.header("location"),
+        Some("/documents/latest")
+    );
+    assert!(
+        again
+            .get("/consent")
+            .await
+            .body
+            .contains(r#"value="yes" required checked"#)
+    );
+}
+
 #[sqlx::test(migrations = "../../db/migrations")]
 async fn this_device_asks_without_a_preset_answer(pool: PgPool) {
-    let port = start(pool, config()).await;
+    let port = start(pool.clone(), config()).await;
     let mut c = Client::new(port);
     assert_eq!(
         c.signin("alpha", FAMILY).await.header("location"),
-        Some("/consent")
+        Some("/documents/latest")
     );
+    // A session from before sign-in stopped asking has no saved choice: the page then shows no preset answer.
+    sqlx::query("DELETE FROM consents")
+        .execute(&pool)
+        .await
+        .unwrap();
     let page = c.get("/consent").await.body;
     assert!(page.contains("about 40 km") && !page.contains("11 km"));
     assert_eq!(page.matches(r#"name="location""#).count(), 2);
@@ -494,7 +568,11 @@ async fn this_device_asks_without_a_preset_answer(pool: PgPool) {
         .await;
     assert_eq!(r.status, 400);
     assert!(r.body.contains("Choose Yes or No to continue."));
-    assert_eq!(c.get("/about").await.header("location"), Some("/consent"));
+    assert_eq!(
+        c.get("/about").await.status,
+        200,
+        "About records location off and opens"
+    );
     // Once answered, the page shows that answer, and Settings leads back to it.
     assert_eq!(c.consent("no").await.status, 303);
     let again = c.get("/consent").await.body;

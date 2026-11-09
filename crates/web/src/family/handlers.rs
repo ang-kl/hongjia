@@ -261,10 +261,15 @@ pub async fn signin(
 
     store::touch_device(&state.pool, &device_hash).await?;
     let token = store::create_session(&state.pool, profile.id, &device_hash, &ua).await?;
-    let has_consent = store::live_session(&state.pool, &token)
+    // Sign-in goes straight in (the owner, 9 November 2026: "Skip it; location off"): a browser with no saved
+    // choice starts with location off, and the choice is under ☰ Settings, This device.
+    let has_choice = store::live_session(&state.pool, &token)
         .await?
         .is_some_and(|s| s.location_allowed.is_some());
-    let mut response = see_other(if has_consent { LANDING } else { "/consent" });
+    if !has_choice {
+        store::save_consent(&state.pool, profile.id, &device_hash, false, None).await?;
+    }
+    let mut response = see_other(LANDING);
     add_cookie(
         &mut response,
         web::set_cookie(
@@ -362,8 +367,9 @@ pub async fn about(State(state): State<FamilyState>, headers: HeaderMap) -> Resu
     let Some(session) = current(&state, &headers).await? else {
         return Ok(see_other("/"));
     };
-    if session.location_allowed.is_none() {
-        return Ok(see_other("/consent"));
+    if let (None, Some(hash)) = (session.location_allowed, &session.device_hash) {
+        // A session from before sign-in stopped asking: location off, as for a new sign-in.
+        store::save_consent(&state.pool, session.profile_id, hash, false, None).await?;
     }
     let device = match &session.device_hash {
         Some(hash) => store::device_label(&state.pool, hash).await?,

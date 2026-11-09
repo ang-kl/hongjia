@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.09 (10)";
+pub const VERSION: &str = "2026.11.10 (1)";
 
-pub const SYNOPSIS: &str = "This version gives a document's title its own line on an iPad held upright, under Back, the version and the tabs, so the title shows in full instead of its first letters; phones keep the title on its own line above the tabs.";
+pub const SYNOPSIS: &str = "This version no longer stops at This device after sign-in: a browser with no saved choice goes straight to the latest document with location off, and the choice stays under ☰ Settings, This device, where it can be turned on.";
