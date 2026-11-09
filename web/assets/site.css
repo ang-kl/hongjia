@@ -1161,6 +1161,11 @@ button.chip[aria-pressed="true"] { border-color: var(--river); color: var(--rive
      (the owner, 9 November 2026: "Fix both"). */
   .doc-pick-t { flex: 1 1 100%; }
 }
+/* On an iPad held upright the title moves to its own line under Back, the version and the tabs, so it shows in
+   full instead of "Ku..." (the owner, 9 November 2026: "Fix the iPad title too"). */
+@media (min-width: 761px) and (orientation: portrait) {
+  .doc-pick-t { order: 1; flex: 1 1 100%; }
+}
 body[data-tab="details"] .panel [data-group]:not([data-group="details"]),
 body[data-tab="versions"] .panel [data-group]:not([data-group="versions"]),
 body[data-tab="notes"] .panel [data-group]:not([data-group="notes"]),
