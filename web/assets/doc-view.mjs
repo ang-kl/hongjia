@@ -28,6 +28,16 @@ export const SHARE_LIMITS = { title: 120, text: 300, url: 2000 };
 export const WA_LIMITS = { title: 120, text: 600 };
 const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 const PLACE_KEY = /^[a-z0-9][a-z0-9-]{0,29}$/;
+/// The version a file's name carries, as the server reads it: the last word that is v (or V) and one to three digits,
+/// before the extension ("Kuala-Lumpur-trip-data-v4.txt" is 4), or null.
+export function nameVersion(name) {
+  const s = String(name || '');
+  const dot = s.lastIndexOf('.');
+  const words = (dot > 0 ? s.slice(0, dot) : s).split(/[^A-Za-z0-9]+/);
+  let found = null;
+  for (const w of words) { const m = /^[vV]([0-9]{1,3})$/.exec(w); if (m) found = Number(m[1]); }
+  return found;
+}
 /// One part of a trip page, named after the # at the end of a link to it (7 November 2026).
 export const PART_ID = /^[A-Za-z][A-Za-z0-9_-]{0,60}$/;
 /// Loupe magnifications (D3): 0 is closed.
@@ -822,7 +832,22 @@ function start() {
     li.append(actions);
     return li;
   };
+  // A file named for one of the versions is listed under that version and not pinned; attached or deleted without a
+  // reload, the version list and the pins follow at once (review of #51).
+  const versionNumbers = new Set((document.querySelector('[data-version-numbers]')?.dataset.versionNumbers || '').split(' ').filter(Boolean).map(Number));
+  const syncVersionFile = a => {
+    if (a.kind !== 'attachment' || older) return;
+    const n = nameVersion(a.text);
+    if (n === null || !versionNumbers.has(n)) return;
+    const id = String(a.id);
+    unpinned.add(id);
+    const row = document.querySelector(`.doc-pick-v li[data-version-number="${n}"]`);
+    if (row && !row.querySelector(`.pick-file[data-file-id="${id}"]`)) {
+      row.append(element('a', { className: 'pick-file', href: `${base}/attachments/${id}`, download: '', textContent: `↓ ${a.text}`, dataset: { fileId: id } }));
+    }
+  };
   const replaceEntry = a => {
+    syncVersionFile(a);
     const old = document.getElementById(`annotation-${a.id}`);
     const fresh = item(a);
     if (old) old.replaceWith(fresh); else listFor(a.kind).append(fresh);
@@ -841,6 +866,8 @@ function start() {
   };
 
   const removeEntry = id => {
+    unpinned.delete(String(id));
+    document.querySelector(`.doc-pick-v .pick-file[data-file-id="${CSS.escape(String(id))}"]`)?.remove();
     document.getElementById(`annotation-${id}`)?.remove();
     refreshCount();
     sendAnchors();

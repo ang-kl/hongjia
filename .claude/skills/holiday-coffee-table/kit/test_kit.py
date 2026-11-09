@@ -346,6 +346,11 @@ const { chromium } = require('playwright');
     if (k.i < k.plain) { for (let c = k.i; c < k.plain; c++) { await p.click('#tour .tour-prev'); await p.waitForTimeout(100); } }
     await p.waitForTimeout(400);
     out[w] = await look();
+    // Keyboard: Tab from the last button reaches the restaurant's first link, Shift+Tab goes back round.
+    await p.focus('#tour .tour-close'); await p.keyboard.press('Tab');
+    out[w].tabFromClose = await p.evaluate(() => document.activeElement.className);
+    await p.keyboard.press('Shift+Tab');
+    out[w].shiftTabBack = await p.evaluate(() => document.activeElement.className);
     out[w + '_errors'] = errors;
     await ctx.close();
   }
@@ -2236,6 +2241,8 @@ class KitTest(unittest.TestCase):
             self.assertTrue(r['say'] and r['say'][0]['text'].startswith('“') and r['say'][0]['text'].endswith('”'), w)
             self.assertEqual(r['say'][0]['cite'], 'Example Maps review, Apr 2027', w)
             self.assertFalse(r['wide'], w)
+            self.assertEqual(r['tabFromClose'], 'tt-rate', f'{w}: the keyboard reaches the restaurant\'s links')
+            self.assertEqual(r['shiftTabBack'], 'tour-close', w)
         self.assertEqual(len(res['1280']['say']), 2, 'a wide screen shows both diners\' quotes')
         self.assertEqual(len(res['390']['say']), 1, 'a phone shows one, to keep room for the pictures')
         self.assertEqual(res['390']['line'], 'none', 'on a phone the venue line stands in for the stop\'s own line')

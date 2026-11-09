@@ -3598,9 +3598,12 @@ async fn header_lists_versions_data_files_and_latest_documents(pool: PgPool) {
     assert!(versions.contains(&format!(r#"href="{key}?v=2"><b>v.02</b>"#)));
     assert!(!versions.contains("v.01"), "the last three only");
     assert!(versions.contains(&format!(
-        r#"<a class="pick-file" href="{key}/attachments/{d3}" download>↓ trip-data-v3.txt</a>"#
+        r#"<a class="pick-file" href="{key}/attachments/{d3}" download data-file-id="{d3}">↓ trip-data-v3.txt</a>"#
     )));
     assert!(!versions.contains(&format!("/attachments/{d1}\"")) && !versions.contains("notes.txt"));
+    // The page places a file attached later by the same rule: every version's number, and each row's.
+    assert!(view.contains(r#"data-version-numbers="4 3 2 1""#));
+    assert!(versions.contains(r#"<li data-version-number="3">"#));
     // Files named for a version are not pinned; nothing is deleted, and other files keep their pins.
     let unpinned: Vec<&str> = between(&view, r#"data-unpinned=""#, "\"")
         .split(' ')

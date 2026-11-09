@@ -1305,7 +1305,7 @@ pub fn document_view(
     };
     let main = format!(
         r##"<div class="viewer-doc">
-<div class="doc-bar"><button type="button" class="back" data-back title="Back to the previous page (Esc)"><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button><span class="filing">{label}</span><details class="doc-pick doc-pick-v" data-doc-pick data-unpinned="{unpinned}"><summary class="doc-v" title="{v_title}">· {v_tag}</summary><div class="pick-list"><p class="pick-head">Versions</p><ul>{version_rows}</ul></div></details><details class="doc-pick doc-pick-t" data-doc-pick><summary><h1 class="doc-title">{title}</h1></summary><div class="pick-list"><p class="pick-head">Latest documents</p><ul>{title_rows}</ul><p class="pick-more"><a href="/documents">All documents</a></p></div></details>{parts}<button type="button" class="pill comment-open" data-comment hidden>Comment</button><div class="doc-tabs" role="group" aria-label="This document" data-doc-tabs><button type="button" data-doc-tab="details" aria-pressed="false">Details</button><button type="button" data-doc-tab="versions" aria-pressed="false">Versions <span class="count">{n_versions}</span></button><button type="button" data-doc-tab="notes" aria-pressed="false">Notes</button><button type="button" data-doc-tab="files" aria-pressed="false">Files</button>{manage_tab}</div></div>
+<div class="doc-bar"><button type="button" class="back" data-back title="Back to the previous page (Esc)"><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button><span class="filing">{label}</span><details class="doc-pick doc-pick-v" data-doc-pick data-unpinned="{unpinned}" data-version-numbers="{numbers}"><summary class="doc-v" title="{v_title}">· {v_tag}</summary><div class="pick-list"><p class="pick-head">Versions</p><ul>{version_rows}</ul></div></details><details class="doc-pick doc-pick-t" data-doc-pick><summary><h1 class="doc-title">{title}</h1></summary><div class="pick-list"><p class="pick-head">Latest documents</p><ul>{title_rows}</ul><p class="pick-more"><a href="/documents">All documents</a></p></div></details>{parts}<button type="button" class="pill comment-open" data-comment hidden>Comment</button><div class="doc-tabs" role="group" aria-label="This document" data-doc-tabs><button type="button" data-doc-tab="details" aria-pressed="false">Details</button><button type="button" data-doc-tab="versions" aria-pressed="false">Versions <span class="count">{n_versions}</span></button><button type="button" data-doc-tab="notes" aria-pressed="false">Notes</button><button type="button" data-doc-tab="files" aria-pressed="false">Files</button>{manage_tab}</div></div>
 {notice}{hidden_notice}{older_note}
 <div class="doc-stage" data-doc-stage><iframe class="doc-frame" src="/documents/{key}/raw{raw_v}" sandbox="{sandbox}" allow="" referrerpolicy="no-referrer" loading="eager" title="Document: {title}"></iframe><div class="doc-overlay" data-doc-overlay aria-hidden="true"{overlay_hidden}></div></div>
 </div>
@@ -1317,6 +1317,7 @@ pub fn document_view(
         title = escape(&doc.title),
         notice = notice(message),
         unpinned = picks.unpinned,
+        numbers = picks.numbers,
         version_rows = picks.versions,
         title_rows = picks.titles,
         parts = doc_parts(&doc.key, older.or(versions.first())),
@@ -1376,6 +1377,8 @@ struct Picks {
     titles: String,
     /// The attached files listed with their version, by id: the page does not pin them.
     unpinned: String,
+    /// Every version's number, so a file attached later is placed by the same rule.
+    numbers: String,
 }
 
 /// The header's two lists (the owner, 9 November 2026): the version tag opens the last three versions, each with the
@@ -1411,14 +1414,14 @@ fn header_picks(
                 .filter(|(_, m)| *m == n)
                 .map(|(a, _)| {
                     format!(
-                        r#"<a class="pick-file" href="/documents/{key}/attachments/{id}" download>↓ {name}</a>"#,
+                        r#"<a class="pick-file" href="/documents/{key}/attachments/{id}" download data-file-id="{id}">↓ {name}</a>"#,
                         id = a.id,
                         name = escape(&a.text)
                     )
                 })
                 .collect();
             format!(
-                r#"<li><a class="pick-item" href="/documents/{key}{query}"{cur}><b>{tag}</b> <span class="small">{when}{latest}</span></a>{files}</li>"#,
+                r#"<li data-version-number="{n}"><a class="pick-item" href="/documents/{key}{query}"{cur}><b>{tag}</b> <span class="small">{when}{latest}</span></a>{files}</li>"#,
                 query = if v.version_no == doc.version_no {
                     String::new()
                 } else {
@@ -1447,10 +1450,16 @@ fn header_picks(
         .map(|(a, _)| a.id.to_string())
         .collect::<Vec<_>>()
         .join(" ");
+    let numbers = versions
+        .iter()
+        .map(|v| number(v).to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
     Picks {
         versions: versions_html,
         titles,
         unpinned,
+        numbers,
     }
 }
 

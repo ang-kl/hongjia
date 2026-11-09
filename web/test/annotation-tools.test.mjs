@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { validMessage, placeMenu, mentionPieces, mentionQuery, COLORS, STAMPS, MENU, unavailable } from '../assets/doc-view.mjs';
+import { validMessage, nameVersion, placeMenu, mentionPieces, mentionQuery, COLORS, STAMPS, MENU, unavailable } from '../assets/doc-view.mjs';
 
 const source = await readFile(new URL('../assets/frame-helper.js', import.meta.url), 'utf8');
 const pure = source.slice(source.indexOf('/* PURE START'), source.indexOf('/* PURE END'));
@@ -80,6 +80,15 @@ test('mentions: family handles only, not inside words', () => {
   assert.equal(mentionQuery('Ask @', 5), '');
   assert.equal(mentionQuery('mail@be', 7), null, 'inside a word');
   assert.equal(mentionQuery('Ask @be now', 11), null, 'caret moved on');
+});
+
+test('a file\'s version number is read as the server reads it', () => {
+  assert.equal(nameVersion('Kuala-Lumpur-trip-data-v4.txt'), 4);
+  assert.equal(nameVersion('Perth-trip-data-v21.txt'), 21);
+  assert.equal(nameVersion('trip-v2-notes-V3.json'), 3, 'the last such word');
+  assert.equal(nameVersion('notes.txt'), null);
+  assert.equal(nameVersion('v1234.txt'), null, 'one to three digits');
+  assert.equal(nameVersion('data-v7'), 7, 'no extension');
 });
 
 test('a part going by is reported by its anchor only (9 November 2026)', () => {
