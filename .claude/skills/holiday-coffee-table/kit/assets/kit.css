@@ -586,6 +586,20 @@ html[data-mode=print] .plan-tag,html[data-mode=print] .sugg-tag{background:#fff;
 .tour-globe .g-pin text{font-size:15px}
 .tour-map>.mapbox{position:absolute !important;inset:0;width:100%;height:100% !important;max-height:none;min-height:0;border:0}
 .tour-big img{width:100%;height:100%;object-fit:cover}
+/* A stop: its pictures as a collage, one large and up to two beside it, the map small in a corner (9 November 2026). */
+.tour-col{position:absolute;inset:0;display:none;gap:4px;grid-template:1fr 1fr/2fr 1fr}
+.tour[data-view=collage] .tour-col{display:grid}
+.tour-col figure{position:relative;margin:0;overflow:hidden;min-height:0}
+.tour-col figure:first-child{grid-row:1/-1}
+.tour-col[data-n='1'] figure{grid-column:1/-1}
+.tour-col[data-n='2'] figure:last-child{grid-row:1/-1}
+.tour-col img{width:100%;height:100%;object-fit:cover;transform-origin:50% 40%}
+.tour-col figcaption{position:absolute;left:0;bottom:0;max-width:100%;padding:2px 6px;font-size:.55rem;line-height:1.3;background:rgba(0,0,0,.5);color:#fff}
+.tour-col figcaption a{color:#fff}
+.tour[data-view=collage] .tour-map{display:block;inset:auto 14px 14px auto;width:min(30%,300px);aspect-ratio:3/2;border:2px solid #fff;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.4);z-index:2}
+.tour[data-view=collage]:not([data-n='1']) .tour-map{right:calc(33.4% + 12px)}
+.tour[data-view=collage] .tour-ph,.tour[data-view=collage] .leaflet-popup,.tour[data-view=collage] .leaflet-control-zoom{display:none}
+.tour[data-view=collage] .tour-card{grid-template-columns:minmax(0,1fr) auto}
 .tour-card{position:relative;display:grid;grid-template-columns:132px minmax(0,1fr) auto;gap:16px;align-items:center;background:#fff;color:var(--ink);padding:14px 18px calc(14px + env(safe-area-inset-bottom));border-top:3px solid var(--gold)}
 .tour-ph{margin:0;width:132px;aspect-ratio:4/3;overflow:hidden;position:relative;background:#f4f1ea}
 .tour-ph img{width:100%;height:100%;object-fit:cover}
@@ -628,6 +642,12 @@ body{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
   .strip{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;max-width:none}
   .strip .tile{flex:0 0 72%;scroll-snap-align:start}
   .tour-card{grid-template-columns:84px minmax(0,1fr);gap:10px;padding:12px 12px calc(12px + env(safe-area-inset-bottom))}
+  .tour-col{grid-template:62% 1fr/1fr 1fr}
+  .tour-col figure:first-child,.tour-col[data-n='2'] figure:last-child{grid-row:auto;grid-column:1/-1}
+  .tour-col[data-n='1'] figure{grid-row:1/-1}
+  .tour[data-view=collage] .tour-map,.tour[data-view=collage]:not([data-n='1']) .tour-map{right:10px;width:40%}
+  .tour[data-view=collage]:not([data-n='1']) .tour-map{bottom:calc(38% + 10px)}
+  .tour[data-view=collage] .tour-card{grid-template-columns:minmax(0,1fr)}
   .tour-ph{width:84px}
   .tour-ctl{grid-column:1 / -1;justify-content:space-between}
   .legend .lg{padding:0 11px;font-size:.84rem}

@@ -273,6 +273,48 @@ const { chromium } = require('playwright');
 })().catch(e => { console.error(e); process.exit(1); });
 '''
 
+COLLAGE_JS = r'''
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch();
+  const out = {};
+  for (const w of [1280, 390]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 800 } });
+    const p = await ctx.newPage();
+    const errors = []; p.on('pageerror', e => errors.push(e.message));
+    // the map's own script may load (as in the swaps test); nothing else leaves the machine
+    await p.route(/^https?:/, r => r.request().url().startsWith('https://unpkg.com/leaflet@') ? r.continue() : r.abort());
+    await p.goto('file://' + process.argv[2], { waitUntil: 'load' });
+    await p.waitForTimeout(400);
+    await p.click('#play-trip'); await p.waitForTimeout(300);
+    await p.click('#tour .tour-pause');
+    // the first stop with two or more pictures of its own (the globe, when there is one, comes first)
+    const k = await p.evaluate(() => { const own = s => [...document.getElementById(s.id).querySelectorAll('.tile img')].filter(x => !x.closest('.swap')).length;
+      const tour = JSON.parse(document.getElementById('trip-data').textContent).tour, i = tour.findIndex(s => own(s) >= 2);
+      return { i, clicks: i + (document.getElementById('tour').dataset.view === 'globe' ? 1 : 0) }; });
+    for (let c = 0; c < k.clicks; c++) { await p.click('#tour .tour-next'); await p.waitForTimeout(150); }
+    await p.waitForTimeout(800);
+    out[w] = await p.evaluate((i) => {
+      const t = document.getElementById('tour'), st = t.querySelector('.tour-stage').getBoundingClientRect();
+      const step = JSON.parse(document.getElementById('trip-data').textContent).tour[i], card = document.getElementById(step.id);
+      const own = [...card.querySelectorAll('.tile img')].filter(x => !x.closest('.swap'));
+      const box = e => { const b = e.getBoundingClientRect(); return { l: b.left - st.left, t: b.top - st.top, w: b.width, h: b.height }; };
+      const figs = [...t.querySelectorAll('.tour-col figure')], m = t.querySelector('.tour-map');
+      return { view: t.dataset.view, want: Math.min(3, own.length), stage: { w: st.width, h: st.height }, figs: figs.map(box),
+        srcs: figs.map(f => f.querySelector('img').getAttribute('src')), own: own.slice(0, 3).map(x => x.getAttribute('src')),
+        credits: figs.map(f => !!f.querySelector('figcaption.credit a, figcaption.credit')),
+        map: t.querySelector('.leaflet-container') && getComputedStyle(m).display !== 'none' ? box(m) : null,
+        thumb: getComputedStyle(t.querySelector('.tour-ph')).display, wide: document.documentElement.scrollWidth > innerWidth + 1 };
+    }, k.i);
+    out[w + '_errors'] = errors;
+    await ctx.close();
+  }
+  await browser.close();
+  process.stdout.write(JSON.stringify(out));
+})().catch(e => { console.error(e); process.exit(1); });
+'''
+
+
 TOUR_JS = r'''
 const { chromium } = require('playwright');
 (async () => {
@@ -1098,6 +1140,8 @@ class KitTest(unittest.TestCase):
         self.assertIn('hidden', tour.attrs)
         for cls in ('tour-prev', 'tour-pause', 'tour-next', 'tour-close'):
             self.assertTrue(find(tour, 'button', cls), cls)
+        self.assertTrue(find(tour, 'div', 'tour-col'), 'a stop plays as a collage of its pictures')
+        self.assertTrue(all(i.attrs.get('referrerpolicy') == 'no-referrer' for i in find(tour, 'img')), 'pictures load as on the page')
         ids = {n.attrs['id'] for n in self.root.iter() if n.attrs.get('id')}
         steps = self.trip['tour']
         self.assertEqual(len(steps), sum(len(d['stops']) for d in self.data['days']))
@@ -2061,6 +2105,43 @@ class KitTest(unittest.TestCase):
             self.assertLess(c['card'], 108, c)
             self.assertEqual(c['add'], 'none', 'a narrow card gives its Add button\'s room to its words')
             self.assertGreaterEqual(c['words'], c['card'] - 20, c)
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_play_the_trip_as_a_collage(self):
+        """Each stop plays as a collage of its own pictures, each with its credit, with the map small in a corner (the
+        owner, 9 November 2026: "the Play ... should have multiple pics on the screen, showing whole screen (desktop) on
+        just map doesn't make sense as a trip preview"; they chose a photo collage with a small map)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            script = os.path.join(tmp, 'collage.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(COLLAGE_JS)
+            out = subprocess.run([NODE, script, page], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        for w in ('1280', '390'):
+            r = res[w]
+            self.assertEqual(res[w + '_errors'], [], w)
+            self.assertFalse(r['wide'], w)
+            self.assertEqual(r['view'], 'collage', w)
+            self.assertGreaterEqual(r['want'], 2, 'the sample stop has more than one picture, so the collage is tried')
+            self.assertEqual(len(r['figs']), r['want'], f'{w}: up to three of the stop\'s own pictures')
+            self.assertEqual(r['srcs'], r['own'][:r['want']], f'{w}: the stop\'s own pictures, in their order')
+            self.assertTrue(all(r['credits']), f'{w}: every picture keeps its credit')
+            self.assertEqual(r['thumb'], 'none', f'{w}: no small picture in the bar repeats the large one')
+            big = r['figs'][0]
+            if w == '1280':
+                self.assertGreaterEqual(big['w'], r['stage']['w'] * 0.6, 'the first picture is large')
+                self.assertGreaterEqual(big['h'], r['stage']['h'] - 1, 'and runs the full height')
+            else:
+                self.assertGreaterEqual(big['w'], r['stage']['w'] - 1, 'on a phone the first picture runs the full width')
+            m = r['map']
+            if m:  # when the map's script loaded: small, inside the first picture, never over the others
+                self.assertLessEqual(m['w'], r['stage']['w'] * 0.41, f'{w}: the map is small')
+                self.assertTrue(m['l'] >= big['l'] and m['l'] + m['w'] <= big['l'] + big['w'] + 1 and m['t'] + m['h'] <= big['t'] + big['h'] + 1, f'{w}: {m} {big}')
 
     @unittest.skipUnless(BROWSER, 'needs node and Playwright')
     def test_tour_tells_the_site(self):

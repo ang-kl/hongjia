@@ -784,7 +784,20 @@ if(tourEl&&playBtn){
   (D.tour||[]).forEach(function(s){ steps.push(s); });
   var tk=tourEl.querySelector('.tour-k'), tt=tourEl.querySelector('.tour-t'), tl=tourEl.querySelector('.tour-l'), tImg=tourEl.querySelector('.tour-ph img'),
       tCredit=tourEl.querySelector('.tour-credit'), tBig=tourEl.querySelector('.tour-big img'), tBar=tourEl.querySelector('.tour-bar i'),
-      tPause=tourEl.querySelector('.tour-pause'), tNext=tourEl.querySelector('.tour-next'), tPrev=tourEl.querySelector('.tour-prev'), tClose=tourEl.querySelector('.tour-close');
+      tPause=tourEl.querySelector('.tour-pause'), tNext=tourEl.querySelector('.tour-next'), tPrev=tourEl.querySelector('.tour-prev'), tClose=tourEl.querySelector('.tour-close'),
+      tCol=tourEl.querySelector('.tour-col');
+  // Each stop plays as a collage of its own pictures, each with its credit, the map small in a corner (the owner,
+  // 9 November 2026: "the Play ... should have multiple pics on the screen"; a full-screen map is no trip preview).
+  var fillCol=function(imgs){
+    clear(tCol); tCol.setAttribute('data-n',String(imgs.length)); tourEl.setAttribute('data-n',String(imgs.length));
+    imgs.forEach(function(img,i){
+      var f=el('figure'), im=document.createElement('img'), cr=img.closest('figure'); cr=cr&&cr.querySelector('.credit');
+      im.referrerPolicy='no-referrer'; im.alt=img.alt||''; im.src=img.currentSrc||img.src; f.appendChild(im);
+      if(cr){ var c=el('figcaption','credit'); Array.prototype.forEach.call(cr.childNodes,function(n){ c.appendChild(n.cloneNode(true)); }); f.appendChild(c); }
+      tCol.appendChild(f);
+      if(!i&&!reduce){ im.style.transform='scale(1.06)'; motion(im,[{transform:'scale(1)'},{transform:'scale(1.06)'}],{duration:5600,easing:'linear'}); }
+    });
+  };
   var setPhoto=function(img){
     clear(tCredit);
     if(!img){ tImg.removeAttribute('src'); tImg.alt=''; return; }
@@ -809,11 +822,13 @@ if(tourEl&&playBtn){
       else { tGlobe.render(); tGlobe.spinTo({lam:OP.dest.lng,phi:clampLat(OP.dest.lat),arcT:1},4400); }
     } else {
       if(tGlobe){ tGlobe.stop(); }
-      tourEl.setAttribute('data-view',map?'map':'photo');
-      if(map){ map.invalidateSize(false); }  // measure the map now it is shown, before it flies
       tk.textContent=s.when||''; tt.textContent=s.name||''; tl.textContent=s.line||'';
-      var card=document.getElementById(s.id), img=card&&card.querySelector('.tile img, .near-photo img');
-      setPhoto(img);
+      var card=document.getElementById(s.id), pics=card?$$('.tile img',card).filter(function(x){ return !x.closest('.swap'); }).slice(0,3):[];
+      if(!pics.length&&card&&card.querySelector('.near-photo img')){ pics=[card.querySelector('.near-photo img')]; }
+      var img=pics[0]||null;
+      setPhoto(img); fillCol(pics);
+      tourEl.setAttribute('data-view',pics.length?'collage':map?'map':'photo');
+      if(map){ map.invalidateSize(false); }  // measure the map in its new place, before it flies
       if(map){ if(s.d!==dayIdx){ selectDay(s.d); } if(s.idx>=0){ focusStop(s.idx); } else { map.flyTo([s.lat,s.lng],14,{animate:!reduce}); } }
       else if(img){ tBig.src=img.currentSrc||img.src; tBig.alt=img.alt||''; }
     }

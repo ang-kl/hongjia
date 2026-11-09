@@ -429,8 +429,10 @@ world-atlas TopoJSON in `assets/land-110m.json`, decoded at build time and inlin
 nothing). It spins slowly to the destination when it comes into view, turns when dragged sideways or
 with the arrow keys, and stands still under reduced motion. The credits section names Natural Earth.
 
-"Play the trip" opens a guided tour: the globe flies from home to the destination, then the route map
-goes day by day, stop by stop, with each stop's photo and `line` in a caption card. It pauses, steps
+"Play the trip" opens a guided tour: the globe flies from home to the destination, then it goes day by
+day, stop by stop. Each stop fills the screen with a collage of its own pictures (up to three from its
+`photos`, the first large with a slow zoom, each with its credit), with the route map small in a corner
+flying to the stop, and its name and `line` in a caption card. A stop with no picture shows the map. It pauses, steps
 with Back and Next, closes with Esc, and under reduced motion does not play by itself.
 
 ## Worship
