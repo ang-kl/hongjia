@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.09 (3)";
+pub const VERSION: &str = "2026.11.09 (5)";
 
-pub const SYNOPSIS: &str = "This version adds Before we go to trip pages: everything to book ahead, such as a salon, a class or a table, is listed first in the Calendar by the date to book by, with a reminder to add, and marked on its stop or meal; each time the page opens it counts the days left from today and marks any that are late. Trip pages now come in two clear parts: the opening at a glance, then Part 2, the plan in detail, on its own band, without repeating the trip's title.";
+pub const SYNOPSIS: &str = "This version gives trip pages exact emoji, the same on every trip: 💇 hair, 💅 pedicure and nails, 💆 massage, 🛍️ shopping, 🍽️ food and 🌳 nature, each with its own legend button, so a salon is no longer marked as shopping and Plan B walks carry 🌳. A day can also list its salon, pedicure and massage choices the way it lists meals, with their prices, hours and links.";

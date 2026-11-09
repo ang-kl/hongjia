@@ -111,9 +111,18 @@ category, on the page and on the map:
 | `drinks` | ☕ Drinks | cafes, coffee, bars, breweries, wineries, cellar doors |
 | `snacks` | 🍫 Snacks | bakeries, chocolate, ice cream, market food stalls, quick bites |
 | `shopping` | 🛍️ Shopping | shops, malls, markets, boutiques |
-| `fun` | 🎡 Fun | beaches, cruises, attractions, spas, play |
-| `sights` | 🏛️ Sights | lookouts, museums, galleries, heritage, nature |
+| `hair` | 💇 Hair | hair salons and barbers (never `shopping`) |
+| `nails` | 💅 Pedicure & nails | pedicure, manicure and nail salons |
+| `massage` | 💆 Massage | spas, massage and foot reflexology |
+| `nature` | 🌳 Nature | parks, gardens, forests, walks, beaches kept for nature |
+| `fun` | 🎡 Fun | beaches, cruises, attractions, play |
+| `sights` | 🏛️ Sights | lookouts, museums, galleries, heritage |
 | `worship` | ⛪ Worship | churches, mosques, temples, synagogues, chapels |
+
+The emoji are exact and the same on every trip (the owner, 9 November 2026: "Your use of emoji for hair, shopping,
+food, nature, must be exact for both trips and template"): 💇 hair, 💅 pedicure and nails, 💆 massage, 🛍️ shopping,
+🍽️ food, 🌳 nature; Plan B (hiking and nature) carries 🌳. Hair, nails, massage and nature show in the legend only
+when a place on the page uses them.
 
 `"dining"` (the first legend's single category) is still read, as `food`. The stays, transport
 and holidays sections carry `stays`, `transport` and `weather` unless their own `cat` says otherwise.
@@ -452,6 +461,16 @@ Posts on a Plan B or Plan C stop come after the day's main plan, marked with the
 rains"), and a post shown twice in a day appears once. A playing post keeps a small link to the post itself,
 in case the service shows an error or a limit in place of the post.
 
+## Hair, nails and massage (`days[].services`)
+
+A day's service choices, shown like meals (the owner, 9 November 2026, for a trip that is about shopping,
+hair, pedicure and massage): a list of `{kind, time, title, note, choices}`. `kind` is `hair` (💇 Salon), `nails`
+(💅 Pedicure & nails) or `massage` (💆 Massage). Each choice is `{stop, role}` (a stop; it shows as planned only when it is one of the day's own stops)
+or an alternative card `{name, cat, why, hours, source, lat, lng, q, links, photo}` as in meals. Put each place's
+prices, its dated Google rating (allowed for services, with its count and where it was read), how to book and its
+own Instagram or TikTok in `why` and `links`; its own posts go in the stop's `embeds` or `social`. Anything to
+book ahead also goes in Before we go.
+
 ## Before we go (`pretrip`)
 
 What has to be booked before the trip (the owner, 9 November 2026: "if we need to reserve ahead like salon,
@@ -504,7 +523,15 @@ or a tap outside closes it, and the reader is back where they were.
 - **Share**: on the family site the locked page cannot share, so it asks the site
   (`hj:share-want`): a place by its public facts and an https link; a day only by the document's
   link on the site (the owner, 6 November 2026: "link only"). Opened elsewhere, it uses the
-  browser's share menu or copies the link.
+  browser's share menu or copies the link. Every part's Share is drawn as three joined dots
+  (the owner, 9 November 2026: "Share replaces #").
+- **🤙🏼 WhatsApp, the owner's account only** (the owner, 9 November 2026): beside every Share, on every
+  timed calendar card, booking, Near here place and Gallery picture, and in each place's panel. The page
+  asks the site who is reading (`hj:who`); only for the owner is 🤙🏼 in colour. A tap sends the part's
+  name and a few lines (its time, address and map link) and its # (`hj:wa-want`); the site adds its own
+  link and opens `https://wa.me/?text=…`, with no number, so WhatsApp asks which chat. This is the one
+  place a trip's details leave in a message, and only when the owner chooses to send them. For everyone
+  else, and on a copy opened away from the site, 🤙🏼 is greyed and a tap says why.
 - **Hungry? and Shop nearby** (the plain "📍 Near me" button was removed, the owner, 7 November 2026):
   on the family site the site asks the person in its own words, takes a rough reading
   (never high accuracy) and sends back only the nearest places' keys and distances to the nearest

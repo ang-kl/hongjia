@@ -146,6 +146,39 @@ const { chromium } = require('playwright');
 """
 
 
+WA_JS = r"""
+const { chromium } = require('playwright');
+const path = require('path');
+(async () => {
+  const b = await chromium.launch();
+  const res = { errors: [] };
+  for (const who of ['owner', 'family']) {
+    const p = await b.newPage({ viewport: { width: 1100, height: 900 } });
+    await p.route(/^https?:/, r => r.abort());
+    p.on('pageerror', e => res.errors.push(String(e.message).slice(0, 160)));
+    await p.goto('file://' + path.join(process.argv[2], who + '.html'), { waitUntil: 'load' });
+    await p.waitForTimeout(700);
+    const f = p.frames().find(x => x.url().endsWith('page.html'));
+    const btn = '#day-1 h3 .wa-btn';
+    const disabled = await f.getAttribute(btn, 'aria-disabled');
+    await f.evaluate(s => document.querySelector(s).click(), btn);
+    await p.waitForTimeout(500);
+    const toast = await f.evaluate(() => { const t = document.querySelector('.toast'); return t ? t.textContent : ''; });
+    res[who] = { disabled, toast, msgs: await p.evaluate(() => window.__msgs) };
+    await p.close();
+  }
+  const p = await b.newPage({ viewport: { width: 1100, height: 900 } });
+  await p.route(/^https?:/, r => r.abort());
+  await p.goto('file://' + path.join(process.argv[2], 'page.html'), { waitUntil: 'load' });
+  await p.waitForTimeout(500);
+  await p.evaluate(() => document.querySelector('#day-1 h3 .wa-btn').click());
+  await p.waitForTimeout(300);
+  res.alone = { toast: await p.evaluate(() => { const t = document.querySelector('.toast'); return t ? t.textContent : ''; }) };
+  await b.close();
+  console.log(JSON.stringify(res));
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+
 PT_JS = r"""
 const { chromium } = require('playwright');
 (async () => {
@@ -811,8 +844,24 @@ class KitTest(unittest.TestCase):
     def test_legend_categories(self):
         labels = [n.text().strip() for n in find(self.root, 'button', 'lg') if 'legend-compact' not in n.parent.classes()]
         self.assertEqual([l.split()[1] if len(l.split()) > 1 else l for l in labels],
-                         ['Stays', 'Transport', 'Weather', 'Food', 'Drinks', 'Snacks', 'Shopping', 'Fun', 'Sights', 'Worship'])
-        self.assertEqual(list(self.trip['cats']), ['stays', 'transport', 'weather', 'food', 'drinks', 'snacks', 'shopping', 'fun', 'sights', 'worship'])
+                         ['Stays', 'Transport', 'Weather', 'Food', 'Drinks', 'Snacks', 'Shopping', 'Massage', 'Nature', 'Fun', 'Sights', 'Worship'],
+                         'hair and pedicure are left out: no place in the sample uses them')
+        self.assertEqual(list(self.trip['cats']), ['stays', 'transport', 'weather', 'food', 'drinks', 'snacks', 'shopping', 'hair', 'nails',
+                                                   'massage', 'nature', 'fun', 'sights', 'worship'])
+        # the exact emoji (the owner, 9 November 2026)
+        icons = {k: v[0] for k, v in self.trip['cats'].items()}
+        self.assertEqual({k: icons[k] for k in ('hair', 'nails', 'massage', 'shopping', 'food', 'nature')},
+                         {'hair': '💇', 'nails': '💅', 'massage': '💆', 'shopping': '🛍️', 'food': '🍽️', 'nature': '🌳'})
+        self.assertEqual(build.LABELS['swap_icon_b'], '🌳', 'Plan B, hiking and nature, carries the nature mark')
+        svc = find(self.root, 'div', 'meal', data_service='massage')
+        self.assertEqual(len(svc), 1, 'the day\'s service choices, shown like meals')
+        self.assertIn('💆', svc[0].text())
+        self.assertEqual(len(find(svc[0], 'article', 'alt')), 2)
+        d = copy.deepcopy(self.data)
+        day = next(x for x in d['days'] if x.get('services'))
+        day['services'][0]['kind'] = 'tattoo'
+        with self.assertRaises(build.KitError):
+            build.build(d)
         for st in find(self.root, 'article', 'stop'):
             self.assertTrue(st.attrs.get('data-cats'), f'{st.attrs["id"]} carries its categories')
         self.assertEqual(find(self.root, 'article', 'stop', id='d2-market')[0].attrs['data-cats'], 'shopping snacks food', 'a list lights every category')
@@ -1533,7 +1582,11 @@ class KitTest(unittest.TestCase):
         for _, h in parts:
             self.assertIn(find(h, 'a', 'sec-link')[0].attrs['data-sec-link'], ids)
         css = re.sub(r'\s+', '', open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read())
-        self.assertIn('.sec-link::before{content:"#"}', css)
+        self.assertIn('.sec-link::before,.share-alt::before{content:"";', css, 'Share (three joined dots) in place of the # (9 November 2026)')
+        for _, h in parts:
+            pair = find(h, 'span', 'sec-pair')
+            self.assertEqual(len(pair), 1)
+            self.assertEqual(len(find(pair[0], 'button', 'wa-btn')), 1, '🤙🏼 beside every Share')
         self.assertIn('@mediaprint{.sec-link{display:none!important}}', css)
         with self.assertRaises(build.KitError):
             build.Page(copy.deepcopy(self.data)).sec_link('1 bad"id')
@@ -1657,6 +1710,64 @@ class KitTest(unittest.TestCase):
         self.assertEqual(find(self.root, 'p', 'op-part')[0].text().strip(), 'Part 1')
         title = build.Page(copy.deepcopy(self.data)).unaccent(self.data['masthead']['title'])
         self.assertNotIn(title, mast.text(), 'the trip\'s title is not repeated where the details start')
+
+    def test_share_and_whatsapp_everywhere(self):
+        # the owner, 9 November 2026: Share replaces #; 🤙🏼 beside it, greyed unless the reader is the owner; "everywhere
+        # including calendar post"
+        wa = find(self.root, 'button', 'wa-btn')
+        self.assertGreater(len(wa), 150)
+        for b in wa:
+            self.assertEqual(b.attrs.get('aria-disabled'), 'true', 'greyed until the family site says the owner is reading')
+            self.assertEqual(b.attrs.get('aria-label'), 'Send on WhatsApp')
+            self.assertEqual(b.text().strip(), '', 'drawn by the style sheet, so headings read the same')
+        for pair in find(self.root, 'span', 'sec-pair'):
+            self.assertEqual(len(find(pair, 'a', 'sec-link') + find(pair, 'a', 'share-alt')), 1)
+            self.assertEqual(len(find(pair, 'button', 'wa-btn')), 1)
+        cal = find(self.root, 'section', id='calendar')[0]
+        timed = [e for e in find(cal, 'article', 'cal-ev') if find(e, 'a', 'cal-add-one') and 'cal-swap' not in e.classes()]
+        self.assertTrue(timed)
+        for e in timed:
+            self.assertEqual(len(find(e, 'span', 'cal-acts')), 1, 'Share and 🤙🏼 on every timed calendar card')
+        for li in find(cal, 'li', 'pt'):
+            self.assertTrue(find(li, 'a', 'share-alt'), 'and on each booking')
+        ids = {n.attrs['id'] for n in self.root.iter() if n.attrs.get('id')}
+        for a in find(self.root, 'a', 'share-alt'):
+            self.assertIn(a.attrs.get('data-share'), ids, 'every Share names a part of the page')
+        near = find(self.root, 'li', 'nh')
+        self.assertTrue(near and all(find(li, 'a', 'share-alt') for li in near), 'and on each Near here place')
+        tiles = find(self.root, 'figure', 'g-tile')
+        self.assertTrue(tiles and all(find(t, 'a', 'share-alt') for t in tiles), 'and on each Gallery picture')
+        self.assertEqual(self.trip['ui']['wa_owner'], "Only the owner's account can send on WhatsApp.")
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_whatsapp_in_a_browser(self):
+        """Inside the family site's frame, 🤙🏼 asks the site to open WhatsApp, only once the site says the owner is reading."""
+        res = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, 'page.html'), 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            for who in ('owner', 'family'):
+                with open(os.path.join(tmp, f'{who}.html'), 'w', encoding='utf-8') as f:
+                    f.write('<!doctype html><script>window.__msgs=[];addEventListener("message",function(e){window.__msgs.push(e.data);'
+                            'if(e.data&&e.data.type==="hj:who"){e.source.postMessage({type:"hj:who",owner:' + ('true' if who == 'owner' else 'false') + '},"*");}});</script>'
+                            '<iframe src="page.html" style="width:1000px;height:800px"></iframe>')
+            script = os.path.join(tmp, 'wa.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(WA_JS)
+            out = subprocess.run([NODE, script, tmp], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        own = [m for m in res['owner']['msgs'] if isinstance(m, dict) and m.get('type') == 'hj:wa-want']
+        self.assertEqual(len(own), 1, 'the owner\'s tap asks the site once')
+        self.assertEqual(own[0]['hash'], 'day-1')
+        self.assertTrue(own[0]['title'])
+        self.assertEqual(res['owner']['disabled'], 'false')
+        self.assertEqual([m for m in res['family']['msgs'] if isinstance(m, dict) and m.get('type') == 'hj:wa-want'], [], 'nothing for anyone else')
+        self.assertEqual(res['family']['disabled'], 'true')
+        self.assertIn("owner's account", res['family']['toast'])
+        self.assertIn('family site', res['alone']['toast'], 'opened on its own, 🤙🏼 says where it works')
+        self.assertEqual(res['errors'], [])
 
     @unittest.skipUnless(BROWSER, 'needs node and Playwright')
     def test_pretrip_counts_in_a_browser(self):

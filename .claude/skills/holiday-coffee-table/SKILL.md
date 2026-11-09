@@ -40,8 +40,21 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
   each section, day and Gallery day, each stop, each Plan B, C and D, each Can't-miss day, the
   opening's three parts and every titled part inside a section. A tap shares the family site's full
   address for that point (or offers Copy link); opened, it lands there, and a swap's link opens it.
+- **Share and 🤙🏼 everywhere** (the owner, 9 November 2026: "Share replaces #"; "every place has the ability
+  to whatsapp for OWNER Account only. emoji is 🤙🏼"; "everyone signed in sees 🤙🏼 but gray off"; "everywhere
+  including calendar post"; "Pick a chat each time"): the # is drawn as Share (three joined dots), with 🤙🏼
+  beside it on every place, plan and part, every timed calendar card, every booking, every Near here place,
+  every Gallery picture and in each place's panel. For the owner's account 🤙🏼 opens WhatsApp's chat picker
+  with the part's name, time, address, map link and page link typed in; nothing is sent until they press
+  Send. For everyone else it is greyed, and a tap says why.
 - **Legend** that lights up places on the page and the map by category (stays, transport, weather,
-  food, drinks, snacks, shopping, fun, sights, worship).
+  food, drinks, snacks, shopping, hair, nails, massage, nature, fun, sights, worship), with **exact emoji, the same on
+  every trip** (the owner, 9 November 2026): 💇 hair, 💅 pedicure and nails, 💆 massage, 🛍️ shopping, 🍽️ food,
+  🌳 nature (Plan B, hiking and nature, carries 🌳). A salon is `hair`, never `shopping`; a park or a walk is
+  `nature`. Hair, nails, massage and nature show in the legend only when the page uses them.
+- **Hair, nails and massage** (a day's `services`), shown like meals with their choices, prices, dated Google
+  ratings, hours on the dates and the places' own Instagram and TikTok posts; never Google Maps photos copied in
+  (they belong to their uploaders): link the place on Google Maps instead.
 - **Days**, one article each: the day's photo band, route line with every place linked, badges,
   Plan A stops with 2 to 4 credited photos each, timeline items pointing at their stops, the four
   info boxes (Getting around, Meals, Style & photo moments, Make it easier), the weather swaps
@@ -66,8 +79,8 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
   own Instagram).
 - **Gallery** (Read / Gallery switch): a mosaic of credited photos and official accounts' posts per
   day, each picture and post once a day, one Facebook link per account a day, posts loaded only on a tap.
-- **# links** beside every section, day and Gallery day: a tap shares a link to that very spot; the
-  date bar follows the day you are reading or looking at.
+- **Share links** (three joined dots) beside every section, day and Gallery day: a tap shares a link to that
+  very spot; the date bar follows the day you are reading or looking at.
 - **Near here, for every area** (the owner, 9 November 2026; they chose "Each area", "Panel + map
   pins" and "a template rule"): the nearest two hospitals (at least one with a full 24-hour emergency
   department), the nearest airport, two police stations, at least two clinics open on the dates, a

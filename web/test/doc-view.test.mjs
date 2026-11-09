@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validMessage, rateLimiter, targetText, LIMITS, MAX_WEATHER_PLACES, MAX_NEAR_PLACES, NEAR_ANSWERS, SHARE_LIMITS, PART_ID, shareUrl, distanceKm, roughKm, nearest } from '../assets/doc-view.mjs';
+import { validMessage, rateLimiter, targetText, LIMITS, MAX_WEATHER_PLACES, MAX_NEAR_PLACES, NEAR_ANSWERS, SHARE_LIMITS, WA_LIMITS, PART_ID, shareUrl, waLink, distanceKm, roughKm, nearest } from '../assets/doc-view.mjs';
 
 test('only known messages with bounded strings are accepted', () => {
   assert.deepEqual(validMessage({ type: 'hj:ready', extra: 1 }), { type: 'hj:ready' });
@@ -97,6 +97,21 @@ test('a trip page may share the document only by its link: no text and no addres
   assert.deepEqual(validMessage({ type: 'hj:share-want', kind: 'doc' }), { type: 'hj:share-want', kind: 'doc', title: '' });
   assert.equal(validMessage({ type: 'hj:share-want', kind: 'doc', title: 't'.repeat(SHARE_LIMITS.title + 1) }), null);
   assert.equal(validMessage({ type: 'hj:shared', ok: true }), null, 'answers only ever go into the frame');
+});
+
+test('🤙🏼: a trip page asks who is reading, and the owner may send a part on WhatsApp (9 November 2026)', () => {
+  assert.deepEqual(validMessage({ type: 'hj:who', owner: true }), { type: 'hj:who' }, 'the page cannot say who is reading');
+  const want = { type: 'hj:wa-want', title: 'Harbour Café', text: 'Day 1 · 10:00\n1 Quay Street', hash: 'd1-harbour' };
+  assert.deepEqual(validMessage({ ...want, url: 'https://evil.example/' }), want, 'no address of its own');
+  assert.deepEqual(validMessage({ ...want, hash: '' }), { type: 'hj:wa-want', title: 'Harbour Café', text: 'Day 1 · 10:00\n1 Quay Street' });
+  for (const bad of [{ title: '' }, { title: '  ' }, { title: 't'.repeat(WA_LIMITS.title + 1) }, { text: 'x'.repeat(WA_LIMITS.text + 1) }, { text: 5 },
+    { hash: 'day 1' }, { hash: '#day-1' }, { hash: 'https://evil.example/' }, { hash: 7 }]) {
+    assert.equal(validMessage({ ...want, ...bad }), null, JSON.stringify(bad).slice(0, 60));
+  }
+  assert.equal(validMessage({ type: 'hj:wa', ok: true }), null, 'answers only ever go into the frame');
+  const url = waLink(want, 'https://hongjia.org/documents/2026-1108_1#d1-harbour');
+  assert.ok(url.startsWith('https://wa.me/?text='), 'no number: WhatsApp asks which chat');
+  assert.equal(decodeURIComponent(url.slice('https://wa.me/?text='.length)), 'Harbour Café\nDay 1 · 10:00\n1 Quay Street\nhttps://hongjia.org/documents/2026-1108_1#d1-harbour');
 });
 
 test('a link to one part of a trip page carries only that part\'s name after the #', () => {

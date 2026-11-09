@@ -3182,6 +3182,9 @@ async fn redactions_are_marked_and_applied_only_by_the_uploader_or_the_owner(poo
     assert!(!page.contains("data-redact-apply") && page.contains(r#"data-can-redact="false""#));
     let page = b.get(&key).await.body;
     assert!(page.contains("data-redact-apply") && page.contains(r#"data-can-redact="true""#));
+    // 🤙🏼 on trip pages is for the owner's account only (9 November 2026): the page says who is reading.
+    assert!(page.contains(r#"data-owner="false""#));
+    assert!(o.get(&key).await.body.contains(r#"data-owner="true""#));
 
     // Applying: nobody else; and only after typing REDACT.
     let csrf = g.csrf().await;

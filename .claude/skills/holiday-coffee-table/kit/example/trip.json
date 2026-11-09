@@ -1819,7 +1819,36 @@
       "website": "https://example.com/example-ridge/shop"
      }
     ]
-   }
+   },
+   "services": [
+    {
+     "kind": "massage",
+     "time": "16:00",
+     "note": "After the forest walk; both take walk-ins on weekdays (fictional).",
+     "choices": [
+      {
+       "name": "Ridge Spa",
+       "cat": "massage",
+       "why": "60-minute massage, about 60 a person; family room for four (fictional).",
+       "hours": "Daily 10am to 8pm (fictional)",
+       "source": "ex_spa",
+       "lat": 0.401,
+       "lng": 0.552,
+       "q": "Ridge Spa"
+      },
+      {
+       "name": "Tall Trees Foot Care",
+       "cat": "massage",
+       "why": "45-minute foot massage, about 30 a person (fictional).",
+       "hours": "Daily noon to 9pm (fictional)",
+       "source": "ex_spa",
+       "lat": 0.398,
+       "lng": 0.548,
+       "q": "Tall Trees Foot Care"
+      }
+     ]
+    }
+   ]
   },
   {
    "when": "Thu 17 Jun",
@@ -5374,8 +5403,8 @@
     "forest-2"
    ],
    "cat": [
-    "sights",
-    "fun"
+    "nature",
+    "sights"
    ],
    "line": "A boardwalk loop through the tallest trees on the ridge.",
    "links": [
@@ -5539,7 +5568,7 @@
     "gardens-2"
    ],
    "cat": [
-    "sights",
+    "nature",
     "food"
    ],
    "line": "Seaside gardens with a glasshouse café.",
@@ -5586,7 +5615,10 @@
    "name": "Lantern Point coast path",
    "place": "coastpath",
    "area": "bay",
-   "cat": "sights",
+   "cat": [
+    "nature",
+    "sights"
+   ],
    "photos": [
     "cliffs-2"
    ],

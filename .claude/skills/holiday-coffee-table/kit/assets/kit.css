@@ -959,14 +959,41 @@ html[data-mode=print] .cal-add{display:none}
 /* ==== # links beside headings (7 November 2026): a tap shares a link to that part of the page.
    The # is drawn here so the heading's own words stay the same for the site's contents list. ==== */
 .sec-link{display:inline-grid;place-items:center;width:34px;height:34px;margin-left:.35em;vertical-align:middle;border-radius:50%;border:1px solid var(--gold-soft);color:var(--gold-ink);font-family:var(--mono);font-size:.82rem;font-weight:500;font-style:normal;letter-spacing:0;text-decoration:none;line-height:1;opacity:.7;transition:opacity .2s,background-color .2s}
-.sec-link::before{content:"#"}
+/* Share (three joined dots) in place of the #, and 🤙🏼 beside it, greyed unless the reader is the owner (9 November 2026) */
+.sec-pair{display:inline-flex;align-items:center;gap:4px;margin-left:.35em;vertical-align:middle;white-space:nowrap}
+.sec-pair .sec-link{margin-left:0}
+.sec-link::before,.share-alt::before{content:"";display:block;width:16px;height:16px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='18' cy='5' r='3'/%3E%3Ccircle cx='6' cy='12' r='3'/%3E%3Ccircle cx='18' cy='19' r='3'/%3E%3Cpath d='M8.6 13.5 15.4 17.5M15.4 6.5 8.6 10.5' stroke='black' stroke-width='2'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='18' cy='5' r='3'/%3E%3Ccircle cx='6' cy='12' r='3'/%3E%3Ccircle cx='18' cy='19' r='3'/%3E%3Cpath d='M8.6 13.5 15.4 17.5M15.4 6.5 8.6 10.5' stroke='black' stroke-width='2'/%3E%3C/svg%3E") center/contain no-repeat}
+.sec-alt .share-alt::before{width:14px;height:14px}
+.share-alt,.wa-btn{display:inline-grid;place-items:center;width:34px;height:34px;padding:0;border-radius:50%;border:1px solid var(--gold-soft);background:transparent;color:var(--gold-ink);text-decoration:none;line-height:1;opacity:.75;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.wa-btn::before{content:"🤙🏼";font-size:15px;line-height:1}
+.wa-btn[aria-disabled=true]{opacity:.38;filter:grayscale(1);cursor:not-allowed}
+.share-alt:hover,.share-alt:focus-visible,.wa-btn:hover,.wa-btn:focus-visible{opacity:1;background:var(--rule2)}
+.wa-btn.wa-text{width:auto;height:auto;min-height:44px;padding:0 16px;border-radius:999px;gap:6px;display:inline-flex;align-items:center;font:600 .9rem/1 var(--sans)}
+.wa-btn.wa-text::before{font-size:1rem}
+.sec-alt .share-alt,.sec-alt .wa-btn{width:28px;height:28px}
+.sec-alt .wa-btn::before{font-size:13px}
+.day-h.has-band .wa-btn{color:#fff;border-color:rgba(255,255,255,.65)}
+.mast-part .wa-btn{border-color:rgba(255,255,255,.55)}
+/* in the Calendar: at the foot of a card tall and wide enough for them */
+.cal-ev,.pt{container-type:inline-size}
+.cal-acts{position:absolute;right:4px;bottom:3px;display:flex}
+.cal-acts .sec-pair{margin:0}
+.cal-tiny .cal-acts{display:none}
+.cal-ev:has(.cal-acts){padding-bottom:30px}
+.cal-tiny:has(.cal-acts){padding-bottom:5px}
+.pt .cal-acts{position:static;margin-top:4px;justify-content:flex-end}
+@container (max-width:104px){.cal-acts{display:none}}
+.nh .sec-pair{margin-left:.25em}
+.g-name .sec-pair{margin-left:.3em}
+@media print{.sec-pair{display:none !important}}
 .sec-link:hover,.sec-link:focus-visible{opacity:1;background:var(--rule2)}
 .day-h.has-band .sec-link{color:#fff;border-color:rgba(255,255,255,.65)}
 .day-h.has-band .sec-link:hover,.day-h.has-band .sec-link:focus-visible{background:rgba(255,255,255,.18)}
 html[data-mode=print] .sec-link{display:none}
 /* a place's, a plan's or a day's # stays beside its name, however the name wraps (the owner, 8 November 2026) */
 .stop-h h4,.swap h5,.cm-when h3,.pc header h3{display:flex;align-items:flex-start;gap:.35em}
-.stop-h h4 > .sec-link,.swap h5 > .sec-link,.cm-when h3 > .sec-link,.pc header h3 > .sec-link{flex:none;margin:0}
+.stop-h h4 > .sec-link,.swap h5 > .sec-link,.cm-when h3 > .sec-link,.pc header h3 > .sec-link,
+.stop-h h4 > .sec-pair,.swap h5 > .sec-pair,.cm-when h3 > .sec-pair,.pc header h3 > .sec-pair{flex:none;margin:0}
 @media print{.sec-link{display:none !important}}
 
 /* ==== Direction A, "River" (the owner, 8 November 2026) ====
