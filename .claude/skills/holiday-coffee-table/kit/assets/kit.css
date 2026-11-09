@@ -504,6 +504,43 @@ html[data-mode=print] .plan-tag,html[data-mode=print] .sugg-tag{background:#fff;
 .timeline>li.lit>.t{color:#fff;background:var(--gold);border-radius:4px;padding:0 4px;align-self:start}
 .mk.lit span{box-shadow:0 0 0 5px rgba(176,141,87,.45);background:var(--gold);color:#fff}
 .nk{background:none;border:0}
+/* Before we go: what to book ahead, first in the Calendar, and its mark on the stop (the owner, 9 November 2026) */
+.cal-pre{background:var(--accent-wash)}
+.cal-pre .cal-dh h3 .mono{color:var(--gold-ink)}
+.pt-list{list-style:none;margin:0;padding:6px;box-sizing:border-box;height:calc(var(--hours) * var(--hour));overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.pt{position:relative;padding:6px 38px 7px 8px;border-radius:10px;background:var(--paper);border:1px solid var(--rule);border-left:3px solid var(--gold)}
+.pt .cal-time{white-space:normal;overflow:visible}
+.pt-what{margin:2px 0 0;font:600 .78rem/1.3 var(--sans);color:var(--ink)}
+.pt-what a{color:inherit}
+.pt-how{margin:3px 0 0;font:400 .72rem/1.35 var(--sans);color:var(--ink2);overflow-wrap:anywhere}
+.pt-left{font-weight:650}
+.pt-soon .pt-left{color:var(--gold-ink)}
+.pt-late{border-left-color:var(--sos)}
+.pt-late .pt-left{color:var(--sos)}
+.pt-today{font:700 .66rem/1.2 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--gold-ink);border-top:2px solid var(--gold);padding:4px 2px 0}
+.pt-mark{margin:6px 0 0}
+.pt-mark a{display:inline-flex;flex-wrap:wrap;gap:0 4px;align-items:baseline;padding:3px 10px;border-radius:999px;border:1px solid var(--gold);background:var(--paper);color:var(--gold-ink);font:600 .8rem/1.4 var(--sans);text-decoration:none}
+.pt-mark.pt-late a{border-color:var(--sos);color:var(--sos)}
+@media print{.pt-list{height:auto;overflow:visible}}
+/* The two parts of a page with an opening screen: Part 1 at a glance on paper, Part 2 the plan in detail on a deep band,
+   never the title again (the owner, 9 November 2026) */
+.op-part,.mast-kick{font:700 .75rem/1.2 var(--sans);letter-spacing:.16em;text-transform:uppercase;margin:0 0 .5em}
+.op-part{color:var(--gold-ink)}
+.mast.mast-part{background:var(--gold-ink);color:#fff;border-top:6px solid var(--gold);border-bottom:0}
+.mast-part .mast-in{padding:34px 16px 24px}
+.mast-part .mast-kick{color:#cfe6e3}
+.mast-part .mast-h{color:#fff;margin:0 0 .3em}
+.mast-part .mast-h::after{content:"";display:block;width:120px;height:8px;margin-top:12px;background:no-repeat left/120px 8px var(--river-light)}
+.mast-part .lede{color:#eef6f4}
+.mast-part .facts{border-color:rgba(255,255,255,.35)}
+.mast-part .facts .mono{color:#b9d3d1}
+.mast-part .facts b,.mast-part .facts .status{color:#fff}
+.mast-part .edition{color:#cfe6e3}
+.mast-part .mode [data-set-mode]{background:transparent;color:#fff;border-color:rgba(255,255,255,.55)}
+.mast-part .mode [aria-pressed=true]{background:#fff;color:var(--gold-ink);border-color:#fff;box-shadow:none}
+.mast-part .btn-ghost{color:#fff;border-color:rgba(255,255,255,.55);background:transparent}
+.mast-part .sec-link{color:#cfe6e3}
+@media print{.mast.mast-part{background:none;color:#000;border-top:2px solid #000}.mast-part .mast-h,.mast-part .lede,.mast-part .facts b{color:#000}}
 .hk{background:none;border:0}
 .hk span{display:grid;place-items:center;width:28px;height:28px;border-radius:6px;background:#fff;border:1.5px solid var(--gold);font-size:15px;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .hk-er span,.hk-hospital span{border-color:#9b2c1f}

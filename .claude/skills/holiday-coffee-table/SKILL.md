@@ -52,6 +52,13 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
   this day.
 - **Map centre:** a map per day with lettered pins and the road legs, relayed through the family site.
 - **Calendar:** one column per day, an Add for each timed item and Add this day (needs `meta.tz` as `UTC±H`).
+- **Before we go** (the owner, 9 November 2026: "if we need to reserve ahead like salon, you need to indicate a
+  pre-trip activity"; a template rule for every trip): everything to book ahead (tables, classes, salons,
+  coaches, tickets, a booking to cancel) is a `pretrip` item with its book-by date, our own date set early enough,
+  with the reason. It is the Calendar's first column, with a reminder to add, and a "Book ahead by …" mark on
+  its stop or meal; the page recounts the days left from today each time it opens.
+- **Two parts** (the owner, 9 November 2026): the opening screen and its glance, stays and Can't-miss are **Part
+  1**; the details start with a deep band, **Part 2 · The plan in detail**, and the trip's title is not repeated.
 - **Taste & Shop:** by area, signature tastes, sweet stops, markets on the family's days, shopping,
   what to bring home, the trading-hours table, and Hungry? / Shop nearby.
 - **Place panels:** every place name opens a panel in the page (photo and credit, what it is,

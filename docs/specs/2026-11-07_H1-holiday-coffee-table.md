@@ -226,3 +226,10 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
     the area, and on the map's own Near here layer (each place once).
   - The kit refuses an essential without a known source or coordinates, an unknown kind, and, once one area has its
     essentials, any area missing one of them.
+- **Before we go and the two parts** (the owner, 9 November 2026):
+  - "If we need to reserve ahead like salon, you need to indicate a pre-trip activity"; they chose a Before we go
+    column in the Calendar and a book-ahead mark on the stop, "monitor the date when loaded ... dynamically
+    adjusted", and a template rule for every trip. Each booking has its book-by date (our own); the page counts the
+    days left from today in the trip's time zone each time it opens, marks late ones, and puts a Today line among them.
+  - "The trip at a glance" and the details "should have distinct web style"; the details should not repeat the
+    trip's title. They chose "Part 2 · The plan in detail" on a deep band, with the opening's body marked Part 1.

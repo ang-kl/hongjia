@@ -146,6 +146,29 @@ const { chromium } = require('playwright');
 """
 
 
+PT_JS = r"""
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch();
+  const res = { errors: [] };
+  for (const [k, iso] of [['before', '2027-05-20T10:00:00Z'], ['during', '2027-06-13T10:00:00Z']]) {
+    const p = await b.newPage({ viewport: { width: 1180, height: 900 } });
+    p.on('pageerror', e => res.errors.push(String(e.message).slice(0, 160)));
+    await p.addInitScript(t => { const real = Date.now; Date.now = () => t; }, new Date(iso).getTime());
+    await p.goto('file://' + process.argv[2]);
+    await p.waitForTimeout(800);
+    res[k] = await p.evaluate(() => {
+      const list = document.querySelector('.pt-list');
+      return { lefts: [...document.querySelectorAll('.pt .pt-left')].map(s => s.textContent), late: document.querySelectorAll('.pt.pt-late').length,
+        today: (document.querySelector('.pt-today') || {}).textContent, todayAt: [...list.children].findIndex(x => x.classList.contains('pt-today')) };
+    });
+    await p.close();
+  }
+  await b.close();
+  console.log(JSON.stringify(res));
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+
 CAL_JS = r'''
 const { chromium } = require('playwright');
 (async () => {
@@ -1322,7 +1345,11 @@ class KitTest(unittest.TestCase):
                 build.build(d)
 
     def test_title_accents(self):
-        self.assertIn('Example Bay &amp; the <em>Lantern</em> Coast', self.html)
+        # With an opening screen the title is not repeated where the details start (the owner, 9 November 2026), so the
+        # masthead's accent shows on a page without one.
+        d = copy.deepcopy(self.data)
+        d.pop('opener', None)
+        self.assertIn('Example Bay &amp; the <em>Lantern</em> Coast', build.build(d))
         self.assertIn('Arrive by the <em>sea</em>', self.html)
         page = build.Page(copy.deepcopy(self.data))
         self.assertEqual(page.accent('**not** an *accent* <b>'), '**not** an <em>accent</em> &lt;b&gt;')
@@ -1581,6 +1608,79 @@ class KitTest(unittest.TestCase):
         self.assertIn('areas.ridge.near', refused(lambda dd: dd['areas']['ridge'].pop('near')))
         self.assertIn('phone number', refused(lambda dd: dd['areas']['bay']['near'][0].update(tel='call us')))
 
+    def test_pretrip_and_the_two_parts(self):
+        # what to book ahead (the owner, 9 November 2026): first in the Calendar, by date, and marked on its stop or meal
+        cal = find(self.root, 'section', id='calendar')[0]
+        cols = find(cal, 'section', 'cal-day')
+        self.assertIn('cal-pre', cols[0].classes(), 'Before we go is the first column')
+        items = find(cols[0], 'li', 'pt')
+        bys = [li.attrs.get('data-by') for li in items]
+        self.assertEqual(len(items), len(self.data['pretrip']))
+        self.assertEqual(bys, sorted(bys), 'in book-by order')
+        for li in items:
+            self.assertEqual(len(find(li, 'a', 'cal-add-one')), 1, 'a reminder to add for each')
+        self.assertIn('name=Before%20we%20go', ''.join(a.attrs.get('href') for a in find(cols[0], 'a', 'cal-add-day')))
+        marks = find(self.root, 'p', 'pt-mark')
+        hrefs = {a.attrs.get('href') for m in marks for a in find(m, 'a')}
+        self.assertEqual(hrefs, {f'#pt-{x["id"]}' for x in self.data['pretrip']}, 'every booking is marked where it happens')
+        card = find(self.root, 'article', id=self.data['pretrip'][0]['cards'][0])[0]
+        self.assertTrue(find(card, 'p', 'pt-mark'), 'on its stop card')
+        trip = self.trip
+        self.assertEqual(trip['ui']['pt_today'], 'Today · {date}')
+        # the rules
+        def refused(change):
+            d = copy.deepcopy(self.data)
+            change(d)
+            with self.assertRaises(build.KitError) as e:
+                build.build(d)
+            return str(e.exception)
+        self.assertIn('before the trip starts', refused(lambda d: d['pretrip'][0].update(by=d['days'][0]['iso'])))
+        self.assertIn('no Plan A stop card', refused(lambda d: d['pretrip'][0].update(cards=['d1-nowhere'])))
+        self.assertIn('no meal choice is named', refused(lambda d: d['pretrip'][1].update(meals=['Nowhere Café'])))
+        self.assertIn('.id must be short', refused(lambda d: d['pretrip'][0].update(id='Sail Trip')))
+        self.assertIn('used twice', refused(lambda d: d['pretrip'][1].update(id=d['pretrip'][0]['id'])))
+        self.assertIn('.what is required', refused(lambda d: d['pretrip'][0].pop('what')))
+        self.assertIn('must be a date', refused(lambda d: d['pretrip'][0].update(by='1 May')))
+        self.assertIn('after its book-by date', refused(lambda d: d['pretrip'][1].update(opens='2027-06-01')))
+        self.assertIn('meta.tz', refused(lambda d: d['meta'].update(tz='Europe/London')))
+        # no bookings: no column, no marks
+        d = copy.deepcopy(self.data)
+        d.pop('pretrip')
+        html = build.build(d)
+        self.assertNotIn('class="cal-day cal-pre"', html)
+        self.assertNotIn('class="pt-mark"', html)
+        # the two parts (the owner, 9 November 2026): the details start with their own band, never the title again
+        mast = find(self.root, 'header', 'mast')[0]
+        self.assertIn('mast-part', mast.classes())
+        self.assertEqual(find(mast, 'h2', 'mast-h')[0].text().strip(), 'The plan in detail')
+        self.assertEqual(find(mast, 'p', 'mast-kick')[0].text().strip(), 'Part 2')
+        self.assertEqual(find(self.root, 'p', 'op-part')[0].text().strip(), 'Part 1')
+        title = build.Page(copy.deepcopy(self.data)).unaccent(self.data['masthead']['title'])
+        self.assertNotIn(title, mast.text(), 'the trip\'s title is not repeated where the details start')
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_pretrip_counts_in_a_browser(self):
+        """Each booking's days left are counted from today in the trip's time zone when the page opens."""
+        with tempfile.TemporaryDirectory() as tmp:
+            page = os.path.join(tmp, 'page.html')
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            script = os.path.join(tmp, 'pt.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(PT_JS)
+            out = subprocess.run([NODE, script, page], capture_output=True, text=True, timeout=180,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        # the sample books by 1 May, 15 May and 29 May 2027; "today" is 20 May 2027 in the trip's time zone (UTC+0)
+        self.assertEqual(res['before']['lefts'], [' · 19 days late: book now', ' · 5 days late: book now', ' · 9 days left'])
+        self.assertEqual(res['before']['late'], 2)
+        self.assertEqual(res['before']['today'], 'Today · Thu 20 May')
+        self.assertEqual(res['before']['todayAt'], 2, 'today sits between the late bookings and the next one')
+        self.assertEqual(res['during']['lefts'], ['', '', ''], 'once the trip starts, no counts')
+        self.assertEqual(res['during']['today'], 'The trip has started')
+        self.assertEqual(res['errors'], [])
+
     def test_wikimedia_thumbnail_address(self):
         d = example()
         pid = next(iter(d['photos']))
@@ -1697,10 +1797,10 @@ class KitTest(unittest.TestCase):
         sec = find(self.root, 'section', id='calendar')
         self.assertEqual(len(sec), 1)
         self.assertTrue(find(self.root, 'a', href='#calendar'), 'the top bar links to the calendar')
-        cols = find(sec[0], 'section', 'cal-day')
+        cols = [c for c in find(sec[0], 'section', 'cal-day') if 'cal-pre' not in c.classes()]
         self.assertEqual(len(cols), len(self.data['days']), 'one column per day')
         timed = [t for d in self.data['days'] for t in d.get('timeline') or [] if build.clock_span(t.get('time'))]
-        adds = [a for a in find(sec[0], 'a', 'cal-add-one') if outside(a, lambda p: 'cal-swap' in (p.attrs.get('class') or '').split())]
+        adds = [a for a in find(sec[0], 'a', 'cal-add-one') if outside(a, lambda p: bool({'cal-swap', 'pt'} & set((p.attrs.get('class') or '').split())))]
         self.assertEqual(len(adds), len(timed), 'an Add for every timed item')
         # The family's swaps with a clock time wait in the Calendar, hidden until chosen (the owner, 8 November 2026).
         sw = find(sec[0], 'article', 'cal-swap')
@@ -1722,7 +1822,7 @@ class KitTest(unittest.TestCase):
             self.assertTrue(a_.attrs['href'].startswith('/calendar.ics?'))
             self.assertEqual(a_.attrs.get('target'), '_blank')
             self.assertTrue(a_.attrs.get('aria-label', '').startswith('Add '))
-        days = find(sec[0], 'a', 'cal-add-day')
+        days = [a_ for a_ in find(sec[0], 'a', 'cal-add-day') if outside(a_, lambda p: 'cal-pre' in (p.attrs.get('class') or '').split())]
         self.assertEqual(len(days), len(cols))
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(days[0].attrs['href']).query)
         n = sum(1 for t in first['timeline'] if build.clock_span(t.get('time')))
@@ -1738,8 +1838,10 @@ class KitTest(unittest.TestCase):
         # No time zone, or no timed item: no calendar.
         d = copy.deepcopy(self.data)
         d['meta'].pop('tz', None)
+        d.pop('pretrip', None)  # bookings are counted in the trip's time zone, so they need it too
         self.assertNotIn('id="calendar"', build.build(d))
         d = copy.deepcopy(self.data)
+        d.pop('pretrip', None)
         for day in d['days']:
             for t in day.get('timeline') or []:
                 t['time'] = 'Morning'

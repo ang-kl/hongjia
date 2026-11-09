@@ -6704,5 +6704,40 @@
     "facts": true
    }
   ]
- }
+ },
+ "pretrip": [
+  {
+   "id": "sail",
+   "what": "Book the harbour sail for Day 1",
+   "by": "2027-05-15",
+   "cards": [
+    "d1-harbour"
+   ],
+   "text": "Four seats on the evening sail; it sells out in early summer (fictional).",
+   "source": "ex_sail"
+  },
+  {
+   "id": "dinner",
+   "what": "Book the tables that take bookings",
+   "by": "2027-05-29",
+   "meals": [
+    "Salt & Lime",
+    "Hearth & Vine"
+   ],
+   "text": "Salt & Lime and Hearth & Vine take bookings 30 days ahead (fictional).",
+   "opens": "2027-05-13",
+   "source": "ex_hours"
+  },
+  {
+   "id": "car",
+   "what": "Book the hire car",
+   "by": "2027-05-01",
+   "cards": [
+    "d4-mill"
+   ],
+   "link": "https://example.org/lantern-coast/car",
+   "text": "One car with room for four cases (fictional).",
+   "source": "ex_car"
+  }
+ ]
 }

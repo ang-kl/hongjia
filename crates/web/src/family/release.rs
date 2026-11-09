@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.09 (2)";
+pub const VERSION: &str = "2026.11.09 (3)";
 
-pub const SYNOPSIS: &str = "This version adds Near here to every area of a trip page: the nearest two hospitals (at least one with a full emergency department), the airport, two police stations, clinics open on the dates, a supermarket, a store open late, a pharmacy, parks, a zoo or aquarium and an attraction, each with its distance, its hours on the dates and its source. They show in the area's panel, in the drawer under each stop, and on the map's own Near here layer, and the template now asks for them on every trip.";
+pub const SYNOPSIS: &str = "This version adds Before we go to trip pages: everything to book ahead, such as a salon, a class or a table, is listed first in the Calendar by the date to book by, with a reminder to add, and marked on its stop or meal; each time the page opens it counts the days left from today and marks any that are late. Trip pages now come in two clear parts: the opening at a glance, then Part 2, the plan in detail, on its own band, without repeating the trip's title.";

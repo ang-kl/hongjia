@@ -443,7 +443,8 @@ function calLayout(){
   var most=$$('.cal-day .cal-track',sc).map(function(tr){ calLanes(tr); return $$('.cal-ev',tr).filter(function(e){ return !e.hidden; }).reduce(function(m,e){ return Math.max(m,calNum(e,'--lanes')); },1); });
   // A day with more than two cards side by side (Plan A beside a split) gets a wider column, so every card stays readable.
   var grid=$('.cal-grid',sc), phone=!!window.matchMedia&&window.matchMedia('(max-width:760px)').matches;
-  if(grid){ grid.style.gridTemplateColumns=most.some(function(n){ return n>2; })?'var(--axis) '+most.map(function(n){
+  var preW=$('.cal-pre',sc)?(phone?'62vw ':'minmax(132px,1fr) '):'';
+  if(grid){ grid.style.gridTemplateColumns=most.some(function(n){ return n>2; })?'var(--axis) '+preW+most.map(function(n){
       return n>2?(phone?'calc(31vw * '+n+')':'minmax('+(120*n)+'px,'+(n/2)+'fr)'):(phone?'62vw':'minmax(132px,1fr)'); }).join(' '):''; }
 }
 calLayout();
@@ -687,6 +688,41 @@ if(cdEl&&OP){
     else if(now<=b){ cdEl.textContent=fill(t('cd_during','Day {d} of {n}'),{d:now-a+1,n:b-a+1}); cdEl.hidden=false; }
   }
 }
+/* ---- Before we go (the owner, 9 November 2026): each booking's days left, counted from today in the trip's time zone
+   every time the page opens or comes back into view; a marker for today moves through the list ---- */
+function ptToday(){
+  var m=/^UTC\s*([+-])\s*([0-9]{1,2})(?::?([0-9]{2}))?$/i.exec(String(D.tz||'').trim());
+  if(!m){ return todayIn(''); }
+  var off=(m[1]==='-'?-1:1)*((+m[2])*60+(+(m[3]||0)));
+  return new Date(Date.now()+off*60000).toISOString().slice(0,10);
+}
+function ptNice(iso){
+  var p=iso.split('-'), d=new Date(Date.UTC(+p[0],(+p[1])-1,+p[2]));
+  var wd=Array.isArray(UI.weekdays)?UI.weekdays:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var mo=Array.isArray(UI.months)?UI.months:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return wd[d.getUTCDay()]+' '+d.getUTCDate()+' '+mo[d.getUTCMonth()];
+}
+function ptRecount(){
+  var spans=$$('.pt-left[data-by]'); if(!spans.length){ return; }
+  var dateRe=/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/, today=ptToday(), now=dayNo(today);
+  var first=(D.days||[]).map(function(d){ return d.iso||''; }).filter(function(s){ return dateRe.test(s); }).sort()[0];
+  var begun=!!first&&now>=dayNo(first);
+  spans.forEach(function(s){
+    var by=s.getAttribute('data-by'); if(!dateRe.test(by)){ return; }
+    var n=dayNo(by)-now, host=s.closest('.pt,.pt-mark');
+    s.textContent=begun?'':' · '+(n>1?fill(t('pt_left','{n} days left'),{n:n}):n===1?t('pt_left1','1 day left'):n===0?t('pt_due','Due today')
+      :n===-1?t('pt_late1','1 day late: book now'):fill(t('pt_late','{n} days late: book now'),{n:-n}));
+    if(host){ host.classList.toggle('pt-late',!begun&&n<0); host.classList.toggle('pt-soon',!begun&&n>=0&&n<=7); }
+  });
+  var list=$('.pt-list'); if(!list){ return; }
+  var old=$('.pt-today',list); if(old){ old.parentNode.removeChild(old); }
+  var li=el('li','pt-today',begun?t('pt_started','The trip has started'):fill(t('pt_today','Today · {date}'),{date:ptNice(today)}));
+  li.setAttribute('aria-current','date');
+  var next=null; $$('.pt',list).some(function(x){ if(dayNo(x.getAttribute('data-by'))>=now){ next=x; return true; } return false; });
+  list.insertBefore(li,next);
+}
+ptRecount();
+document.addEventListener('visibilitychange',function(){ if(!document.hidden){ ptRecount(); } });
 var ltEl=$('#op-time');
 if(ltEl){
   var ltTick=function(){
