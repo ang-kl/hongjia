@@ -61,6 +61,14 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
   day, each picture and post once a day, one Facebook link per account a day, posts loaded only on a tap.
 - **# links** beside every section, day and Gallery day: a tap shares a link to that very spot; the
   date bar follows the day you are reading or looking at.
+- **Near here, for every area** (the owner, 9 November 2026; they chose "Each area", "Panel + map
+  pins" and "a template rule"): the nearest two hospitals (at least one with a full 24-hour emergency
+  department), the nearest airport, two police stations, at least two clinics open on the dates, a
+  supermarket, a store open 24 hours or late (7-Eleven or the local equivalent, which differs by state
+  and city), a pharmacy, one or two parks, one or two zoos, wildlife parks or aquariums (if none is
+  near, the nearest, with its distance) and one or two attractions people built. Each with its
+  distance from the area's anchor, its hours on the dates (holidays checked) and its source; shown in
+  the area's panel, in the drawer under each stop, and on the map's **Near here** layer.
 - **Prose sections:** overview, audience (party or lenses), plans and their rules, concierge per area
   with emergency numbers, holidays and weather, stays (with places of worship near each base),
   transport, backups, checklist, upgrades (per area, never replacing the plan), credits, sources.

@@ -1511,7 +1511,7 @@ class KitTest(unittest.TestCase):
         with self.assertRaises(build.KitError):
             build.Page(copy.deepcopy(self.data)).sec_link('1 bad"id')
 
-    def test_kl_lessons(self):
+    def test_second_trip_lessons(self):
         # a leg with no road route is refused: the map would draw a straight line
         d = example()
         key = next(iter(d['legs']))
@@ -1532,6 +1532,54 @@ class KitTest(unittest.TestCase):
         lk['label'] = 'Book online (the venue\'s own booking page)'
         self.assertIn('link label too long for a phone', [k for k, _ in build.check_html(build.build(d))])
         self.assertNotIn('link label too long for a phone', [k for k, _ in build.check_html(build.build(example()))])
+
+    def test_near_here(self):
+        # the essentials near each area (the owner, 9 November 2026): the panel, the drawer and the map's layer
+        d = example()
+        html = build.build(d)
+        root = build.parse_html(html)
+        order = d['concierge']['order']
+        panels = find(root, 'section', 'near-here')
+        self.assertEqual(len(panels), len(order), 'one Near here list in each area panel')
+        kinds = [li.attrs.get('data-kind') for li in find(panels[0], 'li', 'nh')]
+        self.assertEqual(kinds[0], 'er', 'the emergency department comes first')
+        self.assertLess(kinds.index('police'), kinds.index('supermarket'))
+        self.assertLess(kinds.index('supermarket'), kinds.index('attraction'))
+        self.assertIn('Distances from the Harbour Hotel.', html)
+        self.assertEqual(html.count('<dt>Near here</dt>'), len(d['areas']), 'a short list in each area drawer')
+        self.assertTrue(find(root, 'input', id='mc-near'), 'a Near here layer on the map')
+        trip = json.loads(find(root, 'script', id='trip-data')[0].text())
+        names = [(p['name'], p['lat'], p['lng']) for p in trip['near']]
+        self.assertEqual(len(names), len(set(names)), 'each place pinned once')
+        self.assertEqual({p['kind'] for p in trip['near']} - set(dict(build.NEAR_KINDS)), set())
+        # a place shared by two areas is pinned once
+        d2 = example()
+        twin = dict(d2['areas']['bay']['near'][0])
+        d2['areas']['point']['near'].append(twin)
+        trip2 = json.loads(find(build.parse_html(build.build(d2)), 'script', id='trip-data')[0].text())
+        self.assertEqual(len(trip2['near']), len(trip['near']))
+        # no essentials anywhere: nothing is added
+        d3 = example()
+        for a in d3['areas'].values():
+            a.pop('near', None)
+        html3 = build.build(d3)
+        self.assertNotIn('class="near-here"', html3)
+        self.assertNotIn('id="mc-near"', html3)
+        # the rules: kind, source, coordinates, and every area complete
+        def refused(change):
+            dd = example()
+            change(dd)
+            with self.assertRaises(build.KitError) as e:
+                build.build(dd)
+            return str(e.exception)
+        self.assertIn('kind must be one of', refused(lambda dd: dd['areas']['bay']['near'][0].update(kind='hotel')))
+        self.assertIn('source is required', refused(lambda dd: dd['areas']['bay']['near'][0].pop('source')))
+        self.assertIn('unknown source', refused(lambda dd: dd['areas']['bay']['near'][0].update(source='nowhere')))
+        self.assertIn('lat and lng are required', refused(lambda dd: dd['areas']['bay']['near'][0].pop('lat')))
+        self.assertIn('missing: 1 er', refused(lambda dd: dd['areas']['bay'].update(near=[x for x in dd['areas']['bay']['near'] if x['kind'] != 'er'])))
+        self.assertIn('2 police', refused(lambda dd: dd['areas']['ridge']['near'].remove(next(x for x in dd['areas']['ridge']['near'] if x['kind'] == 'police'))))
+        self.assertIn('areas.ridge.near', refused(lambda dd: dd['areas']['ridge'].pop('near')))
+        self.assertIn('phone number', refused(lambda dd: dd['areas']['bay']['near'][0].update(tel='call us')))
 
     def test_wikimedia_thumbnail_address(self):
         d = example()

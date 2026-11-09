@@ -58,7 +58,7 @@ $$('details[data-cc]').forEach(function(d){
 });
 
 /* ---- map command centre ---- */
-var map=null, routeLayer=null, safetyLayer=null, nearbyLayer=null, markers=[], trail=null, dayIdx=0, flying=false, flyTimer=null, flight=0;
+var map=null, routeLayer=null, safetyLayer=null, nearbyLayer=null, nearLayer=null, markers=[], trail=null, dayIdx=0, flying=false, flyTimer=null, flight=0;
 var CATS=D.cats||{}, activeCat='';
 function hasCat(list,c){ return !!c&&Array.isArray(list)&&list.indexOf(c)>=0; }
 var daySel=$('#mc-day'), stopSel=$('#mc-stop'), legSel=$('#mc-leg'), stopList=$('#mc-stops'), flyBtn=$('#fly');
@@ -180,6 +180,18 @@ function drawNearby(){
   });
 }
 if(nearbyBox){nearbyBox.addEventListener('change',drawNearby);}
+/* the essentials near each area (the owner, 9 November 2026): hospitals, police, clinics, shops, parks and more */
+var nearBox=$('#mc-near');
+function drawNear(){
+  if(!map||!nearLayer){return;}
+  nearLayer.clearLayers();
+  if(!nearBox||!nearBox.checked){return;}
+  (D.near||[]).forEach(function(p){
+    var m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:'hk hk-'+p.kind,html:el('span',null,p.icon),iconSize:[28,28],iconAnchor:[14,14],popupAnchor:[0,-14]}),title:p.name,keyboard:true});
+    m.bindPopup(popupNode(p.name,p.label+(p.distance?' · '+p.distance:'')+(p.area?' · '+p.area:''))); m.addTo(nearLayer);
+  });
+}
+if(nearBox){nearBox.addEventListener('change',drawNear);}
 function paintPins(){ var d=D.days[dayIdx]; markers.forEach(function(m,j){ var s=d&&d.stops[j], e=m.getElement&&m.getElement(); if(e&&s){ e.classList.toggle('lit',hasCat(s.cats,activeCat)); } }); }
 
 /* tabs */
@@ -230,9 +242,9 @@ function initMap(){
     L.tileLayer(carto?T.url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:carto?20:19,referrerPolicy:'strict-origin-when-cross-origin',
       attribution:carto?osmCredit+' &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>':osmCredit}).addTo(map);
   }
-  routeLayer=L.layerGroup().addTo(map); safetyLayer=L.layerGroup().addTo(map); nearbyLayer=L.layerGroup().addTo(map);
+  routeLayer=L.layerGroup().addTo(map); safetyLayer=L.layerGroup().addTo(map); nearbyLayer=L.layerGroup().addTo(map); nearLayer=L.layerGroup().addTo(map);
   map.on('focus',function(){map.scrollWheelZoom.enable();}); map.on('blur',function(){map.scrollWheelZoom.disable();});
-  selectDay(0);
+  selectDay(0); drawNear();
   window.addEventListener('resize',function(){ map.invalidateSize(); });
 }
 /* Tile relay protocol. Only inside a frame, once: parent.postMessage({type:'hj:tiles-want'},'*').
