@@ -5755,7 +5755,166 @@
       }
      ]
     }
-   ]
+   ],
+   "near": [
+    {
+     "kind": "er",
+     "name": "Example Bay Hospital",
+     "lat": 0.042,
+     "lng": 0.077,
+     "q": "Example Bay Hospital",
+     "distance": "About 2 min drive (1.2 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "24 hours",
+     "why": "24-hour emergency department (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "hospital",
+     "name": "Example Bay Community Hospital",
+     "lat": 0.046,
+     "lng": 0.077,
+     "q": "Example Bay Community Hospital",
+     "distance": "About 4 min drive (1.9 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "8am to 8pm",
+     "why": "No emergency department; day clinics (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "police",
+     "name": "Example Bay Police Station",
+     "lat": 0.05,
+     "lng": 0.077,
+     "q": "Example Bay Police Station",
+     "distance": "About 5 min drive (2.6 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "24 hours",
+     "why": "Counter open 24 hours (fictional)",
+     "source": "ex_police"
+    },
+    {
+     "kind": "police",
+     "name": "Example Bay Police Post",
+     "lat": 0.054,
+     "lng": 0.077,
+     "q": "Example Bay Police Post",
+     "distance": "About 7 min drive (3.3 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "9am to 5pm, weekdays",
+     "why": "Counter hours (fictional)",
+     "source": "ex_police"
+    },
+    {
+     "kind": "clinic",
+     "name": "Example Bay Walk-in Clinic",
+     "lat": 0.042,
+     "lng": 0.082,
+     "q": "Example Bay Walk-in Clinic",
+     "distance": "About 8 min drive (4.0 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "8am to 10pm daily",
+     "why": "Walk-in GP (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "clinic",
+     "name": "Example Bay Family Clinic",
+     "lat": 0.046,
+     "lng": 0.082,
+     "q": "Example Bay Family Clinic",
+     "distance": "About 9 min drive (4.7 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "9am to 6pm, closed Sundays",
+     "why": "GP by appointment (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "pharmacy",
+     "name": "Example Bay Pharmacy",
+     "lat": 0.05,
+     "lng": 0.082,
+     "q": "Example Bay Pharmacy",
+     "distance": "About 11 min drive (5.4 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "8am to 9pm daily",
+     "why": "Pharmacist on duty (fictional)",
+     "source": "ex_hours"
+    },
+    {
+     "kind": "airport",
+     "name": "Example Bay Regional Airport",
+     "lat": 0.054,
+     "lng": 0.082,
+     "q": "Example Bay Regional Airport",
+     "distance": "About 12 min drive (6.1 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "First flight 6am",
+     "why": "Scheduled flights (fictional)",
+     "source": "ex_transport"
+    },
+    {
+     "kind": "supermarket",
+     "name": "Example Bay Supermarket",
+     "lat": 0.042,
+     "lng": 0.087,
+     "q": "Example Bay Supermarket",
+     "distance": "About 14 min drive (6.8 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "7am to 10pm daily",
+     "why": "Fresh food and groceries (fictional)",
+     "source": "ex_hours"
+    },
+    {
+     "kind": "convenience",
+     "name": "Example Bay Corner Store",
+     "lat": 0.046,
+     "lng": 0.087,
+     "q": "Example Bay Corner Store",
+     "distance": "About 15 min drive (7.5 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "24 hours",
+     "why": "Open 24 hours (fictional)",
+     "source": "ex_hours"
+    },
+    {
+     "kind": "park",
+     "name": "Example Bay Foreshore Park",
+     "lat": 0.05,
+     "lng": 0.087,
+     "q": "Example Bay Foreshore Park",
+     "distance": "About 16 min drive (8.2 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "Always open",
+     "why": "Shaded lawns and a playground (fictional)",
+     "source": "ex_tourism"
+    },
+    {
+     "kind": "zoo",
+     "name": "Example Bay Wildlife Park",
+     "lat": 0.054,
+     "lng": 0.087,
+     "q": "Example Bay Wildlife Park",
+     "distance": "About 18 min drive (8.9 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "9am to 5pm daily",
+     "why": "Native animals (fictional)",
+     "source": "ex_tourism"
+    },
+    {
+     "kind": "attraction",
+     "name": "Example Bay Clock Tower",
+     "lat": 0.042,
+     "lng": 0.092,
+     "q": "Example Bay Clock Tower",
+     "distance": "About 19 min drive (9.6 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "10am to 4pm daily",
+     "why": "A lookout tower (fictional)",
+     "source": "ex_tourism"
+    }
+   ],
+   "near_from": "the Harbour Hotel"
   },
   "point": {
    "name": "Lantern Point",
@@ -5849,7 +6008,166 @@
       }
      ]
     }
-   ]
+   ],
+   "near": [
+    {
+     "kind": "er",
+     "name": "Lantern Point Hospital",
+     "lat": 0.109,
+     "lng": 0.287,
+     "q": "Lantern Point Hospital",
+     "distance": "About 2 min drive (1.2 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "24 hours",
+     "why": "24-hour emergency department (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "hospital",
+     "name": "Lantern Point Community Hospital",
+     "lat": 0.113,
+     "lng": 0.287,
+     "q": "Lantern Point Community Hospital",
+     "distance": "About 4 min drive (1.9 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "8am to 8pm",
+     "why": "No emergency department; day clinics (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "police",
+     "name": "Lantern Point Police Station",
+     "lat": 0.117,
+     "lng": 0.287,
+     "q": "Lantern Point Police Station",
+     "distance": "About 5 min drive (2.6 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "24 hours",
+     "why": "Counter open 24 hours (fictional)",
+     "source": "ex_police"
+    },
+    {
+     "kind": "police",
+     "name": "Lantern Point Police Post",
+     "lat": 0.121,
+     "lng": 0.287,
+     "q": "Lantern Point Police Post",
+     "distance": "About 7 min drive (3.3 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "9am to 5pm, weekdays",
+     "why": "Counter hours (fictional)",
+     "source": "ex_police"
+    },
+    {
+     "kind": "clinic",
+     "name": "Lantern Point Walk-in Clinic",
+     "lat": 0.109,
+     "lng": 0.292,
+     "q": "Lantern Point Walk-in Clinic",
+     "distance": "About 8 min drive (4.0 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "8am to 10pm daily",
+     "why": "Walk-in GP (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "clinic",
+     "name": "Lantern Point Family Clinic",
+     "lat": 0.113,
+     "lng": 0.292,
+     "q": "Lantern Point Family Clinic",
+     "distance": "About 9 min drive (4.7 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "9am to 6pm, closed Sundays",
+     "why": "GP by appointment (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "pharmacy",
+     "name": "Lantern Point Pharmacy",
+     "lat": 0.117,
+     "lng": 0.292,
+     "q": "Lantern Point Pharmacy",
+     "distance": "About 11 min drive (5.4 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "8am to 9pm daily",
+     "why": "Pharmacist on duty (fictional)",
+     "source": "ex_hours"
+    },
+    {
+     "kind": "airport",
+     "name": "Lantern Point Regional Airport",
+     "lat": 0.121,
+     "lng": 0.292,
+     "q": "Lantern Point Regional Airport",
+     "distance": "About 12 min drive (6.1 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "First flight 6am",
+     "why": "Scheduled flights (fictional)",
+     "source": "ex_transport"
+    },
+    {
+     "kind": "supermarket",
+     "name": "Lantern Point Supermarket",
+     "lat": 0.109,
+     "lng": 0.297,
+     "q": "Lantern Point Supermarket",
+     "distance": "About 14 min drive (6.8 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "7am to 10pm daily",
+     "why": "Fresh food and groceries (fictional)",
+     "source": "ex_hours"
+    },
+    {
+     "kind": "convenience",
+     "name": "Lantern Point Corner Store",
+     "lat": 0.113,
+     "lng": 0.297,
+     "q": "Lantern Point Corner Store",
+     "distance": "About 15 min drive (7.5 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "24 hours",
+     "why": "Open 24 hours (fictional)",
+     "source": "ex_hours"
+    },
+    {
+     "kind": "park",
+     "name": "Lantern Point Foreshore Park",
+     "lat": 0.117,
+     "lng": 0.297,
+     "q": "Lantern Point Foreshore Park",
+     "distance": "About 16 min drive (8.2 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "Always open",
+     "why": "Shaded lawns and a playground (fictional)",
+     "source": "ex_tourism"
+    },
+    {
+     "kind": "zoo",
+     "name": "Lantern Point Wildlife Park",
+     "lat": 0.121,
+     "lng": 0.297,
+     "q": "Lantern Point Wildlife Park",
+     "distance": "About 18 min drive (8.9 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "9am to 5pm daily",
+     "why": "Native animals (fictional)",
+     "source": "ex_tourism"
+    },
+    {
+     "kind": "attraction",
+     "name": "Lantern Point Clock Tower",
+     "lat": 0.109,
+     "lng": 0.302,
+     "q": "Lantern Point Clock Tower",
+     "distance": "About 19 min drive (9.6 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "10am to 4pm daily",
+     "why": "A lookout tower (fictional)",
+     "source": "ex_tourism"
+    }
+   ],
+   "near_from": "the Lantern Point cliffs"
   },
   "ridge": {
    "name": "Example Ridge (second base)",
@@ -5884,7 +6202,166 @@
       }
      ]
     }
-   ]
+   ],
+   "near": [
+    {
+     "kind": "er",
+     "name": "Example Ridge Hospital",
+     "lat": 0.394,
+     "lng": 0.545,
+     "q": "Example Ridge Hospital",
+     "distance": "About 2 min drive (1.2 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "24 hours",
+     "why": "24-hour emergency department (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "hospital",
+     "name": "Example Ridge Community Hospital",
+     "lat": 0.398,
+     "lng": 0.545,
+     "q": "Example Ridge Community Hospital",
+     "distance": "About 4 min drive (1.9 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "8am to 8pm",
+     "why": "No emergency department; day clinics (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "police",
+     "name": "Example Ridge Police Station",
+     "lat": 0.402,
+     "lng": 0.545,
+     "q": "Example Ridge Police Station",
+     "distance": "About 5 min drive (2.6 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "24 hours",
+     "why": "Counter open 24 hours (fictional)",
+     "source": "ex_police"
+    },
+    {
+     "kind": "police",
+     "name": "Example Ridge Police Post",
+     "lat": 0.406,
+     "lng": 0.545,
+     "q": "Example Ridge Police Post",
+     "distance": "About 7 min drive (3.3 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "9am to 5pm, weekdays",
+     "why": "Counter hours (fictional)",
+     "source": "ex_police"
+    },
+    {
+     "kind": "clinic",
+     "name": "Example Ridge Walk-in Clinic",
+     "lat": 0.394,
+     "lng": 0.55,
+     "q": "Example Ridge Walk-in Clinic",
+     "distance": "About 8 min drive (4.0 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "8am to 10pm daily",
+     "why": "Walk-in GP (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "clinic",
+     "name": "Example Ridge Family Clinic",
+     "lat": 0.398,
+     "lng": 0.55,
+     "q": "Example Ridge Family Clinic",
+     "distance": "About 9 min drive (4.7 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "9am to 6pm, closed Sundays",
+     "why": "GP by appointment (fictional)",
+     "source": "ex_health"
+    },
+    {
+     "kind": "pharmacy",
+     "name": "Example Ridge Pharmacy",
+     "lat": 0.402,
+     "lng": 0.55,
+     "q": "Example Ridge Pharmacy",
+     "distance": "About 11 min drive (5.4 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "8am to 9pm daily",
+     "why": "Pharmacist on duty (fictional)",
+     "source": "ex_hours"
+    },
+    {
+     "kind": "airport",
+     "name": "Example Ridge Regional Airport",
+     "lat": 0.406,
+     "lng": 0.55,
+     "q": "Example Ridge Regional Airport",
+     "distance": "About 12 min drive (6.1 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "First flight 6am",
+     "why": "Scheduled flights (fictional)",
+     "source": "ex_transport"
+    },
+    {
+     "kind": "supermarket",
+     "name": "Example Ridge Supermarket",
+     "lat": 0.394,
+     "lng": 0.555,
+     "q": "Example Ridge Supermarket",
+     "distance": "About 14 min drive (6.8 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "7am to 10pm daily",
+     "why": "Fresh food and groceries (fictional)",
+     "source": "ex_hours"
+    },
+    {
+     "kind": "convenience",
+     "name": "Example Ridge Corner Store",
+     "lat": 0.398,
+     "lng": 0.555,
+     "q": "Example Ridge Corner Store",
+     "distance": "About 15 min drive (7.5 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "24 hours",
+     "why": "Open 24 hours (fictional)",
+     "source": "ex_hours"
+    },
+    {
+     "kind": "park",
+     "name": "Example Ridge Foreshore Park",
+     "lat": 0.402,
+     "lng": 0.555,
+     "q": "Example Ridge Foreshore Park",
+     "distance": "About 16 min drive (8.2 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "Always open",
+     "why": "Shaded lawns and a playground (fictional)",
+     "source": "ex_tourism"
+    },
+    {
+     "kind": "zoo",
+     "name": "Example Ridge Wildlife Park",
+     "lat": 0.406,
+     "lng": 0.555,
+     "q": "Example Ridge Wildlife Park",
+     "distance": "About 18 min drive (8.9 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "9am to 5pm daily",
+     "why": "Native animals (fictional)",
+     "source": "ex_tourism"
+    },
+    {
+     "kind": "attraction",
+     "name": "Example Ridge Clock Tower",
+     "lat": 0.394,
+     "lng": 0.56,
+     "q": "Example Ridge Clock Tower",
+     "distance": "About 19 min drive (9.6 km)",
+     "distance_note": "Fictional distance for the sample",
+     "hours": "10am to 4pm daily",
+     "why": "A lookout tower (fictional)",
+     "source": "ex_tourism"
+    }
+   ],
+   "near_from": "Ridge Lodge"
   }
  },
  "worship": [

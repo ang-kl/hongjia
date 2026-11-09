@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.09 (1)";
+pub const VERSION: &str = "2026.11.09 (2)";
 
-pub const SYNOPSIS: &str = "This version carries the lessons of the latest trip page into the trip template: a trip's data pin is placed where it covers nothing on that page, at phone, iPad and wide sizes; long photo credits and link labels no longer make a page wider than a phone; every map leg must follow the roads; and the instructions cover trips by rideshare only, ratings shown only when the owner asks, and researching a trip in parts.";
+pub const SYNOPSIS: &str = "This version adds Near here to every area of a trip page: the nearest two hospitals (at least one with a full emergency department), the airport, two police stations, clinics open on the dates, a supermarket, a store open late, a pharmacy, parks, a zoo or aquarium and an attraction, each with its distance, its hours on the dates and its source. They show in the area's panel, in the drawer under each stop, and on the map's own Near here layer, and the template now asks for them on every trip.";

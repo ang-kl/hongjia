@@ -300,6 +300,25 @@ Both take `kicker`, `title`, `intro` and `notes` (*rich* paragraphs).
   `{text}`, `{label, short_label, text}` or `{label, list: [...]}` (all text *rich*). Every item is
   treated as a fact: one that states hours, prices, phone numbers, percentages or distances needs a
   `[[src:…]]` tag.
+- `areas[id].near`: **the essentials near the area** (the owner, 9 November 2026), a list of
+  `{kind, name, lat, lng, source, q, address, distance, distance_note, hours, why, tel, website}`.
+  `kind` is one of `er` (a hospital with a full 24-hour emergency department, from its own site or
+  the health department), `hospital` (a second hospital; say in `why` whether it has an emergency
+  department), `police`, `clinic`, `pharmacy`, `airport` (the nearest with scheduled flights),
+  `supermarket`, `convenience` (open 24 hours or late), `park`, `zoo` (a zoo, wildlife park,
+  nature habitat or aquarium) and `attraction` (something built: a landmark, tower, museum, theme
+  or water park, jetty). `source` (a `sources` key) and `lat`/`lng` are required; `hours` are the
+  hours on the trip's dates (a holiday's hours, or "Confirm before we go for <date>"); `distance`
+  is from the area's anchor, e.g. "About 6 min drive (2.1 km)", with the method in
+  `distance_note`. Once any area has `near`, every area needs at least: 1 `er`, 2 hospitals in all
+  (`er` and `hospital`), 1 `airport`, 2 `police`, 2 `clinic`, 1 `pharmacy`, 1 `supermarket`, 1
+  `convenience`, 1 `park`, 1 `zoo` and 1 `attraction`. Several areas may list the same place, each
+  with its own distance; the map pins it once.
+- `areas[id].near_from`: the anchor the distances are measured from (a stay or the area's main stop),
+  shown as "Distances from …".
+- The essentials show in the area's full panel (emergency first, each with its distance, hours,
+  phone, website and source), as one short line each in the drawer under every stop in the area, and
+  on the map's own **Near here** layer.
 - `concierge`: `kicker`, `title`, `intro`, `notes` (*rich*), `order` (area ids).
 - `emergency`: `{tel, label, main}`; `main: true` is the red button.
 

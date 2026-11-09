@@ -504,6 +504,18 @@ html[data-mode=print] .plan-tag,html[data-mode=print] .sugg-tag{background:#fff;
 .timeline>li.lit>.t{color:#fff;background:var(--gold);border-radius:4px;padding:0 4px;align-self:start}
 .mk.lit span{box-shadow:0 0 0 5px rgba(176,141,87,.45);background:var(--gold);color:#fff}
 .nk{background:none;border:0}
+.hk{background:none;border:0}
+.hk span{display:grid;place-items:center;width:28px;height:28px;border-radius:6px;background:#fff;border:1.5px solid var(--gold);font-size:15px;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.hk-er span,.hk-hospital span{border-color:#9b2c1f}
+.hk-police span{border-color:#1f4e8c}
+/* Near here: the essentials near each area, in its full panel (the owner, 9 November 2026) */
+.near-here{margin-top:14px;border-top:1px solid var(--rule);padding-top:10px}
+.near-here h4{margin:0 0 .3em}
+.nh-list{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:8px 18px}
+.nh{display:flex;gap:8px;align-items:flex-start;font-size:.95rem;overflow-wrap:anywhere}
+.nh-i{flex:none;width:24px;text-align:center}
+.nh-l{font-weight:650}
+.nh[data-kind="er"] .nh-l{color:#9b2c1f}
 .nk span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#fff;border:1.5px solid var(--gold-soft);font-size:15px;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .nk.lit span{border:2px solid var(--gold);box-shadow:0 0 0 5px rgba(176,141,87,.4)}
 /* schedule items: photos and official links without opening anything */

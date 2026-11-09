@@ -21,6 +21,16 @@ a fact needs a source on the page.
         brand or chain accounts; no age-restricted accounts.
   - [ ] One photo spot per place, only where an official source names one.
   - [ ] Places of worship near each base, with service times.
+- **Near here, for every area**
+  - [ ] Two hospitals, at least one with a full 24-hour emergency department (from its own site or
+        the health department), and the nearest airport with scheduled flights.
+  - [ ] Two police stations (24-hour counter only from an official source) and at least two clinics
+        with their hours on the dates, holidays especially.
+  - [ ] A supermarket, a store open 24 hours or late (the local chain for that state or city) and a
+        pharmacy, with their hours on the dates.
+  - [ ] One or two parks, one or two zoos, wildlife parks or aquariums (or the nearest, with its
+        distance), and one or two attractions people built.
+  - [ ] Each with its distance from the area's anchor and how it was worked out.
 - **Days**
   - [ ] Plan B (rain) and Plan C (heat, wind, storm) for every day, each naming what it replaces.
   - [ ] Clock times on the timeline, so the Calendar can offer Add for each item.

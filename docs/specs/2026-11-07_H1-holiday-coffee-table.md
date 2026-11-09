@@ -215,3 +215,14 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
   - Every map leg needs its road route (`path`); the kit refuses a leg without one.
   - The instructions add rideshare-only trips (each group books its own ride, with an estimated fare), a rating
     only where the owner asks for one (dated, with its count), and research in parts with one assembly script.
+- **Near here, for every area** (the owner, 9 November 2026; they chose "Each area", "Panel + map pins", "a template
+  rule" and "merge when green"):
+  - Each area lists its essentials: two hospitals (at least one with a full 24-hour emergency department), the nearest
+    airport, two police stations, at least two clinics open on the dates, a supermarket, a store open 24 hours or late
+    (the local chain for that state or city), a pharmacy, one or two parks, one or two zoos, wildlife parks or aquariums,
+    and one or two attractions people built; each with its distance from the area's anchor, its hours on the dates and
+    its source.
+  - They show in the area's full panel (emergency first), as one short line each in the drawer under every stop in
+    the area, and on the map's own Near here layer (each place once).
+  - The kit refuses an essential without a known source or coordinates, an unknown kind, and, once one area has its
+    essentials, any area missing one of them.

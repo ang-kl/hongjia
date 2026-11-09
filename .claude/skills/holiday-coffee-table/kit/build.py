@@ -44,6 +44,11 @@ OPS = ('>=', '>', '<=', '<', 'in')
 PLANS = ('a', 'b', 'c')
 # The family's swaps at a stop (the owner, 8 November 2026): B hiking and nature, C shopping, D early or late.
 SWAPS = ('b', 'c', 'd')
+# The essentials near each area (the owner, 9 November 2026), in the order the panel lists them.
+NEAR_KINDS = (('er', '🏥'), ('hospital', '🏥'), ('police', '🚓'), ('clinic', '🩺'), ('pharmacy', '💊'), ('airport', '✈️'),
+              ('supermarket', '🛒'), ('convenience', '🏪'), ('park', '🌳'), ('zoo', '🦒'), ('attraction', '🏛️'))
+NEAR_ICON = dict(NEAR_KINDS)
+NEAR_MIN = {'police': 2, 'clinic': 2, 'pharmacy': 1, 'airport': 1, 'supermarket': 1, 'convenience': 1, 'park': 1, 'zoo': 1, 'attraction': 1}
 GRADES = ('easy', 'moderate', 'hard')
 # Map tiles. OpenStreetMap's own tile servers refuse requests without a Referer, and a page in the
 # family site's locked frame (an opaque origin) never sends one. So by default ("site") the page asks
@@ -158,6 +163,10 @@ LABELS.update({
     'call': 'Call', 'hours': 'Hours',
     'op_play': 'Play the trip', 'op_read': 'Start reading', 'op_tldr': 'The trip at a glance', 'op_stays': 'Where we stay',
     'op_highlights': "Can't-miss, day by day",
+    'nh_title': 'Near here', 'nh_pins': 'Near here', 'nh_er': 'Emergency department', 'nh_hospital': 'Hospital',
+    'nh_police': 'Police', 'nh_clinic': 'Clinic', 'nh_pharmacy': 'Pharmacy', 'nh_airport': 'Airport',
+    'nh_supermarket': 'Supermarket', 'nh_convenience': 'Open late', 'nh_park': 'Park', 'nh_zoo': 'Zoo, wildlife or aquarium',
+    'nh_attraction': 'Attraction', 'nh_from': 'Distances from {anchor}.',
     'cm_none': 'Nothing marked for this day.', 'cm_swaps_aria': "Day {n}'s swaps", 'op_alerts': 'Good to know', 'op_globe': 'Globe: the way there, and the bases',
     'op_globe_hint': 'Drag to turn the globe.', 'op_time': 'Local time', 'website': 'Website',
     'cd_to_go': '{n} days to go', 'cd_one': '1 day to go', 'cd_today': 'Today is the day', 'cd_during': 'Day {d} of {n}',
@@ -607,6 +616,7 @@ class Page:
                 if x.get('source') and x['source'] not in self.sources:
                     check_url(x['source'], f'{w}.bring_home[{i}].source')
         self.validate_weather()
+        self.validate_near()
         self.validate_plans()
         self.validate_audience()
         self.validate_opener()
@@ -719,6 +729,95 @@ class Page:
         for k in ('credit_url', 'licence_url'):
             if p.get(k):
                 check_url(p[k], f'{where}.{k}')
+
+    def validate_near(self):
+        """Each area's essentials (the owner, 9 November 2026). Once one area has them, every area must, with at
+        least: two hospitals (one with a full emergency department), the airport, two police stations, two clinics,
+        a pharmacy, a supermarket, a store open late, a park, a zoo or aquarium and an attraction."""
+        if not any(a.get('near') for a in self.areas.values()):
+            return
+        for aid, a in self.areas.items():
+            w = f'areas.{aid}.near'
+            count = {}
+            for i, x in enumerate(a.get('near') or []):
+                wi = f'{w}[{i}]'
+                if x.get('kind') not in NEAR_ICON:
+                    raise KitError(f'{wi}.kind must be one of {", ".join(NEAR_ICON)}')
+                if not x.get('name'):
+                    raise KitError(f'{wi}.name is required')
+                if not all(isinstance(x.get(k), (int, float)) and not isinstance(x.get(k), bool) for k in ('lat', 'lng')) or not (-90 <= x['lat'] <= 90 and -180 <= x['lng'] <= 180):
+                    raise KitError(f'{wi}: lat and lng are required (it goes on the map)')
+                if not x.get('source'):
+                    raise KitError(f'{wi}.source is required: its hours, distance and kind are facts')
+                if x['source'] not in self.sources:
+                    raise KitError(f'{wi}: unknown source {x["source"]!r}')
+                if x.get('website'):
+                    check_url(x['website'], wi + '.website')
+                if x.get('tel') and not re.match(r'^\+?[0-9]{2,16}$', re.sub(r'[\s()-]', '', x['tel'])):
+                    raise KitError(f'{wi}: phone number {x["tel"]!r}')
+                count[x['kind']] = count.get(x['kind'], 0) + 1
+            missing = [f'{n} {k}' for k, n in NEAR_MIN.items() if count.get(k, 0) < n]
+            if count.get('er', 0) < 1:
+                missing.insert(0, '1 er (a hospital with a full emergency department)')
+            if count.get('er', 0) + count.get('hospital', 0) < 2:
+                missing.insert(1, '2 hospitals in all (er and hospital)')
+            if missing:
+                raise KitError(f'{w}: every area needs its essentials; missing: {", ".join(missing)}')
+
+    def near_items(self, aid):
+        order = [k for k, _ in NEAR_KINDS]
+        return sorted(self.areas[aid].get('near') or [], key=lambda x: order.index(x['kind']))
+
+    def near_full(self, aid):
+        """The area's essentials in its full panel: what, where, how far, open when, with the source."""
+        items = self.near_items(aid)
+        if not items:
+            return ''
+        rows = []
+        for x in items:
+            k = x['kind']
+            dist = (f' · <span class="nh-d"' + (f' title="{E(x["distance_note"])}"' if x.get('distance_note') else '') + f'>{E(x["distance"])}</span>') if x.get('distance') else ''
+            extra = []
+            if x.get('why'):
+                extra.append(E(x['why']))
+            if x.get('hours'):
+                extra.append(f'<span aria-hidden="true">{EMOJI["hours"]}</span> {E(x["hours"])}')
+            links = []
+            if x.get('tel'):
+                links.append(f'<a href="tel:{E(re.sub(r"[^0-9+]", "", x["tel"]))}">{E(x["tel"])}</a>')
+            if x.get('website'):
+                links.append(self.ext_link(x['website'], self.L['website']))
+            rows.append(f'<li class="nh" data-kind="{k}" data-fact><span class="nh-i" aria-hidden="true">{NEAR_ICON[k]}</span><div>'
+                        f'<b class="nh-l">{E(self.L["nh_" + k])}</b> {self.ext_link(self.gmaps(x.get("q") or x["name"]), x["name"])}{dist}'
+                        + (f'<br>{" · ".join(extra)}' if extra else '') + (f'<br>{" · ".join(links)}' if links else '')
+                        + f' {self.src_tag(x["source"], where=f"areas.{aid}.near")}</div></li>')
+        anchor = self.areas[aid].get('near_from')
+        return (f'<section class="near-here"><h4>{E(self.L["nh_title"])}</h4>'
+                + (f'<p class="fine">{E(self.fmt("nh_from", anchor=anchor))}</p>' if anchor else '')
+                + f'<ul class="nh-list">{"".join(rows)}</ul></section>')
+
+    def near_compact(self, aid):
+        """The essentials in the drawer under each stop: one short line each, emergency first."""
+        items = self.near_items(aid)
+        if not items:
+            return ''
+        lis = ''.join(f'<li data-fact><span aria-hidden="true">{NEAR_ICON[x["kind"]]}</span> <b>{E(self.L["nh_" + x["kind"]])}:</b> '
+                      f'{self.ext_link(self.gmaps(x.get("q") or x["name"]), x["name"])}' + (f' ({E(x["distance"])})' if x.get('distance') else '')
+                      + f' {self.src_tag(x["source"], where=f"areas.{aid}.near")}</li>' for x in items)
+        return f'<div><dt>{E(self.L["nh_title"])}</dt><dd><ul>{lis}</ul></dd></div>'
+
+    def near_pins(self):
+        """Every area's essentials for the map's own layer, each place once."""
+        pins, seen = [], set()
+        for aid, a in self.areas.items():
+            for x in a.get('near') or []:
+                key = (x['name'], round(x['lat'], 4), round(x['lng'], 4))
+                if key in seen:
+                    continue
+                seen.add(key)
+                pins.append(dict(name=x['name'], kind=x['kind'], icon=NEAR_ICON[x['kind']], label=self.L['nh_' + x['kind']],
+                                 lat=x['lat'], lng=x['lng'], area=a['name'], distance=x.get('distance') or '', q=x.get('q') or x['name']))
+        return pins
 
     def validate_weather(self):
         if not self.weather:
@@ -1722,6 +1821,7 @@ class Page:
         a = self.areas[aid]
         groups = ''.join(f'<div><dt>{E(g.get("short_title") or g["title"])}</dt><dd><ul>{self.area_items(g.get("items") or [], True, f"areas.{aid}")}</ul></dd></div>'
                          for g in a.get('groups') or [])
+        groups += self.near_compact(aid)
         return (f'<div class="cc">{self.emergency()}<dl class="cc-grid">{groups}</dl>'
                 f'<p class="cc-more"><a href="#pc-{E(aid)}">{E(self.fmt("full_panel", name=a["name"]))}</a></p></div>')
 
@@ -1730,7 +1830,7 @@ class Page:
         secs = ''.join(f'<section{" class=" + chr(34) + E(g["tone"]) + chr(34) if g.get("tone") else ""}><h4>{E(g["title"])}</h4><ul>{self.area_items(g.get("items") or [], False, f"areas.{aid}")}</ul></section>'
                        for g in a.get('groups') or [])
         return (f'<article class="pc" id="pc-{E(aid)}"><header><h3>{E(a["name"])}{self.sec_link(f"pc-{aid}", a["name"])}</h3>'
-                + (f'<p class="mono kicker">{E(a["used"])}</p>' if a.get('used') else '') + f'</header><div class="pc-grid">{secs}</div></article>')
+                + (f'<p class="mono kicker">{E(a["used"])}</p>' if a.get('used') else '') + f'</header><div class="pc-grid">{secs}</div>{self.near_full(aid)}</article>')
 
     def area_order(self):
         order = (self.d.get('concierge') or {}).get('order') or list(self.areas)
@@ -2152,6 +2252,7 @@ class Page:
                 + self.near_buttons()
                 + (f'<label class="check"><input type="checkbox" id="mc-safety"> {E(m.get("safety_label") or self.L["safety"])}</label>' if self.d.get('safety') else '')
                 + (f'<label class="check"><input type="checkbox" id="mc-nearby"> {E(self.L["nearby_pins"])}</label>' if self.nearby_pins() else '')
+                + (f'<label class="check"><input type="checkbox" id="mc-near"> {E(self.L["nh_pins"])}</label>' if self.near_pins() else '')
                 + f'</div>' + (self.legend(compact=True) if self.opener_d else '') + f'<div id="leaflet" class="mapbox" role="region" aria-label="{E(self.L["route_map"])}"></div><ol id="mc-stops" class="mc-stops"></ol>'
                 f'<p class="fine">{note("route")}</p></div>'
                 f'<div class="panel" id="panel-pin" role="tabpanel" aria-labelledby="tab-pin" hidden><label class="sr" for="mc-stop">{E(self.L["stop_label"])}</label>'
@@ -2679,6 +2780,7 @@ class Page:
                                    lenses=[dict(key=l['key'], label=l['label'], needs=l.get('needs') or []) for l in self.audience.get('lenses') or []])
         out['cats'] = {k: [icon, self.cat_labels[k]] for k, icon, _ in CATS}
         out['nearby'] = self.nearby_pins()
+        out['near'] = self.near_pins()
         out['panels'] = {k: v for k, v in self.panels.items() if v}
         if self.opener_d:
             o = self.opener_d
