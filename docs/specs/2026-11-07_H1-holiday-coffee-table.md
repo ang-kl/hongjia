@@ -255,3 +255,10 @@ the weather swaps; a swap at every stop; split up and meet; one car goes with th
   cards on iPad"): on a screen wider than a phone, a day with two or more cards side by side gets a column of at
   least 120px a card, so a word such as "Boarding" is no longer cut; on a phone the rule still starts at three, as
   its columns already fit two. The Calendar scrolls sideways a little more inside itself; the page never does.
+- **Play the trip as a photo collage** (the owner, 9 November 2026: "the Play in both trip should have multiple
+  pics on the screen, showing whole screen (desktop) on just map doesn't make sense as a trip preview"; they chose
+  "Photo collage + small map"): each stop fills the screen with up to three of its own pictures, the first large
+  with a slow zoom and up to two beside it (under it on a phone), each with its credit; the route map shrinks to a
+  corner of the large picture and still flies to the stop, without its pop-up or zoom buttons; the small picture
+  in the caption bar goes, as the collage shows it. The sample's drawings are now stored with lighter escaping
+  (the same pictures), which keeps the sample page well under its weight limit.

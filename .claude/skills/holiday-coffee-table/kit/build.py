@@ -2358,9 +2358,9 @@ class Page:
         if not self.opener_d:
             return ''
         return (f'<div class="tour" id="tour" role="dialog" aria-modal="true" aria-labelledby="tour-title" hidden>'
-                f'<div class="tour-stage"><div class="tour-globe">{self.globe_svg("g-sea-2", self.L["tour_way"])}</div><div class="tour-map"></div>'
-                f'<figure class="tour-big"><img alt=""></figure></div>'
-                f'<div class="tour-card"><figure class="tour-ph"><img alt=""><figcaption><span class="credit tour-credit"></span></figcaption></figure>'
+                f'<div class="tour-stage"><div class="tour-globe">{self.globe_svg("g-sea-2", self.L["tour_way"])}</div><div class="tour-col"></div><div class="tour-map"></div>'
+                f'<figure class="tour-big"><img alt="" referrerpolicy="no-referrer"></figure></div>'
+                f'<div class="tour-card"><figure class="tour-ph"><img alt="" referrerpolicy="no-referrer"><figcaption><span class="credit tour-credit"></span></figcaption></figure>'
                 f'<div class="tour-txt"><p class="mono kicker tour-k"></p><h2 class="tour-t" id="tour-title"></h2><p class="tour-l"></p></div>'
                 f'<div class="tour-ctl"><button type="button" class="tour-prev">‹ {E(self.L["tour_prev"])}</button>'
                 f'<button type="button" class="tour-pause">{E(self.L["tour_pause"])}</button>'
