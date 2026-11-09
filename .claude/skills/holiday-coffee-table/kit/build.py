@@ -1307,6 +1307,8 @@ class Page:
                     for x in v:
                         walk(x)
             walk({'stops': self.stops, 'days': self.days})
+            # a service choice with no cat of its own is drawn as its group's kind (Codex review, 9 November 2026)
+            found.update(g.get('kind') for day in self.days for g in day.get('services') or [] if g.get('kind') in SERVICES)
             self._used_cats = found
         return self._used_cats
 
