@@ -1,4 +1,4 @@
-// P1, P2b and D1 to D4 browser check: sign in with the family password, consent, upload a sample document, then
+// P1, P2b and D1 to D4 browser check: sign in with the family password, This device, upload a sample document, then
 // every family page at the owner's seven device-class viewports (light and dark). On the document page
 // the management panel must sit beside the document in landscape and open as a sheet in portrait.
 // Needs a release build and a PostgreSQL database.
@@ -72,21 +72,20 @@ if (shots) await mkdir(shots, { recursive: true });
 const browser = await chromium.launch();
 const failures = [];
 
-// 1. Sign in as the owner with the family password and give consent, at notebook size.
+// 1. Sign in as the owner with the family password and name this device, at notebook size.
 const setup = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 const page = await setup.newPage();
 await page.goto(base + '/');
 await page.check('input[name=profile][value=delta]');
 await page.fill('input[name=passphrase]', FAMILY);
 await page.click('form[action="/signin"] button[type=submit]');
-await page.waitForURL(base + '/consent');
+// Sign-in no longer stops at This device (the owner, 9 November 2026): location stays off until it is turned on
+// under ☰ Settings. No documents yet, so the landing (the latest document) is the documents list.
+await page.waitForURL(base + '/documents');
+await page.goto(base + '/consent');
+if (!(await page.isChecked('input[name=location][value=no]'))) failures.push('This device does not show location off after sign-in');
 await page.fill('input[name=device_label]', 'browser test');
-// Neither answer is chosen in advance: pressing Save first is held back by the browser.
 await page.click('form[action="/consent"] button[type=submit]');
-if (!page.url().endsWith('/consent')) failures.push('This device saved without an answer');
-await page.check('input[name=location][value=no]');
-await page.click('form[action="/consent"] button[type=submit]');
-// No documents yet, so the landing (the latest document) is the documents list.
 await page.waitForURL(base + '/documents');
 await page.goto(base + '/about');
 if (!(await page.textContent('h1')).includes('Hello, delta')) failures.push('About greeting missing');
@@ -110,9 +109,6 @@ async function signIn(context, profile) {
   await p.check(`input[name=profile][value=${profile}]`);
   await p.fill('input[name=passphrase]', FAMILY);
   await p.click('form[action="/signin"] button[type=submit]');
-  await p.waitForURL(base + '/consent');
-  await p.check('input[name=location][value=no]');
-  await p.click('form[action="/consent"] button[type=submit]');
   await p.waitForURL(/\/documents\/\d{4}-\d{4}_\d+$/);
   return p;
 }
@@ -1306,29 +1302,34 @@ for (const scheme of ['light', 'dark']) {
   if (globes !== 1) failures.push(`globe on a slow connection: ${globes} drawn, not 1`);
   await slow.close();
 }
-// While a trip page plays its tour, the 🛰️ globe 📁 buttons fold into 🔭 (the owner, 7 November 2026).
-{
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: state });
+// While a trip page plays its tour, the 🛰️ globe 📁 buttons fold into 🔭 (the owner, 7 November 2026). On a phone,
+// upright or sideways, ☰ and 🔭 step aside until the tour closes, so they cover neither Back nor a quote (10 November 2026).
+for (const [name, viewport] of [['ipad', { width: 1180, height: 820 }], ['phone', { width: 390, height: 844 }], ['phone-sideways', { width: 844, height: 390 }]]) {
+  const ctx = await browser.newContext({ viewport, storageState: state });
   const p = await ctx.newPage();
   await p.goto(base + docPath);
   await p.waitForTimeout(1500);
   const frame = p.frames().find(f => f.url().includes('/raw'));
-  const seen = async () => p.evaluate(() => ({
-    group: getComputedStyle(document.querySelector('[data-fab-group]')).display !== 'none',
-    scope: getComputedStyle(document.querySelector('[data-fab-scope]')).display !== 'none' }));
+  const seen = async () => p.evaluate(() => {
+    const on = sel => getComputedStyle(document.querySelector(sel)).display !== 'none';
+    return { group: on('[data-fab-group]'), scope: on('[data-fab-scope]'), menu: on('[data-menu]') };
+  });
   const before = await seen();
   await frame.evaluate(() => parent.postMessage({ type: 'hj:tour', open: true }, '*'));
   await p.waitForTimeout(300);
   const playing = await seen();
-  await p.click('[data-fab-scope]');
-  const peek = await seen();
+  let peek = null;
+  if (name === 'ipad') { await p.click('[data-fab-scope]'); peek = await seen(); }
   await frame.evaluate(() => parent.postMessage({ type: 'hj:tour', open: false }, '*'));
   await p.waitForTimeout(300);
   const after = await seen();
-  // Folded on every page; the tour keeps them folded (🔭 moves above the tour's buttons); 🔭 unfolds them.
-  const ok = !before.group && before.scope && !playing.group && playing.scope && peek.group && peek.scope && !after.group && after.scope;
-  console.log(`${ok ? 'ok  ' : 'FAIL'} tour folds the buttons into 🔭: ${JSON.stringify({ before, playing, peek, after })}`);
-  if (!ok) failures.push('tour fold of the right-hand buttons');
+  const rested = s => !s.group && s.scope && s.menu;
+  const ok = rested(before) && rested(after) && (name === 'ipad'
+    // Folded on every page; the tour keeps them folded (🔭 moves above the tour's buttons); 🔭 unfolds them.
+    ? !playing.group && playing.scope && playing.menu && peek.group && peek.scope
+    : !playing.group && !playing.scope && !playing.menu);
+  console.log(`${ok ? 'ok  ' : 'FAIL'} tour and the site's buttons (${name}): ${JSON.stringify({ before, playing, peek, after })}`);
+  if (!ok) failures.push(`tour and the site's buttons (${name})`);
   await ctx.close();
 }
 // Direction A (the owner, 8 November 2026): the documents table, the document tabs, and Esc / Back.

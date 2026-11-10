@@ -575,6 +575,12 @@ html.fabs-fold .fab-group:not(.is-open) { right: calc(max(14px, env(safe-area-in
 @media (max-width: 540px) { html.fabs-fold .fab-search:not(.is-docked), html.fabs-fold .fab-contents { right: -46px; } }
 @media (prefers-reduced-motion: reduce) { html.fabs-fold .fab-scope { animation: none !important; } }
 @media (prefers-color-scheme: dark) { html.fabs-fold .fab-scope { background: rgb(20 30 34 / 0.85); } }
+/* Play on a phone: the tour's own buttons and the diners' words fill the foot of the screen, where ☰ sat over
+   Back and 🔭 over the end of a quote. So both step aside while the tour is open and come back when it closes
+   (the owner, 10 November 2026). A phone held sideways counts too; an iPad or a computer keeps them. */
+@media (max-width: 640px), (max-height: 500px) {
+  html.tour-on .menu-fab, html.tour-on .fab-scope, html.tour-on .fab-group { display: none !important; }
+}
 
 /* Annotations and saved fields (P2b C). */
 button.pill {
