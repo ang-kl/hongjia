@@ -292,6 +292,158 @@ def norm_cats(v, where):
     return out
 
 
+# ---------------------------------------------------------------- the islands (10 November 2026)
+# "Change the FAB-Globe codebase to simulation of day's events as islands ... Each island has a day's name
+# (DDD DD MMM) if it is a holiday include it as the name of the island ... be precise in the distance between"
+# (the owner, 9 and 10 November 2026). Each day becomes one island: its places at their true positions on a flat
+# projection centred on that day (one scale per island), its roads from the trip's own legs, and a coast drawn
+# round them. The sea between islands only shows the order of the days. Worked out here, at build time.
+R_KM = 6371.0088  # mean Earth radius
+LABELS.update({
+    'is_kicker': 'island by island', 'is_dek': 'One island for each of the {n} days', 'is_close': 'Close the islands',
+    'is_back': 'Back', 'is_back_aria': 'Back one day', 'is_play': 'Play', 'is_pause': 'Pause', 'is_play_aria': 'Play the islands',
+    'is_pause_aria': 'Pause the islands', 'is_next': 'Next day', 'is_all': 'All islands', 'is_pick': 'Choose a day',
+    'is_of': 'Day {n} of {total}', 'is_km_road': '{km} km by road', 'is_no_drive': 'No driving',
+    'is_open_day': 'Open day {n}, {label}: {title}', 'is_base_moves': 'Base moves: ', 'is_base_today': 'Base moves today: ',
+    'is_base': 'Base: ', 'is_scale': 'scale for this island', 'is_closeup': 'Close-up', 'is_together': '{list} are close together',
+    'is_and': ' and ', 'is_optional': 'Optional: ', 'is_from_letter': '{label} from {letter}',
+    'is_map_aria': 'Map of {label}: {n} places at their true positions; the scale bar shows {scale}.',
+    'is_by_road': 'By road today: {km} km, about {time} of driving (no traffic).', 'is_walks_extra': ' Short walks are extra.',
+    'is_no_drive_today': 'No driving today.', 'is_h_day': 'The day', 'is_h_dist': 'Distances between places',
+    'is_h_places': 'Places on this island', 'is_near': 'Near ', 'is_at': 'At ',
+    'is_n_road': "Road route from the trip's own legs. Straight line: {line}.",
+    'is_n_walk': 'Marked as a short walk in the trip; measured in a straight line.',
+    'is_n_line': 'No road leg in the trip, so this is a straight line.', 'is_opt_from': '{stop}, from {near}',
+    'is_n_opt': 'Not on the route, so no road distance is given.', 'is_approx': 'approximate pin',
+    'is_hint': 'Positions are true to scale within this island; the gaps between islands are not. ',
+    'is_start_day': 'Start of the day', 'is_on_way': 'A stop on the way', 'is_walking': 'Walking to ', 'is_driving': 'Driving to ',
+    'is_on_to': 'On to ', 'is_end_day': 'End of the day', 'is_night_in': 'Night in ', 'is_homeward': 'Homeward bound',
+    'is_overnight': 'Overnight', 'is_sailing': 'Sailing to ', 'is_gaps': 'The gaps between islands are not to scale.',
+    'is_end_trip': 'The end of the trip', 'is_home': 'Home', 'is_again': 'Press Play to watch it again, or open any island.',
+    'is_walk_leg': 'Short walk · {line} straight line', 'is_road_leg': '{km} · {time} drive', 'is_road_only': 'Road route',
+    'is_line_leg': '{line} straight line', 'is_car_note': "The trip's car route for this pair is {km} ({time}).",
+    'is_road_day': '{km} by road, about {time} of driving', 'is_from': 'From {x}', 'is_to': 'To {y}',
+    'is_min': '{m} min', 'is_hrs': '{h} h', 'is_hrs_min': '{h} h {m} min', 'is_how_h': 'How distances are measured',
+    'is_how_1b': 'Road distances and driving times', 'is_how_1': "come from the trip's road legs, the routes drawn on the main map. They assume no traffic and are not live navigation.",
+    'is_how_2b': 'Short walks', 'is_how_2': 'that the trip marks as walks are drawn dotted and measured in a straight line, as on the main map. Any other distance without a road leg is a straight line too, and says so.',
+    'is_how_3b': 'Within each island', 'is_how_3': "every place sits at its true position relative to the others: a flat projection centred on that day, within {err}% of the true distance on this trip, with one scale for the whole island. A city day and a long drive day are drawn at very different scales, so check each island's scale bar.",
+    'is_how_4b': 'The sea between the islands is not to scale.', 'is_how_4': 'The gaps only show the order of the days.',
+    'is_how_5b': 'Pins', 'is_how_5': 'are the trip\'s own map pins. Some are street-level approximations, marked "approximate pin".',
+})
+# The words the islands' script shows; the rest are used here.
+ISLAND_UI = ('day', 'is_back', 'is_back_aria', 'is_play', 'is_pause', 'is_play_aria', 'is_pause_aria', 'is_of', 'is_km_road',
+             'is_no_drive', 'is_open_day', 'is_base_moves', 'is_base_today', 'is_base', 'is_scale', 'is_closeup', 'is_together',
+             'is_and', 'is_optional', 'is_from_letter', 'is_map_aria', 'is_by_road', 'is_walks_extra', 'is_no_drive_today',
+             'is_h_day', 'is_h_dist', 'is_h_places', 'is_near', 'is_at', 'is_n_road', 'is_n_walk', 'is_n_line', 'is_opt_from',
+             'is_n_opt', 'is_approx', 'is_hint', 'is_how_h', 'is_start_day', 'is_on_way', 'is_walking', 'is_driving', 'is_on_to',
+             'is_end_day', 'is_night_in', 'is_homeward', 'is_overnight', 'is_sailing', 'is_gaps', 'is_end_trip', 'is_home', 'is_again')
+
+
+def haversine(lat1, lng1, lat2, lng2):
+    """Great-circle distance in km."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * R_KM * math.asin(math.sqrt(a))
+
+
+def fmt_line(km):
+    """A straight-line distance: metres to the nearest 10 below 1 km, else km to one decimal."""
+    return f'{int(round(km * 100.0)) * 10} m' if km < 1 else f'{km:.1f} km'
+
+
+def convex_hull(points):
+    pts = sorted(set((round(x, 6), round(y, 6)) for x, y in points))
+    if len(pts) <= 2:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def seg_dist(p, a, b):
+    ax, ay = b[0] - a[0], b[1] - a[1]
+    l2 = ax * ax + ay * ay
+    t = 0 if l2 == 0 else max(0, min(1, ((p[0] - a[0]) * ax + (p[1] - a[1]) * ay) / l2))
+    return math.hypot(p[0] - a[0] - t * ax, p[1] - a[1] - t * ay)
+
+
+def dist_to_hull(p, hull):
+    n = len(hull)
+    if n == 1:
+        return math.hypot(p[0] - hull[0][0], p[1] - hull[0][1])
+    if n >= 3:
+        signs = [(hull[(i + 1) % n][0] - hull[i][0]) * (p[1] - hull[i][1]) - (hull[(i + 1) % n][1] - hull[i][1]) * (p[0] - hull[i][0])
+                 for i in range(n)]
+        if all(x >= 0 for x in signs) or all(x <= 0 for x in signs):
+            return 0.0
+    return min(seg_dist(p, hull[i], hull[(i + 1) % n]) for i in range(n))
+
+
+class _Rand:
+    """A small seeded generator (mulberry32), so an island's coast is the same on every build."""
+    def __init__(self, seed):
+        self.a = seed & 0xFFFFFFFF
+
+    def uniform(self, lo, hi):
+        self.a = (self.a + 0x6D2B79F5) & 0xFFFFFFFF
+        t = self.a
+        t = ((t ^ (t >> 15)) * (1 | t)) & 0xFFFFFFFF
+        t = (t + (((t ^ (t >> 7)) * (61 | t)) & 0xFFFFFFFF) ^ t) & 0xFFFFFFFF
+        return lo + (hi - lo) * (((t ^ (t >> 14)) & 0xFFFFFFFF) / 4294967296)
+
+
+def island_outline(points, seed, samples=72):
+    """A smoothed, padded hull round the day's places and roads, with gentle seeded waves. The coast stays at
+    least 0.7 x the padding away from every place and road point, so nothing falls into the sea. Returns
+    (coast, reef) as lists of [x, y] in km (y down)."""
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    w, h = max(xs) - min(xs), max(ys) - min(ys)
+    span = max(w, h, 0.6)
+    cx, cy = (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2
+    extra = []
+    if min(w, h) < 0.5 * span:  # a thin day (one road) still makes a plump island
+        a, b = max(w, h) / 2 * 0.9, 0.22 * span
+        for j in range(16):
+            t = 2 * math.pi * j / 16
+            extra.append((cx + a * math.cos(t), cy + b * math.sin(t)) if w >= h else (cx + b * math.cos(t), cy + a * math.sin(t)))
+    hull = convex_hull(list(points) + extra)
+    pad = 0.15 * span
+    hx, hy = sum(p[0] for p in hull) / len(hull), sum(p[1] for p in hull) / len(hull)
+    rnd = _Rand(seed)
+    coast_terms = [(k, rnd.uniform(0.45, 1.0) / (1 + 0.15 * k), rnd.uniform(0, 2 * math.pi)) for k in (2, 3, 4, 5, 7, 9, 12)]
+    reef_terms = [(k, rnd.uniform(0.4, 1.0), rnd.uniform(0, 2 * math.pi)) for k in (3, 5, 8)]
+
+    def noise(terms, t):
+        return sum(a * math.sin(k * t + ph) for k, a, ph in terms) / sum(a for _, a, _ in terms)
+    coast, reef = [], []
+    for j in range(samples):
+        t = 2 * math.pi * j / samples
+        u = (math.cos(t), math.sin(t))
+        lo, hi = 0.0, 4 * span + 4 * pad
+        for _ in range(48):
+            mid = (lo + hi) / 2
+            if dist_to_hull((hx + mid * u[0], hy + mid * u[1]), hull) <= pad:
+                lo = mid
+            else:
+                hi = mid
+        rc = lo + pad * (0.12 + 0.42 * noise(coast_terms, t))
+        rr = rc + pad * (0.5 + 0.18 * noise(reef_terms, t))
+        coast.append([round(hx + rc * u[0], 3), round(hy + rc * u[1], 3)])
+        reef.append([round(hx + rr * u[0], 3), round(hy + rr * u[1], 3)])
+    return coast, reef
+
+
 _GLOBE = None
 
 
@@ -438,6 +590,7 @@ class Page:
         self.d = data
         self.L = dict(LABELS)
         self.L.update(data.get('labels') or {})
+        self._islands = None  # worked out once, on first use (islands_data)
         self.marks = {k: (v[0], dict(v[1])) for k, v in MARKS.items()}
         for k, over in ((data.get('labels') or {}).get('marks') or {}).items():
             if k in self.marks:
@@ -596,6 +749,10 @@ class Page:
                         raise KitError(f'{ww}.meet: unknown stop {m["stop"]!r}')
             if day.get('iso'):
                 parse_date(day['iso'], f'{w}.iso')
+            if day.get('holiday') is not None:
+                hol = day['holiday']
+                if not isinstance(hol, str) or not hol.strip() or len(hol) > 48 or '[[' in hol or '*' in hol or not day.get('iso'):
+                    raise KitError(f'{w}.holiday: the public holiday\'s name in plain words (48 characters at most), on a day with its "iso" date')
             for j, x in enumerate(day.get('timeline') or []):
                 if x.get('stop') and x['stop'] not in self.stops:
                     raise KitError(f'{w}.timeline[{j}]: unknown stop {x["stop"]!r}')
@@ -3039,6 +3196,203 @@ class Page:
                 f'<p class="toast" role="status" aria-live="polite" hidden></p>')
 
     # ------------------------------------------------------------------ data for the page's script
+    # ------------------------------------------------------------------ the islands (10 November 2026)
+    def isl_text(self, s):
+        """Plain words for the islands: no markup, no dashes, no space left before a full stop."""
+        s = re.sub(r'\s+([.,;:])', r'\1', self.plain(s))
+        s = re.sub(r'(\d)\s*[–—]\s*(\d)', r'\1 to \2', s)
+        s = re.sub(r'\s+[–—]\s+', ', ', s)
+        return s.replace('–', '-').replace('—', '-')
+
+    def isl_runs(self, title):
+        """A title as [words, accent] runs, so the page sets the accent word without markup."""
+        t, runs, at = self.isl_text(title), [], 0
+        for m in re.finditer(r'(?<!\*)\*(?!\*)([^*]+?)\*(?!\*)', t):
+            if m.start() > at:
+                runs.append([t[at:m.start()], 0])
+            runs.append([m.group(1), 1])
+            at = m.end()
+        if at < len(t):
+            runs.append([t[at:], 0])
+        return runs
+
+    def isl_min(self, m):
+        m = int(round(m))
+        if m < 60:
+            return self.fmt('is_min', m=m)
+        hrs, mm = divmod(m, 60)
+        return self.fmt('is_hrs', h=hrs) if mm == 0 else self.fmt('is_hrs_min', h=hrs, m=mm)
+
+    def islands_data(self):
+        """Each day as an island: its name ("Fri 25 Dec", with the holiday), its places at their true positions,
+        its legs with their distances and times, its timeline, and the coast round them. None without dates."""
+        if self._islands is not None:
+            return self._islands or None
+        if not self.days or any(not d.get('iso') for d in self.days):
+            self._islands = {}
+            return None
+        P, LEGS, STOPS = self.places, self.legs, self.stops
+        stay_titles = set()
+        for block in (self.d.get('stays') or {}).get('blocks') or []:
+            for item in (block.get('items') if isinstance(block.get('items'), list) else []):
+                if isinstance(item, dict) and item.get('title'):
+                    stay_titles.add(str(item['title']).strip())
+        stay_places = {pid for pid, p in P.items() if str(p.get('name', '')).strip() in stay_titles}
+        out_days, prev_town, proj_err = [], None, 0.0
+        for di, day in enumerate(self.days):
+            date = parse_date(day['iso'], f'days[{di}].iso')
+            name = f'{WEEKDAYS[date.weekday()]} {date.day:02d} {MONTHS[date.month - 1]}'
+            holiday = (day.get('holiday') or '').strip() or None
+            label = f'{name} · {holiday}' if holiday else name
+            route = day['route']
+            walk = set(day.get('walk') or [])
+            # Plan A stops whose place is not on the route are shown as optional pins.
+            stop_role, optional_ids = {}, []
+            for it in day.get('stops') or []:
+                st = STOPS.get(it['stop']) or {}
+                pid = st.get('place')
+                if pid and pid not in stop_role:
+                    stop_role[pid] = (self.isl_text(it.get('role')), self.isl_text(st.get('name')))
+                if pid and pid not in route and pid not in optional_ids:
+                    optional_ids.append(pid)
+            # A flat (equirectangular) projection centred on the day.
+            geo = [(P[p]['lat'], P[p]['lng']) for p in route + optional_ids]
+            for a, b in zip(route, route[1:]):
+                if f'{a}>{b}' not in walk and f'{a}>{b}' in LEGS:
+                    geo += [tuple(pt) for pt in LEGS[f'{a}>{b}'].get('path') or []]
+            lat0 = (max(g[0] for g in geo) + min(g[0] for g in geo)) / 2
+            lng0 = (max(g[1] for g in geo) + min(g[1] for g in geo)) / 2
+            cos0 = math.cos(math.radians(lat0))
+
+            def pr(lat, lng, lat0=lat0, lng0=lng0, cos0=cos0):
+                return [round(math.radians(lng - lng0) * R_KM * cos0, 4), round(-math.radians(lat - lat0) * R_KM, 4)]  # to 0.1 m
+
+            def pin(pid, optional):
+                role, stop_name = stop_role.get(pid, ('', ''))
+                note = str(P[pid].get('note') or '')
+                return {'id': pid, 'name': self.isl_text(P[pid]['name']), 'xy': pr(P[pid]['lat'], P[pid]['lng']), 'ri': [], 'letters': [],
+                        'role': role, 'stop': stop_name, 'optional': optional, 'approx': note.lower().startswith('approx')}
+            pidx, places = {}, []
+            for ri, pid in enumerate(route):
+                if pid not in pidx:
+                    pidx[pid] = len(places)
+                    places.append(pin(pid, False))
+                places[pidx[pid]]['ri'].append(ri)
+                places[pidx[pid]]['letters'].append(LETTERS[ri])
+            for pid in optional_ids:
+                near = min(route, key=lambda r: haversine(P[pid]['lat'], P[pid]['lng'], P[r]['lat'], P[r]['lng']))
+                dkm = haversine(P[pid]['lat'], P[pid]['lng'], P[near]['lat'], P[near]['lng'])
+                pidx[pid] = len(places)
+                places.append(dict(pin(pid, True), near={'name': self.isl_text(P[near]['name']), 'letter': LETTERS[route.index(near)],
+                                                         'label': self.fmt('is_line_leg', line=fmt_line(dkm)), 'km': round(dkm, 3)}))
+            legs, road_km, road_min = [], 0.0, 0.0
+            for ri, (a, b) in enumerate(zip(route, route[1:])):
+                key = f'{a}>{b}'
+                straight = haversine(P[a]['lat'], P[a]['lng'], P[b]['lat'], P[b]['lng'])
+                g = LEGS.get(key) or {}
+                leg = {'a': ri, 'b': ri + 1, 'from': self.isl_text(P[a]['name']), 'to': self.isl_text(P[b]['name']), 'line_km': round(straight, 4)}
+                ends = [pr(P[a]['lat'], P[a]['lng']), pr(P[b]['lat'], P[b]['lng'])]
+                if key in walk:
+                    leg.update(kind='walk', label=self.fmt('is_walk_leg', line=fmt_line(straight)), path=ends)
+                    if isinstance(g.get('km'), (int, float)) and isinstance(g.get('min'), (int, float)) and g['km'] > 2 * straight + 0.2:
+                        leg['car_note'] = self.fmt('is_car_note', km=f"{g['km']:.1f} km", time=self.isl_min(g['min']))
+                elif g.get('path'):
+                    leg.update(kind='road', path=[pr(lat, lng) for lat, lng in g['path']])
+                    if isinstance(g.get('km'), (int, float)) and isinstance(g.get('min'), (int, float)):
+                        leg.update(km=g['km'], min=g['min'], label=self.fmt('is_road_leg', km=f"{g['km']:.1f} km", time=self.isl_min(g['min'])))
+                        road_km += g['km']
+                        road_min += g['min']
+                    else:
+                        leg['label'] = self.L['is_road_only']
+                else:
+                    leg.update(kind='line', label=self.fmt('is_line_leg', line=fmt_line(straight)), path=ends)
+                legs.append(leg)
+            # The timeline: each item belongs to a stop on the route (by its stop's place); one without a stop
+            # belongs to the start (before the first), the stop before it, or the night's stay (after the last).
+            items, anchored, cursor = [], [], 0
+            for t in day.get('timeline') or []:
+                ri = None
+                pid = (STOPS.get(t.get('stop') or '') or {}).get('place')
+                if pid in route:
+                    ri = ([i for i, r in enumerate(route) if r == pid and i >= cursor] or [i for i, r in enumerate(route) if r == pid])[0]
+                    cursor = ri
+                items.append({'time': self.isl_text(t.get('time')), 'title': self.isl_text(t.get('title')), 'text': self.isl_text(t.get('text')), 'ri': ri})
+                anchored.append(ri)
+            fixed = [i for i, r in enumerate(anchored) if r is not None]
+            for i, it in enumerate(items):
+                if it['ri'] is not None:
+                    continue
+                if not fixed or i < fixed[0]:
+                    it['ri'] = 0
+                elif i > fixed[-1]:
+                    after = [k for k, r in enumerate(route) if r in stay_places and k >= anchored[fixed[-1]]]
+                    it['ri'] = after[-1] if after else anchored[fixed[-1]]
+                else:
+                    it['ri'] = max(r for r in anchored[:i] if r is not None)
+                it['how'] = 'inferred'
+            pts = [tuple(p['xy']) for p in places] + [tuple(q) for lg in legs for q in lg['path']]
+            coast, reef = island_outline(pts, seed=1000 + di)
+            for i in range(len(geo[:len(route) + len(optional_ids)])):
+                for j in range(i + 1, len(route) + len(optional_ids)):
+                    hv = haversine(*geo[i], *geo[j])
+                    if hv > 0.05:
+                        pa, pb = pr(*geo[i]), pr(*geo[j])
+                        proj_err = max(proj_err, abs(math.hypot(pa[0] - pb[0], pa[1] - pb[1]) - hv) / hv)
+            base = self.isl_text(day.get('base'))
+            town = base.split(' · ')[0].strip() if 'night' in base.lower() else None
+            base_change = {'from': prev_town, 'to': town} if (town and prev_town and town != prev_town) else None
+            prev_town = town or prev_town
+            title = self.isl_text(self.unaccent(day['title']))
+            out_days.append({
+                'n': di + 1, 'iso': day['iso'], 'name': name, 'holiday': holiday, 'label': label,
+                'title': title, 'title_parts': self.isl_runs(day['title']), 'sub': self.isl_text(day.get('sub')),
+                'base': base, 'town': town, 'base_change': base_change, 'badge': self.isl_text(day.get('badge')),
+                'route': [pidx[p] for p in route], 'places': places, 'legs': legs, 'items': items,
+                'road_km': round(road_km, 1), 'road_time': self.isl_min(road_min),
+                'road_label': self.fmt('is_road_day', km=f'{road_km:.1f} km', time=self.isl_min(road_min)) if road_km else self.L['is_no_drive'],
+                'weight': len(places) + len(items), 'coast': coast, 'reef': reef,
+                'box': [min(p[0] for p in reef), min(p[1] for p in reef), max(p[0] for p in reef), max(p[1] for p in reef)]})
+        first = self.isl_text(((self.days[0].get('timeline') or [{}])[0]).get('title'))
+        last = self.isl_text(((self.days[-1].get('timeline') or [{}])[-1]).get('title'))
+
+        def short(title, arriving):  # 'Example Air EX1 · Home to Example Bay' -> 'From Home'
+            m = re.search(r'([A-Z][\w ]*?) to ([A-Z][\w ]*)$', title.split(' · ')[-1])
+            return title if not m else (self.fmt('is_from', x=m.group(1)) if arriving else self.fmt('is_to', y=m.group(2)))
+        meta = self.d['meta']
+        self._islands = {'trip': self.isl_text(meta.get('trip') or meta['title']), 'start': first, 'end': last,
+                         'start_short': short(first, True), 'end_short': short(last, False), 'days': out_days,
+                         'err': f'{max(proj_err * 100, 0.1):.1f}', 'ui': {k: self.L[k] for k in ISLAND_UI}}
+        return self._islands
+
+    def islands_html(self):
+        """The islands, opened by the family site's globe button (or #islands): hidden until asked for."""
+        data = self.islands_data()
+        if not data:
+            return ''
+        n = len(data['days'])
+        opts = ''.join(f'<option value="{i}">{E(self.L["day"])} {d["n"]} · {E(d["label"])}</option>' for i, d in enumerate(data['days']))
+        status = self.isl_text(self.d['meta'].get('status'))
+        how = ''.join(f'<li><strong>{E(self.L[f"is_how_{i}b"])}</strong> {E(self.fmt(f"is_how_{i}", err=data["err"]))}</li>' for i in range(1, 6))
+        arrow = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="{}"/></svg>'
+        return ('<div class="islands" id="islands" role="dialog" aria-modal="true" aria-labelledby="isl-title" hidden>'
+                '<header class="isl-top"><div><h2 id="isl-title">'
+                f'{E(data["trip"])}, <em>{E(self.L["is_kicker"])}</em></h2><p class="isl-dek">{E(self.fmt("is_dek", n=n))}'
+                + (f' · {E(status)}' if status else '') + '</p></div></header>'
+                f'<nav class="isl-bar" aria-label="{E(self.L["is_pick"])}">'
+                f'<button type="button" id="isl-back" aria-label="{E(self.L["is_back_aria"])}">{arrow.format("M10.5 2.5 4.5 8l6 5.5z")}{E(self.L["is_back"])}</button>'
+                f'<button type="button" id="isl-play" class="primary"><svg viewBox="0 0 16 16" aria-hidden="true" id="isl-iplay"><path d="M4 2.5v11l9.5-5.5z"/></svg><span id="isl-tplay">{E(self.L["is_play"])}</span></button>'
+                f'<button type="button" id="isl-next">{E(self.L["is_next"])}{arrow.format("M5.5 2.5 11.5 8l-6 5.5z")}</button>'
+                f'<span class="pick"><label for="isl-pick" class="isl-vh">{E(self.L["is_pick"])}</label><select id="isl-pick"><option value="-1">{E(self.L["is_all"])}</option>{opts}</select></span>'
+                f'<span class="sp"></span><button type="button" id="isl-all">{E(self.L["is_all"])}</button>'
+                # the close button sits in the bar, which stays at the top while the islands scroll
+                f'<button type="button" class="isl-x" id="isl-x" aria-label="{E(self.L["is_close"])}">×</button></nav>'
+                '<div class="isl-main"><section class="isl-stage" id="isl-stage" aria-label="' + E(data['trip']) + '">'
+                '<div id="isl-arch" class="isl-view"><svg id="isl-archsvg" aria-hidden="true"></svg><div id="isl-archlab" class="isl-labels"></div></div>'
+                '<div id="isl-isle" class="isl-view" hidden><div id="isl-map" class="isl-map"><svg id="isl-mapsvg" role="img"></svg>'
+                '<div id="isl-maplab" class="isl-labels"></div><div class="isl-dayhead" id="isl-dayhead"></div></div><div id="isl-panel" class="isl-panel"></div></div>'
+                '<div id="isl-cap" class="isl-cap" hidden aria-live="polite"><div class="ck"></div><div class="cm"></div><div class="cs"></div></div></section>'
+                f'<aside class="isl-how" id="isl-how"><h3>{E(self.L["is_how_h"])}</h3><ul>{how}</ul></aside></div></div>')
+
     def trip_json(self):
         meta = self.d['meta']
         days = []
@@ -3120,6 +3474,10 @@ class Page:
         present = self.present()
         css = read_asset('kit.css').replace('/*MAP-ROWS*/12', str(max(12, len(present) + 1)))
         js = read_asset('kit.js')
+        islands = self.islands_data()
+        if islands:
+            css += read_asset('islands.css')
+            js += '\n;' + read_asset('islands.js')  # its own statement, whatever kit.js ends with
         parts = {'map': self.map_section, 'days': self.days_section, 'calendar': self.calendar_section, 'taste_shop': self.taste_shop_section, 'concierge': self.concierge, 'audience': self.audience_section,
                  'plans': self.plans_section, 'upgrades': self.upgrades_section, 'credits': self.credits_section, 'sources': self.sources_section}
         body = ''.join(parts[s]() if s in parts else self.prose(s) for s in present)
@@ -3138,8 +3496,9 @@ class Page:
                 '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">\n'
                 f'<style>{css}</style>\n</head>\n<body>\n<a class="skip" href="#days">{E(self.L["skip"])}</a>\n'
                 f'{self.opener_html()}\n{self.masthead()}\n{self.topnav(present)}\n<main class="layout">\n{body}\n{self.footer()}\n</main>\n'
-                f'{self.rail()}\n{self.lightbox()}\n{self.sheet_html()}\n{self.tour_html()}\n{templates}\n'
+                f'{self.rail()}\n{self.lightbox()}\n{self.sheet_html()}\n{self.tour_html()}\n{self.islands_html()}\n{templates}\n'
                 f'<script type="application/json" id="trip-data">{safe_json(self.trip_json())}</script>\n'
+                + (f'<script type="application/json" id="islands-data">{safe_json(islands)}</script>\n' if islands else '')
                 + (f'<script type="application/json" id="globe-data">{safe_json(globe_data())}</script>\n' if self.opener_d else '')
                 + '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>\n'
                 f'<script>{js}</script>\n</body>\n</html>\n')

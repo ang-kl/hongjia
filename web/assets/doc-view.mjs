@@ -15,7 +15,7 @@ import { createSignaturePad, signatureNodes } from './signature.mjs';
 export const LIMITS = { key: 200, value: 4000, storage: 8000, label: 200, quote: 1000, around: 64, id: 20, text: 500, body: 4000, path: 400 };
 export const COLORS = ['yellow', 'green', 'blue', 'pink', 'orange'];
 export const STAMPS = [['check', '✓'], ['cross', '✗'], ['approved', 'Approved'], ['reviewed', 'Reviewed'], ['signedoff', 'Signed off']];
-const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape', 'hj:weather-want', 'hj:tiles-want', 'hj:share-want', 'hj:near-want', 'hj:tour', 'hj:who', 'hj:wa-want', 'hj:passed']);
+const TYPES = new Set(['hj:ready', 'hj:field', 'hj:storage', 'hj:selection', 'hj:focus', 'hj:open', 'hj:menu', 'hj:positions', 'hj:located', 'hj:loupe', 'hj:escape', 'hj:weather-want', 'hj:tiles-want', 'hj:share-want', 'hj:near-want', 'hj:tour', 'hj:who', 'hj:wa-want', 'hj:passed', 'hj:islands']);
 /// A trip page may ask for the forecast of up to this many places (travel kit, Phase 1).
 export const MAX_WEATHER_PLACES = 12;
 /// A trip page may ask which of up to this many places are nearest ("Near me", 6 November 2026).
@@ -152,6 +152,10 @@ export function validMessage(data) {
       // A trip page's tour opened or closed: the page's right-hand buttons fold away meanwhile.
       if (typeof data.open !== 'boolean') return null;
       return { type: data.type, open: data.open };
+    case 'hj:islands':
+      // A trip page has its days as islands (the owner, 10 November 2026): ready, open or closed.
+      if (!['ready', 'open', 'closed'].includes(data.state)) return null;
+      return { type: data.type, state: data.state };
     case 'hj:share-want':
       // The locked frame cannot share, so a trip page asks this page. A place is shared by its
       // public facts and an https link; the document itself only by its link on this site (the
@@ -493,6 +497,42 @@ function start() {
     root.classList.remove('fabs-peek');
     document.querySelector('[data-fab-scope]')?.setAttribute('aria-expanded', 'false');
   };
+  // A trip page with its days as islands (the owner, 10 November 2026: the globe button shows "day's events as
+  // islands" on a trip page, and today's globe of documents everywhere else). The page says when its islands are
+  // ready, open and closed; the globe button then opens or closes them in the page. Each new page in the frame
+  // starts without, and is asked.
+  let islands = '';
+  const globeFab = document.querySelector('[data-fab-globe]');
+  const globeTitle = globeFab?.title || '';
+  const islandsFrom = state => {
+    islands = state;
+    const root = document.documentElement;
+    root.classList.toggle('islands-on', state === 'open');
+    if (state === 'open') {
+      root.classList.remove('fabs-peek');
+      document.querySelector('[data-fab-scope]')?.setAttribute('aria-expanded', 'false');
+    }
+    if (globeFab) { globeFab.disabled = false; globeFab.title = 'The days as islands'; }
+  };
+  frame.addEventListener('load', () => {
+    islands = '';
+    document.documentElement.classList.remove('islands-on');
+    if (globeFab) globeFab.title = globeTitle;
+    toFrame({ type: 'hj:islands-ask' });
+  });
+  document.addEventListener('click', event => {
+    if (!islands || !event.target.closest?.('[data-fab-globe]')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    toFrame({ type: islands === 'open' ? 'hj:islands-close' : 'hj:islands-open' });
+    frame.focus({ preventScroll: true });
+  }, true);
+  // Escape here (not in the page) closes the islands rather than leaving the page.
+  window.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || islands !== 'open') return;
+    event.preventDefault();
+    toFrame({ type: 'hj:islands-close' });
+  }, true);
   // Trip pages (travel kit, Phase 1): the page names its places and dates, this page asks the
   // server, which asks Open-Meteo, and each answer goes back into the frame as 'hj:weather'.
   // Each place is asked for once per load of the document.
@@ -1674,6 +1714,9 @@ function start() {
         break;
       case 'hj:tour':
         tourMode(message.open);
+        break;
+      case 'hj:islands':
+        islandsFrom(message.state);
         break;
       case 'hj:near-want':
         nearFrom(message.places);

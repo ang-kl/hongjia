@@ -1332,6 +1332,49 @@ for (const [name, viewport] of [['ipad', { width: 1180, height: 820 }], ['phone'
   if (!ok) failures.push(`tour and the site's buttons (${name})`);
   await ctx.close();
 }
+// A trip page with its days as islands (the owner, 10 November 2026): the globe button opens the page's islands
+// instead of the globe of documents; Escape on the site closes them rather than leaving; a new page starts without.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: state });
+  const p = await ctx.newPage();
+  await p.goto(base + docPath);
+  await p.waitForTimeout(1500);
+  const frame = () => p.frames().find(f => f.url().includes('/raw'));
+  const offer = () => frame().evaluate(() => {
+    window.__got = [];
+    addEventListener('message', e => { if (e.source === parent && e.data && /^hj:islands/.test(e.data.type)) window.__got.push(e.data.type); });
+    parent.postMessage({ type: 'hj:islands', state: 'ready' }, '*');
+  });
+  await offer();
+  await p.waitForTimeout(200);
+  await p.click('[data-fab-scope]');
+  await p.click('[data-fab-globe]');
+  await p.waitForTimeout(500);
+  const asked = await frame().evaluate(() => window.__got.slice());
+  const globeShut = await p.evaluate(() => document.querySelector('[data-globe]').hidden);
+  await frame().evaluate(() => parent.postMessage({ type: 'hj:islands', state: 'open' }, '*'));
+  await p.waitForTimeout(200);
+  const on = await p.evaluate(() => document.documentElement.classList.contains('islands-on'));
+  const url = p.url();
+  await p.evaluate(() => document.activeElement?.blur());
+  await p.keyboard.press('Escape');
+  await p.waitForTimeout(400);
+  const afterEsc = { got: await frame().evaluate(() => window.__got.slice()), stayed: p.url() === url };
+  await frame().evaluate(() => parent.postMessage({ type: 'hj:islands', state: 'closed' }, '*'));
+  await p.waitForTimeout(200);
+  const off = await p.evaluate(() => !document.documentElement.classList.contains('islands-on'));
+  // A new page in the frame, without islands: the globe of documents again.
+  await frame().evaluate(() => location.reload());
+  await p.waitForTimeout(1500);
+  if (!(await p.isVisible('[data-fab-globe]'))) await p.click('[data-fab-scope]');
+  await p.click('[data-fab-globe]');
+  await p.waitForTimeout(1200);
+  const globeAfter = await p.evaluate(() => !document.querySelector('[data-globe]').hidden);
+  const ok = asked.includes('hj:islands-open') && globeShut && on && afterEsc.got.includes('hj:islands-close') && afterEsc.stayed && off && globeAfter;
+  console.log(`${ok ? 'ok  ' : 'FAIL'} globe button opens a trip page's islands: ${JSON.stringify({ asked, globeShut, on, afterEsc, off, globeAfter })}`);
+  if (!ok) failures.push("globe button and a trip page's islands");
+  await ctx.close();
+}
 // Direction A (the owner, 8 November 2026): the documents table, the document tabs, and Esc / Back.
 {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: state });

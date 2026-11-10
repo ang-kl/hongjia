@@ -546,6 +546,94 @@ function parentHtml(answer, delay) {
 '''
 
 
+ISLANDS_JS = r'''
+const { chromium } = require('playwright');
+(async () => {
+  const dir = process.argv[2];
+  const browser = await chromium.launch();
+  const out = { errors: [] };
+  // Inside the family site's frame: ready, opened by the site, one island, Escape twice, asked again.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const p = await ctx.newPage();
+    p.on('pageerror', e => out.errors.push(String(e.message || e)));
+    await p.route(/^https?:/, r => r.abort());
+    await p.goto('file://' + dir + '/host.html');
+    await p.waitForFunction(() => window.__msgs.some(m => m && m.type === 'hj:islands' && m.state === 'ready'), null, { timeout: 15000 });
+    const f = p.frames().find(x => x.url().endsWith('page.html'));
+    out.hiddenAtFirst = await f.evaluate(() => document.getElementById('islands').hidden);
+    await p.evaluate(() => frames[0].postMessage({ type: 'hj:islands-open' }, '*'));
+    await p.waitForTimeout(800);
+    out.arch = await f.evaluate(() => ({ open: !document.getElementById('islands').hidden, islands: document.querySelectorAll('#isl-archsvg .isl').length,
+      names: [...document.querySelectorAll('#islands .ilabel .dname')].map(e => e.textContent), wide: document.documentElement.scrollWidth > innerWidth + 1 }));
+    await f.click('#islands .ilabel >> nth=1');
+    await p.waitForTimeout(700);
+    out.isle = await f.evaluate(() => ({ view: window.__islands.S.view, pins: document.querySelectorAll('#isl-mapsvg > g .pin').length,
+      legs: document.querySelectorAll('#isl-panel .lg li').length, scale: document.querySelector('#isl-mapsvg .sbar text:nth-of-type(2)').textContent }));
+    await f.click('#isl-play');
+    await p.waitForTimeout(1500);
+    out.played = await f.evaluate(() => ({ playing: window.__islands.S.playing, cap: document.querySelector('#isl-cap .cm').textContent }));
+    await f.press('#islands', 'Escape');
+    await p.waitForTimeout(300);
+    out.esc1 = await f.evaluate(() => ({ view: window.__islands.S.view, open: !document.getElementById('islands').hidden }));
+    out.hiddenDay = await f.evaluate(() => ({ display: getComputedStyle(document.getElementById('isl-isle')).display,
+      rects: [...document.querySelectorAll('#isl-panel .tl li')].filter(e => e.getClientRects().length).length }));
+    out.tabIntoDay = 0;
+    for (let i = 0; i < 40; i++) {
+      await f.press('#islands', 'Tab');
+      if (await f.evaluate(() => !!document.activeElement.closest('#isl-isle'))) out.tabIntoDay++;
+    }
+    await f.press('#islands', 'Escape');
+    await p.waitForTimeout(300);
+    out.esc2 = await f.evaluate(() => !document.getElementById('islands').hidden);
+    await p.evaluate(() => frames[0].postMessage({ type: 'hj:islands-ask' }, '*'));
+    await p.waitForTimeout(300);
+    out.msgs = await p.evaluate(() => window.__msgs.filter(m => m && m.type === 'hj:islands').map(m => m.state));
+    await ctx.close();
+  }
+  // A trip of one day: its one island opens without an error (review of #61).
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const p = await ctx.newPage();
+    p.on('pageerror', e => out.errors.push('one day: ' + String(e.message || e)));
+    await p.route(/^https?:/, r => r.abort());
+    await p.goto('file://' + dir + '/one.html#islands');
+    await p.waitForTimeout(1200);
+    out.oneDay = await p.evaluate(() => ({ open: !document.getElementById('islands').hidden, islands: document.querySelectorAll('#isl-archsvg .isl').length,
+      labels: document.querySelectorAll('#islands .ilabel').length }));
+    await p.click('#islands .ilabel');
+    await p.waitForTimeout(600);
+    out.oneDay.view = await p.evaluate(() => window.__islands.S.view);
+    await ctx.close();
+  }
+  // On its own, at phone size: #islands opens them.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
+    const p = await ctx.newPage();
+    p.on('pageerror', e => out.errors.push(String(e.message || e)));
+    await p.route(/^https?:/, r => r.abort());
+    await p.goto('file://' + dir + '/page.html#islands');
+    await p.waitForTimeout(1200);
+    out.phone = await p.evaluate(() => ({ open: !document.getElementById('islands').hidden, islands: document.querySelectorAll('#isl-archsvg .isl').length,
+      wide: document.getElementById('islands').scrollWidth > innerWidth + 1 }));
+    await ctx.close();
+  }
+  await browser.close();
+  process.stdout.write(JSON.stringify(out));
+})().catch(e => { console.error(e); process.exit(1); });
+'''
+
+
+def point_in(poly, p):
+    """Ray casting: is the point inside the closed polygon?"""
+    inside, n = False, len(poly)
+    for i in range(n):
+        (x1, y1), (x2, y2) = poly[i], poly[(i + 1) % n]
+        if (y1 > p[1]) != (y2 > p[1]) and p[0] < (x2 - x1) * (p[1] - y1) / (y2 - y1) + x1:
+            inside = not inside
+    return inside
+
+
 def example():
     return build.load(EXAMPLE)
 
@@ -1413,7 +1501,9 @@ class KitTest(unittest.TestCase):
         self.assertIn('v.muted=true;v.loop=true;', js)
 
     def test_page_weight_and_pinned_libraries(self):
-        self.assertLess(len(self.html.encode('utf-8')), 1_500_000)
+        # The sample page's budget. 1.5 MB until the islands (the owner, 10 November 2026), which add about 100 KB:
+        # their script, styles, and each day's shapes and true distances.
+        self.assertLess(len(self.html.encode('utf-8')), 1_600_000)
         for s in find(self.root, 'script') + find(self.root, 'link', rel='stylesheet'):
             url = s.attrs.get('src') or s.attrs.get('href') or ''
             if urllib.parse.urlsplit(url).hostname in SCRIPT_HOSTS:
@@ -2306,6 +2396,149 @@ class KitTest(unittest.TestCase):
             msgs = json.loads(out.stdout)
         tours = [m for m in msgs if isinstance(m, dict) and m.get('type') == 'hj:tour']
         self.assertEqual(tours, [{'type': 'hj:tour', 'open': True}, {'type': 'hj:tour', 'open': False}])
+
+    # ------------------------------------------------------------ the islands (10 November 2026)
+    def islands(self, data=None):
+        root = self.root if data is None else build.parse_html(build.build(data))
+        blocks = find(root, 'script', id='islands-data')
+        return root, (json.loads(blocks[0].text()) if blocks else None)
+
+    def one_day(self):
+        """The sample cut to its first day, with what pointed at the other days trimmed."""
+        one = copy.deepcopy(self.data)
+        one['days'] = one['days'][:1]
+        one.pop('pretrip', None)
+        one['opener']['hero'] = one['opener']['hero'][:2]
+        on_day = {it['stop'] for it in one['days'][0]['stops']}
+        for k in ('stays', 'highlights'):
+            keep = [s for s in one['opener'].get(k) or [] if (s if isinstance(s, str) else s.get('stop') or s.get('id')) in on_day]
+            if keep:
+                one['opener'][k] = keep
+            else:
+                one['opener'].pop(k, None)
+        return one
+
+    def test_islands_name_each_day(self):
+        """Each day is an island named "DDD DD MMM" (the owner, 10 November 2026), with its public holiday when it has one."""
+        root, isl = self.islands()
+        self.assertEqual(len(isl['days']), len(self.data['days']))
+        for day, d in zip(self.data['days'], isl['days']):
+            date = datetime.date.fromisoformat(day['iso'])
+            self.assertRegex(d['name'], r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$')
+            self.assertEqual(d['name'], date.strftime('%a %d %b'))
+            self.assertEqual(d['label'], d['name'], 'no holiday in the sample')
+        box = find(root, 'div', 'islands', id='islands')
+        self.assertEqual(len(box), 1)
+        self.assertIn('hidden', box[0].attrs, 'hidden until asked for')
+        self.assertTrue(find(root, 'button', id='isl-x'), 'a way to close them')
+        data = copy.deepcopy(self.data)
+        data['days'][3]['holiday'] = 'Example Day'
+        root2, isl2 = self.islands(data)
+        self.assertEqual(isl2['days'][3]['holiday'], 'Example Day')
+        self.assertEqual(isl2['days'][3]['label'], isl2['days'][3]['name'] + ' · Example Day')
+        self.assertIn(f"Day 4 · {isl2['days'][3]['name']} · Example Day", [o.text() for o in find(root2, 'option')])
+        one = copy.deepcopy(self.data)
+        one['days'][0]['iso'] = '2027-06-01'
+        self.assertEqual(self.islands(one)[1]['days'][0]['name'], 'Tue 01 Jun', 'two digits for the day, as DD reads')
+
+    def test_islands_distances_are_true(self):
+        """Within each island every place sits at its true distance from the others (one scale for the island), the roads
+        give the trip's own distances and times, and every place and road lies on land."""
+        _, isl = self.islands()
+        legs = self.data['legs']
+        for day, d in zip(self.data['days'], isl['days']):
+            pts = [p for p in d['places'] if not p['optional']]
+            for i, a in enumerate(pts):
+                for b in pts[i + 1:]:
+                    pa, pb = self.data['places'][a['id']], self.data['places'][b['id']]
+                    true = build.haversine(pa['lat'], pa['lng'], pb['lat'], pb['lng'])
+                    if true > 0.05:
+                        flat = ((a['xy'][0] - b['xy'][0]) ** 2 + (a['xy'][1] - b['xy'][1]) ** 2) ** 0.5
+                        self.assertLess(abs(flat - true) / true, 0.005, f"{d['name']}: {a['name']} to {b['name']}")
+            total = 0
+            for lg, (ka, kb) in zip(d['legs'], zip(day['route'], day['route'][1:])):
+                g = legs.get(f'{ka}>{kb}')
+                if lg['kind'] == 'road':
+                    self.assertEqual(lg['km'], g['km'])
+                    self.assertIn(f"{g['km']:.1f} km", lg['label'])
+                    total += g['km']
+                else:
+                    self.assertEqual(lg['kind'], 'walk', 'the sample has no leg without a road route')
+                    self.assertIn('straight line', lg['label'])
+            self.assertAlmostEqual(d['road_km'], round(total, 1), places=6)
+            for p in d['places']:
+                self.assertTrue(point_in(d['coast'], p['xy']), f"{d['name']}: {p['name']} is on land")
+            for lg in d['legs']:
+                for q in lg['path']:
+                    self.assertTrue(point_in(d['coast'], q), f"{d['name']}: the road is on land")
+        self.assertLess(float(isl['err']), 0.5, 'the flat projection keeps within half a per cent on the sample')
+        text = json.dumps(isl, ensure_ascii=False)
+        self.assertNotRegex(text, '[–—]', 'no en or em dashes')
+
+    def test_islands_holiday_is_checked(self):
+        for bad in ('', ' ', 'x' * 49, 'Day [[src:x]]', '*Day*', 5):
+            data = copy.deepcopy(self.data)
+            data['days'][0]['holiday'] = bad
+            with self.assertRaisesRegex(build.KitError, r'days\[0\]\.holiday', msg=repr(bad)):
+                build.build(data)
+        data = copy.deepcopy(self.data)
+        data['days'][0]['holiday'] = 'Example Day'
+        del data['days'][0]['iso']
+        with self.assertRaisesRegex(build.KitError, r'days\[0\]\.holiday'):
+            build.build(data)
+
+    def test_no_islands_without_dates(self):
+        data = copy.deepcopy(self.data)
+        for k in ('weather', 'pretrip'):  # a forecast and the book-ahead list need the dates too
+            data.pop(k, None)
+        del data['days'][2]['iso']
+        root, isl = self.islands(data)
+        self.assertIsNone(isl)
+        self.assertEqual(find(root, 'div', id='islands'), [])
+        self.assertNotIn('hj:islands', build.build(data), 'nor their script')
+
+    @unittest.skipUnless(BROWSER, 'needs node and Playwright')
+    def test_islands_in_a_browser(self):
+        """In the family site's frame the islands say they are ready, open when the site's globe button asks, show one island
+        with its pins, play, and close with Escape (first back to all the islands); on their own, #islands opens them."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, 'page.html'), 'w', encoding='utf-8') as f:
+                f.write(self.html)
+            with open(os.path.join(tmp, 'host.html'), 'w', encoding='utf-8') as f:
+                f.write('<!doctype html><script>window.__msgs=[];addEventListener("message",function(e){window.__msgs.push(e.data);});</script>'
+                        '<iframe src="page.html" style="width:1200px;height:860px;border:0"></iframe>')
+            with open(os.path.join(tmp, 'one.html'), 'w', encoding='utf-8') as f:
+                f.write(build.build(self.one_day()))
+            script = os.path.join(tmp, 'islands.cjs')
+            with open(script, 'w', encoding='utf-8') as f:
+                f.write(ISLANDS_JS)
+            out = subprocess.run([NODE, script, tmp], capture_output=True, text=True, timeout=240,
+                                 env=dict(os.environ, NODE_PATH=PLAYWRIGHT_PATH))
+            self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+            res = json.loads(out.stdout)
+        n = len(self.data['days'])
+        self.assertTrue(res['hiddenAtFirst'])
+        self.assertEqual(res['arch']['islands'], n)
+        self.assertTrue(res['arch']['open'])
+        self.assertFalse(res['arch']['wide'])
+        self.assertEqual(res['arch']['names'][0], datetime.date.fromisoformat(self.data['days'][0]['iso']).strftime('%a %d %b'))
+        self.assertEqual(res['isle']['view'], 'isle')
+        self.assertEqual(res['isle']['pins'], len(set(self.data['days'][1]['route'])))
+        self.assertEqual(res['isle']['legs'], len(self.data['days'][1]['route']) - 1)
+        self.assertRegex(res['isle']['scale'], r'^\d+(\.\d+)? (m|km)$', 'a scale bar for the island')
+        self.assertTrue(res['played']['playing'])
+        self.assertTrue(res['played']['cap'])
+        self.assertEqual(res['esc1'], {'view': 'arch', 'open': True}, 'Escape goes back to all the islands first')
+        self.assertEqual(res['hiddenDay'], {'display': 'none', 'rects': 0}, 'the day just left is not laid out under the islands (review of #61)')
+        self.assertEqual(res['tabIntoDay'], 0, 'and Tab never reaches it')
+        self.assertEqual(res['oneDay'], {'open': True, 'islands': 1, 'labels': 1, 'view': 'isle'}, 'a one-day trip has its island (review of #61)')
+        self.assertFalse(res['esc2'], 'then closes them')
+        self.assertEqual(res['msgs'], ['ready', 'open', 'closed', 'ready'])
+        self.assertTrue(res['phone']['open'])
+        self.assertEqual(res['phone']['islands'], n)
+        self.assertFalse(res['phone']['wide'])
+        self.assertEqual(res['errors'], [])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=1)

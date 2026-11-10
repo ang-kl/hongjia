@@ -1,0 +1,179 @@
+
+/* The islands (the owner, 9 and 10 November 2026): each day an island, opened by the family site's globe
+   button or #islands. Everything here sits inside #islands, so the trip page around it is untouched. */
+#islands{--i-paper:#f6f1e6;--i-paper2:#fbf8f1;--i-ink:#1e2a2b;--i-ink2:#4c5a59;--i-ink3:#6c7674;--i-teal:#1d6a6c;--i-teal-soft:rgba(29,106,108,.10);
+  --i-teal-mid:rgba(29,106,108,.28);--i-sea:#e4ece7;--i-reef:#d2e3dc;--i-reef-cur:#b7d6cc;--i-sand:#f8f0da;--i-sand2:#efe0bd;--i-coast:#c4aa7c;
+  --i-line:rgba(30,42,43,.15);--i-gutter:32px;
+  position:fixed;inset:0;z-index:130;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+  background:var(--i-paper);color:var(--i-ink);font:400 15px/1.5 var(--sans);text-align:left}
+#islands[hidden]{display:none}
+#islands *{box-sizing:border-box}
+#islands h2,#islands h3{font-family:var(--serif);font-weight:400;letter-spacing:.005em;color:var(--i-ink);text-shadow:none}
+#islands p,#islands li{font-size:inherit}
+#islands em{font-style:italic;color:var(--i-teal)}
+#islands button,#islands select{font:inherit;color:inherit}
+#islands .isl-vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+#islands .isl-top{padding:18px var(--i-gutter) 10px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+#islands .isl-top h2{margin:0;font-size:clamp(23px,2.5vw,34px);line-height:1.15}
+#islands .isl-dek{margin:4px 0 0;color:var(--i-ink2);font-size:14px}
+#islands .isl-bar .isl-x{flex:none;width:40px;min-width:40px;padding:0;justify-content:center;font-size:22px;line-height:1;color:var(--i-ink)}
+#islands .isl-bar{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px var(--i-gutter);background:rgba(246,241,230,.94);border-bottom:1px solid var(--i-line);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+#islands .isl-bar button,#islands .isl-bar select{min-height:40px;border:1px solid var(--i-line);background:var(--i-paper2);border-radius:999px;padding:0 15px;cursor:pointer;font-size:14px;display:inline-flex;align-items:center;gap:7px;margin:0}
+#islands .isl-bar button:hover,#islands .isl-bar select:hover{border-color:var(--i-teal)}
+#islands .isl-bar button:focus-visible,#islands .isl-bar select:focus-visible,#islands .ilabel:focus-visible,#islands .tl li:focus-visible,#islands a:focus-visible{outline:2px solid var(--i-teal);outline-offset:2px}
+#islands .isl-bar button[disabled]{opacity:.45;cursor:default}
+#islands .isl-bar button.primary{background:var(--i-teal);border-color:var(--i-teal);color:#fff;min-width:96px;justify-content:center}
+#islands .isl-bar svg{width:14px;height:14px;fill:currentColor}
+#islands .isl-bar select{padding-right:10px;max-width:100%;min-width:0}
+#islands .isl-bar .pick{display:inline-flex;min-width:0;flex:0 1 auto}
+#islands .isl-bar .sp{flex:1 1 auto}
+#islands .isl-main{padding:14px var(--i-gutter) 40px}
+#islands .isl-stage{position:relative;border-radius:16px;overflow:hidden;background:var(--i-sea);box-shadow:inset 0 0 0 1px rgba(29,106,108,.10)}
+#islands .isl-view{position:relative}
+#islands .isl-view[hidden]{display:none}
+#islands .isl-view.fadein{animation:isl-fadein .55s ease both}
+@keyframes isl-fadein{from{opacity:0;transform:scale(.975)}to{opacity:1;transform:none}}
+#islands svg text{font-family:var(--sans)}
+#islands .reef{fill:var(--i-reef)}
+#islands .land{fill:var(--i-sand);stroke:var(--i-coast);stroke-width:1}
+#islands .beach{fill:none;stroke:var(--i-sand2);stroke-width:12}
+#islands .coastline{fill:none;stroke:var(--i-coast);stroke-width:1}
+#islands .mini{fill:none;stroke:var(--i-teal);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;opacity:.8}
+#islands .mini.walk{stroke-dasharray:.1 3.2;stroke-width:1.8}
+#islands .mdot{fill:var(--i-teal)}
+#islands .mdot.opt{fill:var(--i-sand);stroke:var(--i-teal);stroke-width:1.1}
+#islands .isl{cursor:pointer}
+#islands .isl:hover .land,#islands .isl.hov .land{stroke:var(--i-teal);stroke-width:1.8}
+#islands .isl.cur .reef{fill:var(--i-reef-cur)}
+#islands .isl.cur .land{stroke:var(--i-teal);stroke-width:2.2}
+#islands .seapath{fill:none;stroke:var(--i-teal);stroke-width:2.4;stroke-linecap:round;stroke-dasharray:.1 8;opacity:.55}
+#islands .bmk circle.o{fill:var(--i-paper2);stroke:var(--i-teal);stroke-width:1.8}
+#islands .bmk circle.i{fill:var(--i-teal)}
+#islands .boat path.sail{fill:var(--i-paper2);stroke:var(--i-ink);stroke-width:1.3;stroke-linejoin:round}
+#islands .boat path.hull{fill:var(--i-ink)}
+#islands .isl-labels{position:absolute;inset:0;pointer-events:none}
+#islands .ilabel{position:absolute;pointer-events:auto;background:rgba(228,236,231,.86);border:0;padding:2px 8px 3px;margin:0;text-align:center;cursor:pointer;color:var(--i-ink);border-radius:10px;line-height:1.25;min-height:0}
+#islands .ilabel:hover .dname{color:var(--i-teal)}
+#islands .ilabel .dno{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--i-ink3)}
+#islands .ilabel .dname{display:block;font-family:var(--serif);font-size:17px}
+#islands .hol{color:var(--i-teal);font-style:italic;white-space:nowrap}
+#islands .ilabel .dtl{display:block;font-size:13px;color:var(--i-ink2);font-style:italic;font-family:var(--serif)}
+#islands .ilabel .dkm{display:block;font-size:11.5px;color:var(--i-ink3);margin-top:1px}
+#islands .ilabel.cur .dname{color:var(--i-teal)}
+#islands .alab{position:absolute;font-size:11.5px;line-height:1.3;color:var(--i-teal);background:rgba(251,248,241,.94);border:1px solid var(--i-teal-mid);border-radius:8px;padding:3px 8px;white-space:nowrap}
+#islands .alab.end{color:var(--i-ink2);border-color:var(--i-line)}
+#islands .alab b{font-weight:600}
+/* only while shown: a hidden day must not stay laid out (and reachable by Tab) under all the islands (review of #61) */
+#islands #isl-isle.wide:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) var(--panel-w,380px)}
+#islands .isl-map{position:relative;overflow:hidden}
+#islands .isl-map svg{display:block}
+#islands .pin circle.c{fill:var(--i-teal);stroke:var(--i-paper2);stroke-width:2.5}
+#islands .pin text{fill:#fff;font-size:11.5px;font-weight:700;text-anchor:middle;dominant-baseline:central}
+#islands .pin.opt circle.c{fill:var(--i-paper2);stroke:var(--i-teal);stroke-width:2;stroke-dasharray:3 2.5}
+#islands .pin.opt text{fill:var(--i-teal)}
+#islands .pin circle.h{fill:none;stroke:var(--i-teal);stroke-width:2;opacity:0;transform-box:fill-box;transform-origin:center}
+#islands .pin.act circle.h{opacity:.55;animation:isl-pulse 1.6s ease-out infinite}
+@keyframes isl-pulse{from{transform:scale(1);opacity:.6}to{transform:scale(1.9);opacity:0}}
+#islands .road-case{fill:none;stroke:var(--i-paper2);stroke-width:7;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+#islands .road{fill:none;stroke:var(--i-teal);stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
+#islands .road.act{stroke-width:5}
+#islands .walkl{fill:none;stroke:var(--i-teal);stroke-width:3;stroke-linecap:round;stroke-dasharray:.1 6}
+#islands .linel{fill:none;stroke:var(--i-ink2);stroke-width:2;stroke-dasharray:7 6}
+#islands .ring{fill:rgba(251,248,241,.35);stroke:var(--i-teal);stroke-width:1.3}
+#islands .lead{stroke:var(--i-teal);stroke-width:1.2;stroke-dasharray:3 3;fill:none}
+#islands .inset-rim{fill:none;stroke:var(--i-teal);stroke-width:1.6}
+#islands .inset-bg{fill:var(--i-sea)}
+#islands .sbar rect.a{fill:var(--i-ink)}
+#islands .sbar rect.b{fill:var(--i-paper2);stroke:var(--i-ink);stroke-width:1}
+#islands .sbar text{font-size:11.5px;fill:var(--i-ink);paint-order:stroke;stroke:var(--i-paper2);stroke-width:3px;stroke-linejoin:round}
+#islands .sbar text.s{font-size:10.5px;fill:var(--i-ink3);font-style:italic}
+#islands .north text{font-size:11px;font-weight:700;fill:var(--i-ink2);text-anchor:middle}
+#islands .north path{fill:var(--i-ink2)}
+#islands .mk .mh{fill:var(--i-teal);opacity:.22}
+#islands .mk .mc{fill:var(--i-ink);stroke:#fff;stroke-width:2.5}
+#islands .plab{position:absolute;font-size:12px;line-height:1.3;background:rgba(251,248,241,.93);border:1px solid var(--i-line);border-radius:9px;padding:4px 8px 5px;max-width:220px;color:var(--i-ink);box-shadow:0 1px 2px rgba(30,42,43,.06)}
+#islands .plab .nm{font-weight:600}
+#islands .plab .lt{min-width:17px;height:17px;line-height:17px;border-radius:9px;font-size:10.5px;padding:0 4px;margin-right:5px;vertical-align:1px}
+#islands .plab .lt.o{line-height:15px}
+#islands .plab .tm{display:block;color:var(--i-ink2);font-size:11.5px}
+#islands .plab .row+.row{margin-top:3px}
+#islands .llab{position:absolute;font-size:11.5px;line-height:1.25;color:var(--i-teal);background:rgba(251,248,241,.95);border:1px solid var(--i-teal-mid);border-radius:999px;padding:2px 8px;white-space:nowrap;font-weight:600}
+#islands .llab .k{color:var(--i-ink3);font-weight:600;margin-right:4px}
+#islands .ilab{position:absolute;font-size:11px;line-height:1.3;color:var(--i-ink2);background:rgba(251,248,241,.95);border:1px solid var(--i-teal-mid);border-radius:8px;padding:3px 7px;text-align:center}
+#islands .ilab b{color:var(--i-teal)}
+#islands .isl-dayhead{position:absolute;left:0;top:0;padding:12px 16px 0;pointer-events:none;max-width:62%}
+#islands .isl-dayhead .dno,#islands .isl-panel .dno{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--i-ink3)}
+#islands .isl-dayhead h2{margin:0;font-size:24px;line-height:1.15}
+#islands .isl-dayhead p{margin:2px 0 0;font-family:var(--serif);font-size:14.5px;color:var(--i-ink2)}
+#islands .isl-cap{position:absolute;left:14px;bottom:12px;z-index:5;max-width:min(470px,calc(100% - 28px));background:rgba(251,248,241,.96);border:1px solid var(--i-teal-mid);border-left:4px solid var(--i-teal);border-radius:10px;padding:8px 12px 9px;box-shadow:0 4px 18px rgba(30,42,43,.10)}
+#islands .isl-cap[hidden]{display:none}
+#islands .isl-cap .ck{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--i-ink3)}
+#islands .isl-cap .cm{font-family:var(--serif);font-size:17px;line-height:1.25}
+#islands .isl-cap .cs{font-size:13px;color:var(--i-ink2);margin-top:2px}
+#islands .isl-cap .cs div+div{margin-top:1px}
+#islands .isl-panel{background:var(--i-paper2);border-left:1px solid var(--i-line);overflow:auto;padding:18px 22px 26px}
+#islands #isl-isle:not(.wide) .isl-panel{border-left:0;border-top:1px solid var(--i-line)}
+#islands .isl-panel h2{margin:0 0 2px;font-size:26px;line-height:1.15}
+#islands .isl-panel .ttl{margin:0;font-family:var(--serif);font-size:18px}
+#islands .isl-panel .sub{margin:6px 0 10px;color:var(--i-ink2);font-size:14px}
+#islands .isl-panel h3{font-size:17px;line-height:1.3;margin:20px 0 8px;padding-top:12px;border-top:1px solid var(--i-line)}
+#islands .pills{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+#islands .pills span{font-size:12px;border:1px solid var(--i-line);border-radius:999px;padding:2px 9px;color:var(--i-ink2);background:var(--i-paper)}
+#islands .pills span.mv{border-color:var(--i-teal-mid);color:var(--i-teal)}
+#islands .tot{font-size:13.5px;color:var(--i-ink);background:var(--i-teal-soft);border-radius:8px;padding:7px 10px;margin-top:8px}
+#islands .tl,#islands .lg,#islands .pl{list-style:none;margin:0;padding:0}
+#islands .tl li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:8px;padding:8px 8px 9px;border-radius:9px;cursor:pointer;font-size:14px}
+#islands .tl li:hover{background:var(--i-teal-soft)}
+#islands .tl li.act{background:var(--i-teal-soft);box-shadow:inset 3px 0 0 var(--i-teal)}
+#islands .lt{display:inline-block;min-width:22px;height:22px;line-height:22px;border-radius:11px;background:var(--i-teal);color:#fff;font-size:11.5px;font-weight:700;text-align:center;padding:0 5px}
+#islands .lt.o{background:var(--i-paper2);color:var(--i-teal);border:1px dashed var(--i-teal);line-height:20px}
+#islands .tl .tm{font-weight:600;font-size:13.5px}
+#islands .tl .tt{font-family:var(--serif);font-size:15.5px;line-height:1.3}
+#islands .tl .tp{font-size:12.5px;color:var(--i-ink3)}
+#islands .tl .tx{margin:3px 0 0;font-size:13px;color:var(--i-ink2)}
+#islands .lg li{padding:7px 0;border-bottom:1px dotted var(--i-line);font-size:13.5px}
+#islands .lg li:last-child{border-bottom:0}
+#islands .lg .lk{font-weight:700;color:var(--i-teal);margin-right:6px}
+#islands .lg .d{display:block;font-weight:600;color:var(--i-ink)}
+#islands .lg .n,#islands .pl .n{display:block;font-size:12px;color:var(--i-ink3)}
+#islands .pl li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:8px;padding:5px 0;font-size:13.5px}
+#islands .hint{font-size:12.5px;color:var(--i-ink3);margin-top:16px}
+#islands .hint a{color:var(--i-teal)}
+#islands .isl-how{margin-top:18px;max-width:880px;font-size:14px;color:var(--i-ink2)}
+#islands .isl-how h3{font-size:19px;color:var(--i-ink);margin:0 0 6px}
+#islands .isl-how ul{margin:0;padding-left:20px}
+#islands .isl-how li{margin:3px 0;font-size:14px}
+@media (max-width:640px){
+  #islands{--i-gutter:16px}
+  #islands .isl-top{padding-top:12px}
+  #islands .isl-bar{gap:6px;padding:8px var(--i-gutter)}
+  #islands .isl-bar button,#islands .isl-bar select{padding:0 11px;font-size:13.5px;min-height:38px}
+  #islands .isl-bar button.primary{min-width:84px}
+  #islands .isl-bar .sp{display:none}
+  #islands .isl-bar .pick{flex:1 1 150px}
+  #islands .isl-bar .isl-x{min-height:38px;width:38px;min-width:38px}
+  #islands .isl-bar select{width:100%}
+  #islands .isl-main{padding-top:10px}
+  #islands .isl-stage{border-radius:12px}
+  #islands .ilabel .dname{font-size:14.5px}
+  #islands .alab{white-space:normal;max-width:150px;font-size:11px}
+  #islands .ilabel .dtl{font-size:12px}
+  #islands .ilabel .dkm{display:none}
+  #islands .ilabel .dno{font-size:10px}
+  #islands .plab{max-width:160px;font-size:11.5px;padding:3px 7px 4px}
+  #islands .plab .tm{font-size:11px}
+  #islands .llab{font-size:11px;padding:2px 7px}
+  #islands .isl-dayhead{padding:10px 12px 0;max-width:58%}
+  #islands .isl-dayhead h2{font-size:19px}
+  #islands .isl-dayhead p{font-size:13px}
+  #islands .isl-cap{left:8px;right:8px;bottom:8px;max-width:none;padding:7px 10px 8px}
+  #islands .isl-cap .cm{font-size:15.5px}
+  #islands .isl-cap .cs{font-size:12.5px}
+  #islands .isl-panel{padding:16px 16px 22px}
+}
+@media (prefers-reduced-motion: reduce){
+  #islands *,#islands *::before,#islands *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  #islands .pin.act circle.h{opacity:.55}
+}
+@media print{#islands{display:none!important}}
+html.isl-open,html.isl-open body{overflow:hidden}
