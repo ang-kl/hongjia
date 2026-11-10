@@ -2443,6 +2443,13 @@ class KitTest(unittest.TestCase):
         bad(lambda d: tl(d, 3, 'Check out and drive').pop('stay'), r'mark the timeline item where we check out')
         bad(lambda d: tl(d, 3, 'Check in at Ridge Lodge').update(time='Afternoon'), r'give the check-in a clock time')
         bad(lambda d: tl(d, 3, 'Check in at Ridge Lodge').update(stay='arrive'), r'"pack", "out" or "in"')
+        # the stays read a time the way the calendar does, "14.45" as well as "14:45" (Codex, 10 November 2026)
+        bad(lambda d: tl(d, 0, 'Lantern Beach, then rest').update(time='From 15.00'), r'leave at least 30 minutes to unpack')
+        bad(lambda d: tl(d, 7, 'Check out').update(time='By 12.00'), r'after its check-out time 11:00')
+        dotted = copy.deepcopy(self.data)
+        tl(dotted, 0, 'Check in at Hotel Tidewater and unpack').update(time='14.45')
+        tl(dotted, 7, 'Check out').update(time='By 10.30')
+        build.build(dotted)
 
     # ------------------------------------------------------------ the islands (10 November 2026)
     def islands(self, data=None):

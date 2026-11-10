@@ -243,8 +243,9 @@ CAL_DAY = (8, 20)       # the hours a day shows at least: "normal 8-8 PM" (the o
 CAL_MAX_EVENTS = 12     # the site's limit for one link
 
 
-def clock_span(text):
-    """(start, end) in minutes from midnight for a timeline time, or None when it has no set time."""
+def clock_times(text):
+    """(start, end) in minutes from midnight as a timeline time writes them, None for the one it leaves out,
+    or None when it has no set time. The calendar and the stays both read times through this."""
     t = re.sub(r'\s+', ' ', str(text or '')).strip()
     m = SPAN_RE.match(t)
     if m:
@@ -252,13 +253,24 @@ def clock_span(text):
         return (a, b if b > a else b + 1440)
     m = START_RE.match(t)
     if m:
-        a = int(m[1]) * 60 + int(m[2])
-        return (a, a + CAL_SHORT)
+        return (int(m[1]) * 60 + int(m[2]), None)
     m = BY_RE.match(t)
     if m:
-        b = int(m[1]) * 60 + int(m[2])
-        return (max(0, b - CAL_SHORT), b) if b > 0 else None
+        return (None, int(m[1]) * 60 + int(m[2]))
     return None
+
+
+def clock_span(text):
+    """(start, end) in minutes from midnight for a timeline time, or None when it has no set time."""
+    t = clock_times(text)
+    if not t:
+        return None
+    a, b = t
+    if a is not None and b is not None:
+        return (a, b)
+    if a is not None:
+        return (a, a + CAL_SHORT)
+    return (max(0, b - CAL_SHORT), b) if b > 0 else None
 
 
 def tz_offset(tz):
@@ -453,7 +465,6 @@ LABELS.update({
     'mv_first': 'Check in at {name} from {cin}', 'mv_last': 'Check out of {name} by {cout}',
     'mv_move': 'Check out of {a} by {cout} · check in at {b} from {cin}',
 })
-CLOCK = re.compile(r'\b([01]?\d|2[0-3]):([0-5]\d)\b')
 STAY_MARKS = ('pack', 'out', 'in')
 UNPACK_MIN = 30  # after checking in, the next timed item starts at least this much later
 
@@ -461,11 +472,6 @@ UNPACK_MIN = 30  # after checking in, the next timed item starts at least this m
 def island_name(d):
     """An island's name: "DDD DD MMM" (the owner, 10 November 2026), for example "Fri 01 Jan"."""
     return f'{WEEKDAYS[d.weekday()]} {d.day:02d} {MONTHS[d.month - 1]}'
-
-
-def clock_minutes(text):
-    """Every HH:MM in a time string, as minutes after midnight."""
-    return [int(h) * 60 + int(m) for h, m in CLOCK.findall(str(text or ''))]
 
 
 def hhmm(v, where):
@@ -1126,27 +1132,28 @@ class Page:
                                f'{len(leaving)} check-out and {len(arriving)} check-in today')
             if outs:
                 j, x = outs[0]
-                t = clock_minutes(x.get('time'))
+                t = clock_times(x.get('time'))  # read as the calendar reads it (Codex, 10 November 2026)
                 if not t:
                     raise KitError(f'days[{i}].timeline[{j}]: give the check-out a clock time ("By 10:00")')
-                if t[-1] > leaving[0]['_out']:
+                if (t[0] if t[1] is None else t[1]) > leaving[0]['_out']:
                     raise KitError(f'days[{i}].timeline[{j}]: we check out of {leaving[0]["name"]} at {x["time"]}, after its check-out time {leaving[0]["check_out"]}')
                 packed = any(k < j for k, _ in marks(i, 'pack')) or (i > 0 and marks(i - 1, 'pack'))
                 if not packed:
                     raise KitError(f'days[{i}] ({day["when"]}): plan the packing before we check out ("stay": "pack" that morning or the evening before)')
             if ins:
                 j, x = ins[0]
-                t = clock_minutes(x.get('time'))
+                t = clock_times(x.get('time'))
                 if not t:
                     raise KitError(f'days[{i}].timeline[{j}]: give the check-in a clock time ("From 14:00")')
-                if t[0] < arriving[0]['_in']:
+                t = t[1] if t[0] is None else t[0]
+                if t < arriving[0]['_in']:
                     raise KitError(f'days[{i}].timeline[{j}]: we check in to {arriving[0]["name"]} at {x["time"]}, before its check-in time {arriving[0]["check_in"]}')
                 if outs and outs[0][0] > j:
                     raise KitError(f'days[{i}]: the check-out comes before the check-in')
                 for k, y in enumerate((day.get('timeline') or [])[j + 1:], j + 1):
-                    nxt = clock_minutes(y.get('time'))
+                    nxt = clock_times(y.get('time'))
                     if nxt:
-                        if nxt[0] < t[0] + UNPACK_MIN:
+                        if (nxt[1] if nxt[0] is None else nxt[0]) < t + UNPACK_MIN:
                             raise KitError(f'days[{i}].timeline[{k}]: starts at {y["time"]}, too soon after checking in at {x["time"]}: '
                                            f'leave at least {UNPACK_MIN} minutes to unpack')
                         break
