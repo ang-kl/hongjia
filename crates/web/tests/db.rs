@@ -4378,9 +4378,24 @@ async fn besttime_stub() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>
                 let mut buf = vec![0u8; 8192];
                 let n = socket.read(&mut buf).await.unwrap_or(0);
                 let request = String::from_utf8_lossy(&buf[..n]).to_string();
-                log.lock()
-                    .unwrap()
-                    .push(request.lines().next().unwrap_or("").to_string());
+                let line = request.lines().next().unwrap_or("").to_string();
+                log.lock().unwrap().push(line.clone());
+                let refusal = if line.contains("venue_name=Nowhere") {
+                    Some(("404 Not Found", "Venue not found"))
+                } else if line.contains("venue_name=Broke") {
+                    Some(("402 Payment Required", "Not enough API credits"))
+                } else {
+                    None
+                };
+                if let Some((status, message)) = refusal {
+                    let body = format!(r#"{{"status":"Error","message":"{message}"}}"#);
+                    let reply = format!(
+                        "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = socket.write_all(reply.as_bytes()).await;
+                    return;
+                }
                 let days: Vec<String> = (0..7)
                     .map(|d| {
                         let raw = vec![(d * 10).to_string(); 24].join(",");
@@ -4489,5 +4504,38 @@ async fn only_the_owner_asks_besttime_and_the_key_stays_on_the_server(pool: PgPo
         seen.lock().unwrap().len(),
         1,
         "kept for a day: no second charge"
+    );
+
+    // BestTime charges for "no data" too: a venue it cannot find is kept, but an account problem
+    // (no credits, a bad key) is asked again once it is fixed (Codex, 10 November 2026).
+    let nowhere = "name=Nowhere%20Hall&address=1%20Example%20Road";
+    for _ in 0..2 {
+        let r = o
+            .send("POST", "/api/crowd", nowhere, &[("X-CSRF-Token", &csrf)])
+            .await;
+        assert_eq!(r.status, 200, "{}", r.body);
+        assert!(
+            r.body.contains(r#""available":false"#) && r.body.contains("Venue not found"),
+            "{}",
+            r.body
+        );
+    }
+    assert_eq!(
+        seen.lock().unwrap().len(),
+        2,
+        "no data for the venue: asked once"
+    );
+    let broke = "name=Broke%20Hall&address=1%20Example%20Road";
+    for _ in 0..2 {
+        let r = o
+            .send("POST", "/api/crowd", broke, &[("X-CSRF-Token", &csrf)])
+            .await;
+        assert_eq!(r.status, 200, "{}", r.body);
+        assert!(r.body.contains("Not enough API credits"), "{}", r.body);
+    }
+    assert_eq!(
+        seen.lock().unwrap().len(),
+        4,
+        "an account problem is not kept"
     );
 }

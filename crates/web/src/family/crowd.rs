@@ -153,9 +153,29 @@ pub fn answer_from(body: &str, key: &Key) -> Result<Answer, String> {
     })))
 }
 
-/// Asks BestTime for a new forecast. The key goes in the query string, the only place BestTime
-/// takes it, and is scrubbed from any error.
-fn fetch(base: &str, key: &Key, name: &str, address: &str) -> Result<String, String> {
+/// Whether a "no data" answer is about the venue, and so worth keeping for the day (BestTime charges
+/// for it too), rather than about our account (a bad key, no credits, a limit), which is asked again
+/// once fixed (Codex, 10 November 2026).
+pub fn lasting_no_data(status: u16, message: &str) -> bool {
+    let m = message.to_ascii_lowercase();
+    let account = [
+        "key",
+        "credit",
+        "quota",
+        "limit",
+        "subscription",
+        "unauthor",
+        "payment",
+        "plan",
+    ]
+    .iter()
+    .any(|w| m.contains(w));
+    ((200..300).contains(&status) || status == 404) && !account
+}
+
+/// Asks BestTime for a new forecast, returning its HTTP status and body. The key goes in the query
+/// string, the only place BestTime takes it, and is scrubbed from any error.
+fn fetch(base: &str, key: &Key, name: &str, address: &str) -> Result<(u16, String), String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(40)))
         .http_status_as_error(false)
@@ -169,11 +189,13 @@ fn fetch(base: &str, key: &Key, name: &str, address: &str) -> Result<String, Str
         .query("venue_address", address)
         .send_empty()
         .map_err(|e| key.scrub(&e.to_string()))?;
+    let status = reply.status().as_u16();
     reply
         .body_mut()
         .with_config()
         .limit(MAX_REPLY_BYTES)
         .read_to_string()
+        .map(|body| (status, body))
         .map_err(|e| key.scrub(&e.to_string()))
 }
 
@@ -298,17 +320,20 @@ pub async fn forecast(
     let fetched = tokio::task::spawn_blocking(move || fetch(&base, &k, &name, &address))
         .await
         .unwrap_or_else(|e| Err(e.to_string()));
-    match fetched.and_then(|body| answer_from(&body, &key)) {
-        Ok(Answer::Week(week)) => {
+    match fetched.and_then(|(status, body)| answer_from(&body, &key).map(|a| (status, a))) {
+        Ok((_, Answer::Week(week))) => {
             let body = week.to_string();
             keep(asked, body.clone());
             Ok(reply(StatusCode::OK, body))
         }
-        Ok(Answer::NoData(message)) => Ok(reply(
-            StatusCode::OK,
-            json!({ "available": false, "message": message, "source": SOURCE, "link": SOURCE_LINK })
-                .to_string(),
-        )),
+        Ok((status, Answer::NoData(message))) => {
+            let body = json!({ "available": false, "message": message, "source": SOURCE, "link": SOURCE_LINK })
+                .to_string();
+            if lasting_no_data(status, &message) {
+                keep(asked, body.clone());
+            }
+            Ok(reply(StatusCode::OK, body))
+        }
         Err(problem) => {
             eprintln!("crowd: {}", key.scrub(&problem));
             Ok(error(
@@ -394,6 +419,16 @@ mod tests {
             .is_err()
         );
         assert!(answer_from("<html>", &key).is_err());
+    }
+
+    #[test]
+    fn only_a_venue_without_data_is_kept() {
+        assert!(lasting_no_data(200, "Venue not found"));
+        assert!(lasting_no_data(404, "Could not find the venue"));
+        assert!(!lasting_no_data(402, "Not enough API credits"));
+        assert!(!lasting_no_data(200, "Invalid private API key"));
+        assert!(!lasting_no_data(429, "Too many requests"));
+        assert!(!lasting_no_data(500, "Server error"));
     }
 
     #[test]
