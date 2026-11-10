@@ -1143,9 +1143,10 @@ class Page:
             if ins:
                 j, x = ins[0]
                 t = clock_times(x.get('time'))
-                if not t:
-                    raise KitError(f'days[{i}].timeline[{j}]: give the check-in a clock time ("From 14:00")')
-                t = t[1] if t[0] is None else t[0]
+                if not t or t[0] is None:  # "By 14:00" alone does not say we arrive after 14:00 (Codex)
+                    raise KitError(f'days[{i}].timeline[{j}]: give the check-in a clock time with a start ("From 14:00"); '
+                                   f'a "By" time alone does not say when we arrive')
+                t = t[0]
                 if t < arriving[0]['_in']:
                     raise KitError(f'days[{i}].timeline[{j}]: we check in to {arriving[0]["name"]} at {x["time"]}, before its check-in time {arriving[0]["check_in"]}')
                 if outs and outs[0][0] > j:

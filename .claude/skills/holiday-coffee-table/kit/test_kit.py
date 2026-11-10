@@ -2447,6 +2447,8 @@ class KitTest(unittest.TestCase):
         bad(lambda d: tl(d, 0, 'Lantern Beach, then rest').update(time='From 15.00'), r'leave at least 30 minutes to unpack')
         # a "By" time ends there: the calendar starts it 30 minutes earlier, and so does the unpacking check (Codex, 10 November 2026)
         bad(lambda d: tl(d, 0, 'Lantern Beach, then rest').update(time='By 15:15'), r'leave at least 30 minutes to unpack')
+        # a check-in needs a start: "By 14:00" does not say we arrive after 14:00 (Codex, 10 November 2026)
+        bad(lambda d: tl(d, 0, 'Check in at Hotel Tidewater and unpack').update(time='By 14:00'), r'give the check-in a clock time')
         bad(lambda d: tl(d, 7, 'Check out').update(time='By 12.00'), r'after its check-out time 11:00')
         dotted = copy.deepcopy(self.data)
         tl(dotted, 0, 'Check in at Hotel Tidewater and unpack').update(time='14.45')
