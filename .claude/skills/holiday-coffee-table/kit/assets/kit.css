@@ -1223,3 +1223,16 @@ thead th,.cc-grid dt,.upg-dl dt,.sh-facts dt{font-family:var(--sans);font-size:v
 .cal-ev.cal-swap{background:#fff;border:1px dashed var(--gold);border-left:3px dashed var(--gold)}
 @media print{.cal-grid{grid-template-columns:40px repeat(var(--days),1fr) !important}}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--paper:#fbfaf6}}
+/* Where we sleep (the owner, 10 November 2026): each stay's dates, nights, check-in and check-out, and why. */
+.nights-wrap{margin:0 0 1.6em}
+.nights-wrap h3{margin:0 0 .5em}
+.nights{list-style:none;margin:0;padding:0;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.nights li{border:1px solid var(--rule);border-radius:12px;padding:14px 16px;background:var(--paper)}
+.nights .kicker{margin:0 0 .3em}
+.nights h4{margin:0 0 .35em;font-size:1.15rem}
+.nights p{margin:0 0 .45em}
+.nights .lg-times{font-weight:600}
+.nights .lg-book{font-weight:400;white-space:nowrap}
+.day-move{margin:.5em 0 0;font-size:.95em;color:var(--ink2)}
+.day-move::before{content:"🧳 ";}
+.timeline li.tl-stay .t{font-weight:600}

@@ -5,7 +5,8 @@ description: Use when the family shares a briefing note, document, PDF or pictur
 
 # Holiday coffee-table pages
 
-Version 5, 10 November 2026: the days as islands, opened by the family site's globe button: each day an island
+Version 6, 10 November 2026: where we sleep: every stay with its nights, check-in and check-out times and why, and the
+days checked against them (packing, check-out, check-in, time to unpack). Version 5, the same day: the days as islands, opened by the family site's globe button: each day an island
 named like "Fri 25 Dec · Christmas Day", its places at their true distances, with Play. Version 4, 9 November 2026:
 restaurants in Play the trip say what to eat and drink, their dated rating and what
 diners say. Version 3, 8 November 2026: the family's swaps at each stop (Plans B, C and D). Version 2, the same day:
@@ -193,6 +194,21 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
 - The page's edition line says the same: "Coffee Table edition v15 · <date>".
 - Each version's changes are the owner's decisions, recorded in the private data-making script with
   the owner's words, never in this public folder.
+
+## Stays: nights, times and why
+
+The owner, 10 November 2026: "the places to stay ... you didn't mention how many days in each location and why. you
+have to consider check-in and check-out time and time to pack/unpack. this is very important for every trip".
+
+- Every trip lists where we sleep (`lodgings` in schema.md): each stay's dates and nights, its own check-in and
+  check-out times (read from the stay's booking page, with the source), and why we stay there that long.
+- Plan each move day round those times: pack the evening before or that morning, check out by the stay's time, and
+  arrive no earlier than check-in (or plan where we wait, and say so). Leave time to unpack before the next plan.
+- Between check-out and a late flight or coach, say where the bags wait (a luggage hold, the car's boot) and ask for a
+  late check-out where it helps.
+- Prices: check the owner's first choices, Booking.com, Trip.com and Agoda (Airbnb as an option), against the stay's
+  own site, for the right number of adults and the exact dates. Those sites refuse automated reading, so ask the owner
+  for screenshots and compare them with the stay's own price.
 
 ## Quality bar
 

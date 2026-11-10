@@ -2173,22 +2173,23 @@ class KitTest(unittest.TestCase):
         self.assertIn(f't{n - 1}', q)
         self.assertNotIn(f't{n}', q)
         # An item with no set time is drawn in its place, dashed, and never added.
+        before = len(find(self.root, 'article', 'cal-loose'))  # the evenings' packing has no set time either
         d = copy.deepcopy(self.data)
         d['days'][0]['timeline'][1]['time'] = 'Morning'
         r = build.parse_html(build.build(d))
         loose = find(r, 'article', 'cal-loose')
-        self.assertEqual(len(loose), 1)
-        self.assertEqual(find(loose[0], 'a', 'cal-add'), [])
+        self.assertEqual(len(loose), before + 1)
+        self.assertTrue(all(find(x, 'a', 'cal-add') == [] for x in loose))
         # No time zone, or no timed item: no calendar.
         d = copy.deepcopy(self.data)
         d['meta'].pop('tz', None)
         d.pop('pretrip', None)  # bookings are counted in the trip's time zone, so they need it too
         self.assertNotIn('id="calendar"', build.build(d))
-        d = copy.deepcopy(self.data)
-        d.pop('pretrip', None)
+        d = self.one_day()  # a day trip: no stays, whose check-in and check-out would need clock times
         for day in d['days']:
             for t in day.get('timeline') or []:
                 t['time'] = 'Morning'
+                t.pop('stay', None)
         self.assertNotIn('id="calendar"', build.build(d))
 
     @unittest.skipUnless(BROWSER, 'needs node and Playwright')
@@ -2397,6 +2398,71 @@ class KitTest(unittest.TestCase):
         tours = [m for m in msgs if isinstance(m, dict) and m.get('type') == 'hj:tour']
         self.assertEqual(tours, [{'type': 'hj:tour', 'open': True}, {'type': 'hj:tour', 'open': False}])
 
+    # ------------------------------------------------------------ where we sleep (10 November 2026)
+    def test_where_we_sleep(self):
+        """Each stay shows its dates, nights, check-in and check-out times and why; each move day says the move (the owner,
+        10 November 2026: "you didn't mention how many days in each location and why ... check-in and check-out time")."""
+        sec = find(self.root, 'section', id='stays')[0]
+        rows = find(find(sec, 'ol', 'nights')[0], 'li')
+        self.assertEqual(len(rows), 3)
+        texts = [r.text() for r in rows]
+        self.assertIn('Sat 12 Jun → Tue 15 Jun · 3 nights', texts[0])
+        self.assertIn('Check-in from 14:00 · check-out by 11:00', texts[0])
+        self.assertIn('unpack once', texts[0])
+        self.assertIn('Tue 15 Jun → Thu 17 Jun · 2 nights', texts[1])
+        self.assertIn('Check-in from 15:00 · check-out by 10:00', texts[1])
+        moves = {d.attrs.get('id'): (find(d, 'p', 'day-move') or [None])[0] for d in find(self.root, 'article', 'day')}
+        self.assertEqual(moves['day-1'].text(), 'Check in at Hotel Tidewater from 14:00')
+        self.assertEqual(moves['day-4'].text(), 'Check out of Hotel Tidewater by 11:00 · check in at Ridge Lodge from 15:00')
+        self.assertEqual(moves['day-6'].text(), 'Check out of Ridge Lodge by 10:00 · check in at Hotel Tidewater from 14:00')
+        self.assertEqual(moves['day-8'].text(), 'Check out of Hotel Tidewater by 11:00')
+        for n in (2, 3, 5, 7):
+            self.assertIsNone(moves[f'day-{n}'], f'day {n} has no move')
+        self.assertEqual(len(find(self.root, 'li', 'tl-stay')), 9, 'three check-ins, three check-outs and three packings are marked in the timelines')
+
+    def test_where_we_sleep_is_checked(self):
+        def bad(change, pattern):
+            d = copy.deepcopy(self.data)
+            change(d)
+            with self.assertRaisesRegex(build.KitError, pattern):
+                build.build(d)
+
+        def tl(d, day, title):
+            return next(t for t in d['days'][day]['timeline'] if t['title'] == title)
+        bad(lambda d: d.pop('lodgings'), r'lodgings: list where we sleep')
+        bad(lambda d: d['lodgings'][1].update(to='2027-06-16'), r'no gap, no overlap')
+        bad(lambda d: d['lodgings'][0].update(**{'from': '2027-06-13'}), r'every night covered')
+        bad(lambda d: d['lodgings'][0].update(check_in='2pm'), r'check_in: a time as HH:MM')
+        bad(lambda d: d['lodgings'][0].update(why=''), r'lodgings\[0\]\.why')
+        bad(lambda d: d['lodgings'][0].update(source='nowhere'), r'lodgings\[0\]\.source')
+        bad(lambda d: d['days'][1].update(base='Example Bay · night 3 of 3'), r'is night 2 of 3')
+        bad(lambda d: tl(d, 5, 'Check in at Hotel Tidewater').update(time='13:30'), r'before its check-in time 14:00')
+        bad(lambda d: tl(d, 7, 'Check out').update(time='By 12:00'), r'after its check-out time 11:00')
+        bad(lambda d: d['days'][6]['timeline'].pop(), r'plan the packing before we check out')
+        bad(lambda d: tl(d, 0, 'Check in at Hotel Tidewater and unpack').update(time='15:45'), r'leave at least 30 minutes to unpack')
+        bad(lambda d: tl(d, 3, 'Check out and drive').pop('stay'), r'mark the timeline item where we check out')
+        bad(lambda d: tl(d, 3, 'Check in at Ridge Lodge').update(time='Afternoon'), r'give the check-in a clock time')
+        bad(lambda d: tl(d, 3, 'Check in at Ridge Lodge').update(stay='arrive'), r'"pack", "out" or "in"')
+        # the stays read a time the way the calendar does, "14.45" as well as "14:45" (Codex, 10 November 2026)
+        bad(lambda d: tl(d, 0, 'Lantern Beach, then rest').update(time='From 15.00'), r'leave at least 30 minutes to unpack')
+        # a "By" time ends there: the calendar starts it 30 minutes earlier, and so does the unpacking check (Codex, 10 November 2026)
+        bad(lambda d: tl(d, 0, 'Lantern Beach, then rest').update(time='By 15:15'), r'leave at least 30 minutes to unpack')
+        # a check-in needs a start: "By 14:00" does not say we arrive after 14:00 (Codex, 10 November 2026)
+        bad(lambda d: tl(d, 0, 'Check in at Hotel Tidewater and unpack').update(time='By 14:00'), r'give the check-in a clock time')
+        # nothing starts inside a check-in's own span either, wherever it sits in the list (Codex, 10 November 2026)
+        def inside(d):
+            tl(d, 0, 'Check in at Hotel Tidewater and unpack').update(time='14:45 to 16:00')
+            tl(d, 0, 'Lantern Beach, then rest').update(time='From 15:15')
+        bad(inside, r'leave at least 30 minutes to unpack')
+        def listed_first(d):
+            tl(d, 0, 'Lantern Point').update(time='15:00 to 16:00')
+        bad(listed_first, r'leave at least 30 minutes to unpack')
+        bad(lambda d: tl(d, 7, 'Check out').update(time='By 12.00'), r'after its check-out time 11:00')
+        dotted = copy.deepcopy(self.data)
+        tl(dotted, 0, 'Check in at Hotel Tidewater and unpack').update(time='14.45')
+        tl(dotted, 7, 'Check out').update(time='By 10.30')
+        build.build(dotted)
+
     # ------------------------------------------------------------ the islands (10 November 2026)
     def islands(self, data=None):
         root = self.root if data is None else build.parse_html(build.build(data))
@@ -2408,6 +2474,7 @@ class KitTest(unittest.TestCase):
         one = copy.deepcopy(self.data)
         one['days'] = one['days'][:1]
         one.pop('pretrip', None)
+        one.pop('lodgings', None)  # a day trip sleeps at home
         one['opener']['hero'] = one['opener']['hero'][:2]
         on_day = {it['stop'] for it in one['days'][0]['stops']}
         for k in ('stays', 'highlights'):
@@ -2437,9 +2504,7 @@ class KitTest(unittest.TestCase):
         self.assertEqual(isl2['days'][3]['holiday'], 'Example Day')
         self.assertEqual(isl2['days'][3]['label'], isl2['days'][3]['name'] + ' · Example Day')
         self.assertIn(f"Day 4 · {isl2['days'][3]['name']} · Example Day", [o.text() for o in find(root2, 'option')])
-        one = copy.deepcopy(self.data)
-        one['days'][0]['iso'] = '2027-06-01'
-        self.assertEqual(self.islands(one)[1]['days'][0]['name'], 'Tue 01 Jun', 'two digits for the day, as DD reads')
+        self.assertEqual(build.island_name(datetime.date(2027, 6, 1)), 'Tue 01 Jun', 'two digits for the day, as DD reads')
 
     def test_islands_distances_are_true(self):
         """Within each island every place sits at its true distance from the others (one scale for the island), the roads
@@ -2489,7 +2554,7 @@ class KitTest(unittest.TestCase):
 
     def test_no_islands_without_dates(self):
         data = copy.deepcopy(self.data)
-        for k in ('weather', 'pretrip'):  # a forecast and the book-ahead list need the dates too
+        for k in ('weather', 'pretrip', 'lodgings'):  # a forecast, the book-ahead list and the stays need the dates too
             data.pop(k, None)
         del data['days'][2]['iso']
         root, isl = self.islands(data)
