@@ -268,6 +268,37 @@
   "title": "Room to enjoy, room to pause.",
   "intro": "Timings are suggestions. Each day includes an easier version."
  },
+ "lodgings": [
+  {
+   "name": "Hotel Tidewater",
+   "from": "2027-06-12",
+   "to": "2027-06-15",
+   "check_in": "14:00",
+   "check_out": "11:00",
+   "source": "ex_hotel",
+   "url": "https://example.net/hotel-tidewater/rooms",
+   "why": "Three nights by the harbour for the Bay's three days, so we unpack once and walk to most of the plan."
+  },
+  {
+   "name": "Ridge Lodge",
+   "from": "2027-06-15",
+   "to": "2027-06-17",
+   "check_in": "15:00",
+   "check_out": "10:00",
+   "source": "ex_ridge",
+   "why": "Two nights, so the Ridge has one whole day between the two drives."
+  },
+  {
+   "name": "Hotel Tidewater",
+   "from": "2027-06-17",
+   "to": "2027-06-19",
+   "check_in": "14:00",
+   "check_out": "11:00",
+   "source": "ex_hotel",
+   "url": "https://example.net/hotel-tidewater/rooms",
+   "why": "Back by the harbour for the island day, and a short walk from the station for the train home."
+  }
+ ],
  "days": [
   {
    "when": "Sat 12 Jun",
@@ -395,6 +426,13 @@
      "title": "Lantern Point",
      "text": "Lighthouse grounds; the tower climb is optional [[src:ex_hours]].",
      "stop": "lighthouse"
+    },
+    {
+     "time": "14:45",
+     "title": "Check in at Hotel Tidewater and unpack",
+     "text": "Rooms from 2pm; the bags have waited at the desk since the morning [[src:ex_hotel]].",
+     "stop": "hotel",
+     "stay": "in"
     },
     {
      "time": "From 16:00",
@@ -1020,6 +1058,13 @@
      "title": "The Long Pier",
      "text": "Level boardwalk; benches every 100 m.",
      "stop": "pier"
+    },
+    {
+     "time": "Evening",
+     "title": "Pack for tomorrow's move",
+     "text": "Everything but the night things, so the morning is easy.",
+     "stay": "pack",
+     "stop": "hotel"
     }
    ],
    "info": [
@@ -1297,7 +1342,8 @@
      "time": "10:00",
      "title": "Check out and drive",
      "text": "About 2 hours 40 minutes in all [[src:ex_routes]].",
-     "stop": "hotel"
+     "stop": "hotel",
+     "stay": "out"
     },
     {
      "time": "11:15 to 12:00",
@@ -1315,7 +1361,8 @@
      "time": "15:30",
      "title": "Check in at Ridge Lodge",
      "text": "Rooms from 3pm [[src:ex_ridge]].",
-     "stop": "lodge"
+     "stop": "lodge",
+     "stay": "in"
     }
    ],
    "info": [
@@ -1597,6 +1644,13 @@
      "title": "Ridge Dairy",
      "text": "Tastings on the hour [[src:ex_ridge]].",
      "stop": "dairy"
+    },
+    {
+     "time": "Evening",
+     "title": "Pack for tomorrow's move",
+     "text": "Everything but the night things, so the morning is easy.",
+     "stay": "pack",
+     "stop": "lodge"
     }
    ],
    "info": [
@@ -1898,7 +1952,8 @@
      "time": "10:00",
      "title": "Check out and drive",
      "text": "About 2 hours 30 minutes [[src:ex_routes]].",
-     "stop": "lodge"
+     "stop": "lodge",
+     "stay": "out"
     },
     {
      "time": "11:15 to 12:15",
@@ -1910,7 +1965,8 @@
      "time": "14:00",
      "title": "Check in at Hotel Tidewater",
      "text": "Rooms from 2pm [[src:ex_hotel]].",
-     "stop": "hotel"
+     "stop": "hotel",
+     "stay": "in"
     }
    ],
    "info": [
@@ -2194,6 +2250,13 @@
      "title": "The Tide Gardens",
      "text": "Lunch in the glasshouse café.",
      "stop": "gardens"
+    },
+    {
+     "time": "Evening",
+     "title": "Pack for tomorrow's move",
+     "text": "Everything but the night things, so the morning is easy.",
+     "stay": "pack",
+     "stop": "hotel"
     }
    ],
    "info": [
@@ -2468,7 +2531,8 @@
      "time": "11:00",
      "title": "Check out",
      "text": "Bags can stay at the hotel [[src:ex_hotel]].",
-     "stop": "hotel"
+     "stop": "hotel",
+     "stay": "out"
     },
     {
      "time": "11:30 to 12:30",

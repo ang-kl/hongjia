@@ -228,7 +228,7 @@ Suitability marks:
 | `holiday` | | The day's public holiday, in plain words ("Christmas Day"), 48 characters at most; needs `iso`. The day's island is named with it: "Fri 25 Dec · Christmas Day". Give it only for a public holiday where the family will be, as the `holidays` section's source says. |
 | `route_label`, `sub`, `base`, `badge` | | Kicker route, dek line and the two pills. |
 | `walk` | | `"a>b"` legs that are short walks (dashed on the map, no leg needed). |
-| `timeline` | | `{time, title, text, stop, photos, links}`; `text` is *rich*. With `stop` (a stop id), the item links to its card and shows the stop's photos (up to three: a swipeable strip on phones, tap to enlarge, credited) and its official links; `photos` and `links` override or stand alone. |
+| `timeline` | | `{time, title, text, stop, photos, links, stay}`; `text` is *rich*. `stay` marks the day's moves (see "Where we sleep"): `"out"` (we check out; a clock time at or before the stay's check-out), `"in"` (we check in; a clock time at or after its check-in) or `"pack"` (that morning or the evening before a check-out). With `stop` (a stop id), the item links to its card and shows the stop's photos (up to three: a swipeable strip on phones, tap to enlarge, credited) and its official links; `photos` and `links` override or stand alone. |
 | `info` | | Boxes under the timeline: `{title, text}`, *rich* (house style: Getting around, Meals, Style & photo moments, Make it easier). |
 | `links` | | `{text, source}` or `{text, url}` under the boxes. |
 | `plan_b` | | The rain swap ("If it rains"): `{stop, role, replaces}` items. The key keeps its old name. |
@@ -238,6 +238,28 @@ Suitability marks:
 | `taste`, `shop` | | The day's two boxes, "Taste of the day" and "Shop the day": `{text, hours, items}`. `text` and `hours` are *rich* (`hours`, the shops' trading hours that day, is a fact and needs a source tag); `items` are cards like a stop's `nearby` (`cat` defaults to `food` and `shopping`). |
 | `meals` | | The day's meals, each with its choices: `{meal, time, note, choices}`. `meal` is `breakfast`, `brunch`, `lunch`, `dinner` or `snack`; `note` is *rich*; each choice is `{stop, role}` (a planned stop, marked "Planned") or a card like a stop's `nearby` (`cat` defaults to `food`; `hours` need a `source`). With `page.meal_choices`, the count must match. |
 | `nearby` | | Optional extras: `{id, name, kind, why, hours, hours_sources, lat, lng, q, links, photo}`; `id`, `name`, `why`, `lat`, `lng`, `q` required; `hours` is a fact, so give `hours_sources` (source keys or https URLs); `photo` is a `photos` id or a photo object; `cat` puts it in the legend and on the map's Nearby options layer. |
+
+### Where we sleep: `lodgings` (10 November 2026)
+
+**Required** when the trip has more than one day and every day has its `iso` date ("the places to stay ... you didn't
+mention how many days in each location and why. you have to consider check-in and check-out time and time to
+pack/unpack. this is very important for every trip", the owner, 10 November 2026). One item per stay, in order:
+
+| Field | Required | What |
+|---|---|---|
+| `name` | **yes** | The stay, as it appears on the booking. |
+| `from`, `to` | **yes** | The check-in day and the check-out day, `YYYY-MM-DD`. |
+| `check_in`, `check_out` | **yes** | The stay's own times, `HH:MM` (24-hour). Facts: `source` names where they were read. |
+| `why` | **yes** | *Rich*: why we stay here, and for this many nights (the days it serves, the drive it saves, the packing it avoids). |
+| `source` | **yes** | A `sources` key (or a list) for the times. |
+| `url` | | Where to book it. |
+
+The build checks that the stays cover every night from the first day to the last with no gap or overlap, that a day's
+`base` "night k of n" agrees with them, and that every move day's timeline marks the check-out (`stay: "out"`, at or
+before the check-out time), the check-in (`stay: "in"`, at or after the check-in time, with at least 30 minutes before
+the next timed item to unpack) and the packing before every check-out (`stay: "pack"`, that morning or the evening
+before). The Stays section opens with "Where we sleep" (dates, nights, the two times and why), and each move day's
+header says the move: "Check out of A by 10:00 · check in at B from 14:00".
 
 ### The days as islands (10 November 2026)
 

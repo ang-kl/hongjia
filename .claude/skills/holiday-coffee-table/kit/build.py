@@ -444,6 +444,35 @@ def island_outline(points, seed, samples=72):
     return coast, reef
 
 
+# ---------------------------------------------------------------- where we sleep (10 November 2026)
+# "the places to stay ... you didn't mention how many days in each location and why. you have to consider check-in and
+# check-out time and time to pack/unpack. this is very important for every trip" (the owner, 10 November 2026).
+LABELS.update({
+    'lg_title': 'Where we sleep', 'lg_night': '{n} night', 'lg_nights': '{n} nights',
+    'lg_times': 'Check-in from {cin} · check-out by {cout}', 'lg_book': 'Book',
+    'mv_first': 'Check in at {name} from {cin}', 'mv_last': 'Check out of {name} by {cout}',
+    'mv_move': 'Check out of {a} by {cout} · check in at {b} from {cin}',
+})
+CLOCK = re.compile(r'\b([01]?\d|2[0-3]):([0-5]\d)\b')
+STAY_MARKS = ('pack', 'out', 'in')
+UNPACK_MIN = 30  # after checking in, the next timed item starts at least this much later
+
+
+def island_name(d):
+    """An island's name: "DDD DD MMM" (the owner, 10 November 2026), for example "Fri 01 Jan"."""
+    return f'{WEEKDAYS[d.weekday()]} {d.day:02d} {MONTHS[d.month - 1]}'
+
+
+def clock_minutes(text):
+    """Every HH:MM in a time string, as minutes after midnight."""
+    return [int(h) * 60 + int(m) for h, m in CLOCK.findall(str(text or ''))]
+
+
+def hhmm(v, where):
+    if not isinstance(v, str) or not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', v):
+        raise KitError(f'{where}: a time as HH:MM, 24-hour (for example "14:00")')
+    return int(v[:2]) * 60 + int(v[3:])
+
 _GLOBE = None
 
 
@@ -591,6 +620,7 @@ class Page:
         self.L = dict(LABELS)
         self.L.update(data.get('labels') or {})
         self._islands = None  # worked out once, on first use (islands_data)
+        self.lodgings = []  # where we sleep, checked in validate_lodgings
         self.marks = {k: (v[0], dict(v[1])) for k, v in MARKS.items()}
         for k, over in ((data.get('labels') or {}).get('marks') or {}).items():
             if k in self.marks:
@@ -816,6 +846,7 @@ class Page:
         self.validate_weather()
         self.validate_near()
         self.validate_pretrip()
+        self.validate_lodgings()
         self.validate_plans()
         self.validate_audience()
         self.validate_opener()
@@ -1030,6 +1061,136 @@ class Page:
                 missing.insert(1, '2 hospitals in all (er and hospital)')
             if missing:
                 raise KitError(f'{w}: every area needs its essentials; missing: {", ".join(missing)}')
+
+    def validate_lodgings(self):
+        """Where we sleep: one stay after another with no gap, every night from the first day to the last, each with its
+        check-in and check-out times (sourced) and why we stay there that long. The days must agree with them: their
+        "night k of n", a check-out at or before the time, a check-in at or after it, packing before every check-out and
+        time to unpack after every check-in."""
+        stays = self.d.get('lodgings')
+        dated = self.days and all(d.get('iso') for d in self.days)
+        if stays is None:
+            if dated and len(self.days) > 1:
+                raise KitError('lodgings: list where we sleep each night, with the check-in and check-out times and why (see schema.md)')
+            return
+        if not isinstance(stays, list) or not stays or not dated:
+            raise KitError('lodgings: a list of stays, on a trip whose days all have their "iso" date')
+        self.lodgings = []
+        for i, s in enumerate(stays):
+            w = f'lodgings[{i}]'
+            if not isinstance(s, dict) or not str(s.get('name') or '').strip():
+                raise KitError(f'{w}.name is required')
+            a, b = parse_date(s.get('from'), w + '.from'), parse_date(s.get('to'), w + '.to')
+            if b <= a:
+                raise KitError(f'{w}: "to" (the check-out day) comes after "from" (the check-in day)')
+            cin, cout = hhmm(s.get('check_in'), w + '.check_in'), hhmm(s.get('check_out'), w + '.check_out')
+            if not str(s.get('why') or '').strip():
+                raise KitError(f'{w}.why: say why we stay here, and for this many nights')
+            src = s.get('source')
+            for k in (src if isinstance(src, list) else [src]):
+                if k not in self.sources:
+                    raise KitError(f'{w}.source: the check-in and check-out times are facts; name their source (a sources key)')
+            if s.get('url'):
+                check_url(s['url'], w + '.url')
+            self.lodgings.append(dict(s, _from=a, _to=b, _in=cin, _out=cout, _w=w))
+        first, last = parse_date(self.days[0]['iso'], 'days[0].iso'), parse_date(self.days[-1]['iso'], 'days[-1].iso')
+        if self.lodgings[0]['_from'] != first or self.lodgings[-1]['_to'] != last:
+            raise KitError(f'lodgings: the stays run from the first day ({first}) to the last ({last}), every night covered')
+        for x, y in zip(self.lodgings, self.lodgings[1:]):
+            if x['_to'] != y['_from']:
+                raise KitError(f'{y["_w"]}: starts on {y["_from"]}, but the stay before ends on {x["_to"]}: no gap, no overlap')
+        by_day = {d['iso']: i for i, d in enumerate(self.days)}
+        for L in self.lodgings:
+            nights = (L['_to'] - L['_from']).days
+            for k in range(nights):
+                iso = (L['_from'] + datetime.timedelta(days=k)).isoformat()
+                if iso not in by_day:
+                    raise KitError(f'{L["_w"]}: night {k + 1} ({iso}) has no day in the plan')
+                m = re.search(r'night (\d+) of (\d+)', str(self.days[by_day[iso]].get('base') or ''))
+                if m and (int(m.group(1)), int(m.group(2))) != (k + 1, nights):
+                    raise KitError(f'days[{by_day[iso]}].base says "night {m.group(1)} of {m.group(2)}", but {L["name"]} is night {k + 1} of {nights}')
+        # The days: check-out, check-in and packing, at the stays' own times.
+        def marks(i, kind):
+            return [(j, x) for j, x in enumerate(self.days[i].get('timeline') or []) if x.get('stay') == kind]
+        for i, day in enumerate(self.days):
+            for j, x in enumerate(day.get('timeline') or []):
+                if x.get('stay') is not None and x['stay'] not in STAY_MARKS:
+                    raise KitError(f'days[{i}].timeline[{j}].stay: "pack", "out" or "in"')
+        for i, day in enumerate(self.days):
+            d = parse_date(day['iso'], f'days[{i}].iso')
+            leaving = [L for L in self.lodgings if L['_to'] == d]
+            arriving = [L for L in self.lodgings if L['_from'] == d]
+            outs, ins = marks(i, 'out'), marks(i, 'in')
+            if len(outs) != len(leaving) or len(ins) != len(arriving):
+                raise KitError(f'days[{i}] ({day["when"]}): mark the timeline item where we check out ("stay": "out") and where we check in ("stay": "in"): '
+                               f'{len(leaving)} check-out and {len(arriving)} check-in today')
+            if outs:
+                j, x = outs[0]
+                t = clock_minutes(x.get('time'))
+                if not t:
+                    raise KitError(f'days[{i}].timeline[{j}]: give the check-out a clock time ("By 10:00")')
+                if t[-1] > leaving[0]['_out']:
+                    raise KitError(f'days[{i}].timeline[{j}]: we check out of {leaving[0]["name"]} at {x["time"]}, after its check-out time {leaving[0]["check_out"]}')
+                packed = any(k < j for k, _ in marks(i, 'pack')) or (i > 0 and marks(i - 1, 'pack'))
+                if not packed:
+                    raise KitError(f'days[{i}] ({day["when"]}): plan the packing before we check out ("stay": "pack" that morning or the evening before)')
+            if ins:
+                j, x = ins[0]
+                t = clock_minutes(x.get('time'))
+                if not t:
+                    raise KitError(f'days[{i}].timeline[{j}]: give the check-in a clock time ("From 14:00")')
+                if t[0] < arriving[0]['_in']:
+                    raise KitError(f'days[{i}].timeline[{j}]: we check in to {arriving[0]["name"]} at {x["time"]}, before its check-in time {arriving[0]["check_in"]}')
+                if outs and outs[0][0] > j:
+                    raise KitError(f'days[{i}]: the check-out comes before the check-in')
+                for k, y in enumerate((day.get('timeline') or [])[j + 1:], j + 1):
+                    nxt = clock_minutes(y.get('time'))
+                    if nxt:
+                        if nxt[0] < t[0] + UNPACK_MIN:
+                            raise KitError(f'days[{i}].timeline[{k}]: starts at {y["time"]}, too soon after checking in at {x["time"]}: '
+                                           f'leave at least {UNPACK_MIN} minutes to unpack')
+                        break
+
+    def lodging_on(self, d):
+        """The stays that end and begin on a date."""
+        return ([L for L in self.lodgings if L['_to'] == d], [L for L in self.lodgings if L['_from'] == d])
+
+    def day_label(self, d):
+        return f'{WEEKDAYS[d.weekday()]} {d.day} {MONTHS[d.month - 1]}'
+
+    def lodgings_html(self):
+        """Where we sleep: each stay with its dates, nights, check-in and check-out times, and why."""
+        if not self.lodgings:
+            return ''
+        rows = []
+        for i, L in enumerate(self.lodgings):
+            n = (L['_to'] - L['_from']).days
+            nights = self.fmt('lg_night' if n == 1 else 'lg_nights', n=n)
+            name = E(L['name'])
+            src = ''.join(f' [[src:{k}]]' for k in (L['source'] if isinstance(L['source'], list) else [L['source']]))
+            book = f' <a class="lg-book" href="{E(L["url"])}" target="_blank" rel="noopener">{E(self.L["lg_book"])} ↗</a>' if L.get('url') else ''
+            rows.append(f'<li><p class="mono kicker">{E(self.day_label(L["_from"]))} → {E(self.day_label(L["_to"]))} · {E(nights)}</p>'
+                        f'<h4>{name}</h4>'
+                        f'<p class="lg-times">{self.rich(self.fmt("lg_times", cin=L["check_in"], cout=L["check_out"]) + src, L["_w"] + ".times")}{book}</p>'
+                        f'<p>{self.rich(L["why"], L["_w"] + ".why")}</p></li>')
+        title = E(self.L['lg_title'])
+        return (f'<div class="nights-wrap"><h3 id="where-we-sleep">{title}{self.sec_link("where-we-sleep", self.L["lg_title"])}</h3>'
+                f'<ol class="nights">{"".join(rows)}</ol></div>')
+
+    def day_move(self, day):
+        """The day's check-out and check-in, at the stays' times, under the day's title."""
+        if not self.lodgings or not day.get('iso'):
+            return ''
+        leaving, arriving = self.lodging_on(parse_date(day['iso'], 'days.iso'))
+        if leaving and arriving:
+            t = self.fmt('mv_move', a=leaving[0]['name'], cout=leaving[0]['check_out'], b=arriving[0]['name'], cin=arriving[0]['check_in'])
+        elif arriving:
+            t = self.fmt('mv_first', name=arriving[0]['name'], cin=arriving[0]['check_in'])
+        elif leaving:
+            t = self.fmt('mv_last', name=leaving[0]['name'], cout=leaving[0]['check_out'])
+        else:
+            return ''
+        return f'<p class="day-move">{E(t)}</p>'
 
     def validate_pretrip(self):
         """What to book before the trip (the owner, 9 November 2026: "if we need to reserve ahead like salon, you need
@@ -2012,7 +2173,8 @@ class Page:
         if links or place:
             extra += self.link_row(links, place, where=w + '.links', extras=False)
         cats = self.stop_cats.get(x.get('stop')) if st else []
-        return (f'<li{self.cats_attr(cats or [])}><span class="t">{E(x.get("time"))}</span><div><b>{title}</b><p>{self.rich(x.get("text"), w)}</p>'
+        stay = f' class="tl-stay tl-{x["stay"]}"' if x.get('stay') in STAY_MARKS else ''
+        return (f'<li{stay}{self.cats_attr(cats or [])}><span class="t">{E(x.get("time"))}</span><div><b>{title}</b><p>{self.rich(x.get("text"), w)}</p>'
                 f'{extra}</div></li>')
 
     def plan_head(self, p):
@@ -2047,6 +2209,7 @@ class Page:
                f'<div class="day-t"><p class="mono kicker">{kicker}</p><h3>{self.accent(day["title"])}{self.sec_link(f"day-{n}")}</h3>'
                + (f'<p class="dek">{E(day["sub"])}</p>' if day.get('sub') else '')
                + (f'<p class="day-meta">{meta}</p>' if meta else '')
+               + self.day_move(day)
                + f'<button type="button" class="btn-ghost share-day" data-share-day="{n}" hidden><span aria-hidden="true">↗</span> {E(self.L["share_day"])}</button>'
                + '</div></header>'
                + self.plans_bar(day, n, alts)
@@ -2420,13 +2583,14 @@ class Page:
 
     def prose(self, sid):
         s = self.d.get(sid)
-        if not s and not (sid == 'stays' and self.d.get('worship')):
+        if not s and not (sid == 'stays' and (self.d.get('worship') or self.lodgings)):
             return ''
         s = s or {}
         alert = self.block(dict(s['alert'], type='alert'), sid + '.alert') if s.get('alert') else ''
         cats = norm_cats(s.get('cat') or {'stays': 'stays', 'transport': 'transport', 'holidays': 'weather'}.get(sid), sid + '.cat')
         extra = self.worship_block() if sid == 'stays' else ''
-        return f'<section id="{sid}" class="sec"{self.cats_attr(cats)}>{alert}{self.head(s, sid, sid)}{self.blocks(s.get("blocks"), sid + ".blocks")}{extra}</section>'
+        nights = self.lodgings_html() if sid == 'stays' else ''
+        return f'<section id="{sid}" class="sec"{self.cats_attr(cats)}>{alert}{self.head(s, sid, sid)}{nights}{self.blocks(s.get("blocks"), sid + ".blocks")}{extra}</section>'
 
     # ------------------------------------------------------------------ the opener
     def first_role(self, sid):
@@ -2670,7 +2834,7 @@ class Page:
                 if self.cal_days():
                     out.append(s)
                 continue
-            if s in ('map', 'days', 'credits', 'sources') or self.d.get(s) or (s == 'concierge' and self.areas) or (s == 'stays' and self.d.get('worship')):
+            if s in ('map', 'days', 'credits', 'sources') or self.d.get(s) or (s == 'concierge' and self.areas) or (s == 'stays' and (self.d.get('worship') or self.d.get('lodgings'))):
                 if s == 'upgrades' and not (self.d.get('upgrades') or {}).get('groups'):
                     continue
                 out.append(s)
@@ -3240,8 +3404,7 @@ class Page:
         stay_places = {pid for pid, p in P.items() if str(p.get('name', '')).strip() in stay_titles}
         out_days, prev_town, proj_err = [], None, 0.0
         for di, day in enumerate(self.days):
-            date = parse_date(day['iso'], f'days[{di}].iso')
-            name = f'{WEEKDAYS[date.weekday()]} {date.day:02d} {MONTHS[date.month - 1]}'
+            name = island_name(parse_date(day['iso'], f'days[{di}].iso'))
             holiday = (day.get('holiday') or '').strip() or None
             label = f'{name} · {holiday}' if holiday else name
             route = day['route']
