@@ -4,6 +4,7 @@
 pub mod attach;
 pub mod auth;
 pub mod calendar;
+pub mod crowd;
 pub mod doccheck;
 pub mod documents;
 mod explore;
@@ -49,6 +50,11 @@ pub struct Config {
     /// Where trip-page map tiles come from (OpenStreetMap unless `HONGJIA_TILES_URL` says
     /// otherwise, as the tests do).
     pub tiles_url: String,
+    /// Where crowd patterns come from (BestTime unless `HONGJIA_BESTTIME_URL` says otherwise).
+    pub besttime_url: String,
+    /// BestTime's private key (`BESTTIME_API_KEY_PRIVATE`, set in Railway, never committed); without
+    /// it the owner's crowd asks say it is not set up. It never prints.
+    pub besttime_key: Option<crowd::Key>,
 }
 
 impl Config {
@@ -113,6 +119,15 @@ impl Config {
         {
             return Err("HONGJIA_TILES_URL must look like https://tile.openstreetmap.org".into());
         }
+        let besttime_url =
+            present("HONGJIA_BESTTIME_URL").unwrap_or_else(|| crowd::DEFAULT_URL.to_string());
+        if !(besttime_url.starts_with("https://")
+            || (!on_railway && besttime_url.starts_with("http://")))
+            || besttime_url.ends_with('/')
+        {
+            return Err("HONGJIA_BESTTIME_URL must look like https://besttime.app".into());
+        }
+        let besttime_key = present("BESTTIME_API_KEY_PRIVATE").map(crowd::Key::new);
         Ok(Config {
             profiles,
             owner,
@@ -121,6 +136,8 @@ impl Config {
             on_railway,
             weather_url,
             tiles_url,
+            besttime_url,
+            besttime_key,
         })
     }
 
@@ -225,6 +242,7 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .route("/api/search", get(explore::search))
         .route("/api/library", get(explore::library))
         .route("/api/weather", get(weather::forecast))
+        .route("/api/crowd", post(crowd::forecast))
         .route("/calendar.ics", get(calendar::file))
         .route("/api/tile-ticket", get(tiles::ticket))
         .route("/tiles/{z}/{x}/{file}", get(tiles::tile))
@@ -453,6 +471,32 @@ mod tests {
         railway.push(("HONGJIA_PUBLIC_ORIGIN", "https://hongjia.org"));
         railway.push(("HONGJIA_WEATHER_URL", "http://127.0.0.1:9000"));
         assert!(config(&railway).is_err(), "plain http is for tests only");
+    }
+
+    #[test]
+    fn crowds_come_from_besttime_and_the_key_never_prints() {
+        let base = [
+            ("HONGJIA_PROFILES", "alpha"),
+            ("HONGJIA_OWNER", "alpha"),
+            ("HONGJIA_FAMILY_PASSWORD", "family"),
+        ];
+        let plain = config(&base).unwrap();
+        assert_eq!(plain.besttime_url, crowd::DEFAULT_URL);
+        assert!(plain.besttime_key.is_none(), "no key, no crowd asks");
+        let mut keyed = base.to_vec();
+        keyed.push((
+            "BESTTIME_API_KEY_PRIVATE",
+            " pri_0123456789abcdef0123456789abcdef ",
+        ));
+        let keyed = config(&keyed).unwrap();
+        assert!(keyed.besttime_key.is_some());
+        assert!(
+            !format!("{keyed:?}").contains("pri_0123"),
+            "Config's Debug hides the key"
+        );
+        let mut bad = base.to_vec();
+        bad.push(("HONGJIA_BESTTIME_URL", "https://besttime.app/"));
+        assert!(config(&bad).is_err());
     }
 
     #[test]

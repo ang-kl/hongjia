@@ -1236,3 +1236,12 @@ thead th,.cc-grid dt,.upg-dl dt,.sh-facts dt{font-family:var(--sans);font-size:v
 .day-move{margin:.5em 0 0;font-size:.95em;color:var(--ink2)}
 .day-move::before{content:"🧳 ";}
 .timeline li.tl-stay .t{font-weight:600}
+
+/* How busy a stop usually is (10 November 2026): a bar per hour for the day we visit, ours in the accent colour */
+.crowd{margin:.6rem 0 .2rem;max-width:34rem}
+.crowd svg{display:block;width:100%;height:auto;overflow:visible}
+.crowd rect{fill:var(--line,#c9c2b6)}
+.crowd rect.on{fill:var(--accent,#1f5f5b)}
+.crowd text{font-size:7px;fill:var(--muted,#6b665e);text-anchor:middle}
+.crowd figcaption{font-size:.9rem;line-height:1.45;margin-top:.25rem}
+.crowd figcaption .fine{display:block;font-size:.8rem;color:var(--muted,#6b665e)}

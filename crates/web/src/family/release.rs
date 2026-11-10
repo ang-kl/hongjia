@@ -3,6 +3,6 @@
 //! date it went live in Singapore, with the count of releases that day; each release replaces the
 //! paragraph with one saying what changed in it.
 
-pub const VERSION: &str = "2026.11.10 (5)";
+pub const VERSION: &str = "2026.11.10 (6)";
 
-pub const SYNOPSIS: &str = "This version turns the globe button into the trip's days as islands on a trip page that has them: one island for each day, named like Fri 25 Dec with its public holiday, its places at their true distances, and Play to follow the day from stop to stop. Everywhere else the globe of documents is as before. While the islands are open the page's pins step aside, and on a phone the ☰ and 🔭 buttons too.";
+pub const SYNOPSIS: &str = "This version lets the owner ask BestTime how busy a trip's places usually are, hour by hour in a typical week, so a trip page can show each planned stop's crowd bar. Only the place's name and address are sent; BestTime's key stays on the server and never appears in a page. Nothing changes for anyone else.";
