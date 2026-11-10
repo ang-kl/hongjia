@@ -608,7 +608,7 @@ pub async fn privacy(State(state): State<FamilyState>) -> Result {
     ))
 }
 
-fn api_ok(state: &FamilyState, headers: &HeaderMap, session: &Session) -> bool {
+pub(super) fn api_ok(state: &FamilyState, headers: &HeaderMap, session: &Session) -> bool {
     let token = headers
         .get("x-csrf-token")
         .and_then(|v| v.to_str().ok())

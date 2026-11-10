@@ -5,7 +5,7 @@ description: Use when the family shares a briefing note, document, PDF or pictur
 
 # Holiday coffee-table pages
 
-Version 6, 10 November 2026: where we sleep: every stay with its nights, check-in and check-out times and why, and the
+Version 7, 10 November 2026: crowds: a sourced "Crowds" box on each day, and each planned stop's typical busyness for the day we visit, hour by hour from BestTime through the family site (a typical week, never a forecast for the date). Version 6, the same day: where we sleep: every stay with its nights, check-in and check-out times and why, and the
 days checked against them (packing, check-out, check-in, time to unpack). Version 5, the same day: the days as islands, opened by the family site's globe button: each day an island
 named like "Fri 25 Dec · Christmas Day", its places at their true distances, with Play. Version 4, 9 November 2026:
 restaurants in Play the trip say what to eat and drink, their dated rating and what
@@ -194,6 +194,20 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
 - The page's edition line says the same: "Coffee Table edition v15 · <date>".
 - Each version's changes are the owner's decisions, recorded in the private data-making script with
   the owner's words, never in this public folder.
+
+## Crowds: the day and the hour
+
+Every trip page says how crowded each day and each planned stop is likely to be ("crowdness using best time api",
+the owner, 10 November 2026).
+
+- **The day:** a "Crowds" box in each day's `info`: school holidays, public holidays, long weekends, events, road
+  and checkpoint advisories, each sourced; last year's figures marked "historical"; our own estimates marked as ours.
+- **The hour:** `crowds` from BestTime (schema.md, "How busy"). The site fetches them for the owner only, at
+  `POST /api/crowd` (`name`, `address`, the page's `x-csrf-token`), with the key it keeps in Railway
+  (`BESTTIME_API_KEY_PRIVATE`). The key never goes in a page, the repository, a chat or a file. Each new venue spends
+  BestTime credits: ask for the planned stops only, once, and read again within a month of the trip.
+- Check the venue BestTime matched before using it; leave a stop out when it matched the wrong place or has no data.
+- A pattern is a typical week, never a forecast for the date; the page says so on every bar.
 
 ## Stays: nights, times and why
 

@@ -2463,6 +2463,38 @@ class KitTest(unittest.TestCase):
         tl(dotted, 7, 'Check out').update(time='By 10.30')
         build.build(dotted)
 
+    # ------------------------------------------------------------ how busy (10 November 2026)
+    def test_crowd_bar_shows_the_day_we_visit(self):
+        """A planned stop with BestTime's week shows the day we visit: a bar per hour, ours marked, one line, and that it is
+        a typical week, not a forecast (the owner, 10 November 2026: "crowdness using best time api")."""
+        figs = find(self.root, 'figure', 'crowd')
+        self.assertEqual(len(figs), 1, 'the sample has one stop with crowd data, planned once')
+        fig = figs[0]
+        svg = find(fig, 'svg')[0]
+        self.assertEqual(svg.attrs.get('role'), 'img')
+        self.assertIn('Sunday', svg.attrs.get('aria-label', ''))
+        self.assertEqual(len(find(fig, 'rect')), 18, '6 am to midnight')
+        on = [r for r in find(fig, 'rect') if 'on' in (r.attrs.get('class') or '')]
+        self.assertEqual(len(on), 2, 'our 11:30 to 13:00 visit covers the 11:00 and 12:00 bars')
+        text = fig.text()
+        self.assertIn('On a typical Sunday it is usually busiest about 12:00', text)
+        self.assertIn('at our 11:30, about', text)
+        self.assertIn('not a forecast for Sun 13 Jun', text)
+        self.assertIn('Gull Market, Example Bay (sample)', text)
+
+    def test_crowds_are_checked(self):
+        def bad(change, pattern):
+            d = copy.deepcopy(self.data)
+            change(d)
+            with self.assertRaisesRegex(build.KitError, pattern):
+                build.build(d)
+        bad(lambda d: d['crowds'].update(nowhere=d['crowds']['market']), r"crowds.nowhere: unknown stop")
+        bad(lambda d: d['crowds']['market'].update(week=d['crowds']['market']['week'][:6]), r'seven days from Monday')
+        bad(lambda d: d['crowds']['market']['week'][0].__setitem__(3, 101), r'0 to 100')
+        bad(lambda d: d['crowds']['market'].update(source='nowhere'), r'unknown source')
+        bad(lambda d: d['crowds']['market'].update(read='10 Nov'), r'crowds.market.read')
+        bad(lambda d: d['crowds']['market'].pop('venue'), r'crowds.market.venue is required')
+
     # ------------------------------------------------------------ the islands (10 November 2026)
     def islands(self, data=None):
         root = self.root if data is None else build.parse_html(build.build(data))

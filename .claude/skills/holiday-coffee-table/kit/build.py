@@ -466,6 +466,18 @@ LABELS.update({
     'mv_move': 'Check out of {a} by {cout} · check in at {b} from {cin}',
 })
 STAY_MARKS = ('pack', 'out', 'in')
+# How busy a stop usually is (the owner, 10 November 2026): BestTime's typical week, Monday first, each day 24 hours
+# from 6 am to 5 am the next morning, 0 to 100% of the venue's busiest hour of the week.
+CROWD_FIRST_HOUR = 6
+WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+LABELS.update({
+    'cr_aria': 'How busy {name} usually is on a {wd}, hour by hour from 6 am',
+    'cr_peak': 'On a typical {wd} it is usually busiest about {peak}',
+    'cr_quiet': ', quieter about {quiet}',
+    'cr_ours': '; at our {time}, about {pct}% of its busiest hour of the week',
+    'cr_closed': 'On a typical {wd} BestTime shows no visitors here (closed, or no data).',
+    'cr_note': 'A typical week from BestTime, matched to "{venue}" and read {read}; not a forecast for {date}.',
+})
 UNPACK_MIN = 30  # after checking in, the next timed item starts at least this much later
 
 
@@ -627,6 +639,7 @@ class Page:
         self.L.update(data.get('labels') or {})
         self._islands = None  # worked out once, on first use (islands_data)
         self.lodgings = []  # where we sleep, checked in validate_lodgings
+        self.crowds = {}  # how busy each stop usually is, checked in validate_crowds
         self.marks = {k: (v[0], dict(v[1])) for k, v in MARKS.items()}
         for k, over in ((data.get('labels') or {}).get('marks') or {}).items():
             if k in self.marks:
@@ -853,6 +866,7 @@ class Page:
         self.validate_near()
         self.validate_pretrip()
         self.validate_lodgings()
+        self.validate_crowds()
         self.validate_plans()
         self.validate_audience()
         self.validate_opener()
@@ -1067,6 +1081,80 @@ class Page:
                 missing.insert(1, '2 hospitals in all (er and hospital)')
             if missing:
                 raise KitError(f'{w}: every area needs its essentials; missing: {", ".join(missing)}')
+
+    def validate_crowds(self):
+        """`crowds`: for a stop, BestTime's typical week (seven days from Monday, 24 hours each from 6 am, 0 to 100),
+        the venue it matched, the date it was read and its source. Only patterns, never a forecast for a date."""
+        crowds = self.d.get('crowds')
+        if crowds is None:
+            return
+        if not isinstance(crowds, dict):
+            raise KitError('crowds: an object of stop ids')
+        for sid, c in crowds.items():
+            w = f'crowds.{sid}'
+            if sid not in self.stops:
+                raise KitError(f'{w}: unknown stop {sid!r}')
+            if not isinstance(c, dict):
+                raise KitError(f'{w}: an object')
+            for k in ('venue', 'source'):
+                if not str(c.get(k) or '').strip():
+                    raise KitError(f'{w}.{k} is required')
+            if c['source'] not in self.sources:
+                raise KitError(f'{w}.source: unknown source {c["source"]!r}')
+            parse_date(c.get('read'), w + '.read')
+            week = c.get('week')
+            if not (isinstance(week, list) and len(week) == 7 and all(
+                    isinstance(day, list) and len(day) == 24
+                    and all(isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 100 for v in day) for day in week)):
+                raise KitError(f'{w}.week: seven days from Monday, each 24 whole numbers from 0 to 100 (from 6 am)')
+            self.crowds[sid] = c
+
+    def crowd_line(self, day, sid, w):
+        """The day we visit, from the stop's typical week: a bar for each hour, ours marked, and one line."""
+        c = self.crowds.get(sid)
+        if not c or not day.get('iso'):
+            return ''
+        d = parse_date(day['iso'], w)
+        wd = WEEKDAY_NAMES[d.weekday()]
+        raw = c['week'][d.weekday()]
+        n = 24 if any(raw[18:]) else 18  # after midnight only when the place is busy then
+        visits = [clock_span(x.get('time')) for x in day.get('timeline') or [] if x.get('stop') == sid]
+        visits = [v for v in visits if v]
+        ours = set()
+        for a, b in visits:
+            for i in range(n):
+                h = (CROWD_FIRST_HOUR + i) * 60
+                if a < h + 60 and b > h:
+                    ours.add(i)
+        hhmm_of = lambda i: f'{(CROWD_FIRST_HOUR + i) % 24:02d}:00'
+        bars = []
+        for i in range(n):
+            v = raw[i]
+            h = round(v * 0.36, 1)
+            cls = ' class="on"' if i in ours else ''
+            bars.append(f'<rect{cls} x="{i * 10 + 1}" y="{40 - h}" width="8" height="{max(h, 0.6)}" rx="1.5"><title>{hhmm_of(i)} · {v}%</title></rect>')
+        ticks = ''.join(f'<text x="{i * 10 + 5}" y="50">{(CROWD_FIRST_HOUR + i) % 24}</text>' for i in range(0, n, 3))
+        open_hours = [i for i in range(n) if raw[i] > 0]
+        if not open_hours:
+            line = E(self.fmt('cr_closed', wd=wd))
+        else:
+            peak = max(open_hours, key=lambda i: (raw[i], -i))
+            quiet = min(open_hours, key=lambda i: (raw[i], i))
+            line = self.fmt('cr_peak', wd=wd, peak=hhmm_of(peak))
+            if raw[quiet] < raw[peak]:
+                line += self.fmt('cr_quiet', quiet=hhmm_of(quiet))
+            if visits:
+                start = visits[0][0]
+                i = start // 60 - CROWD_FIRST_HOUR
+                if 0 <= i < n:
+                    t = f'{start // 60:02d}:{start % 60:02d}'
+                    line += self.fmt('cr_ours', time=t, pct=raw[i])
+            line = E(line + '.')
+        note = self.fmt('cr_note', venue=c['venue'], read=self.day_label(parse_date(c['read'], w)), date=self.day_label(d))
+        name = self.stops[sid]['name']
+        return (f'<figure class="crowd" data-fact><svg viewBox="0 0 {n * 10} 52" role="img" aria-label="{E(self.fmt("cr_aria", name=name, wd=wd))}">'
+                f'{"".join(bars)}{ticks}</svg>'
+                f'<figcaption>{line} <span class="fine">{E(note)}</span> {self.src_tag(c["source"], where=w + ".crowd")}</figcaption></figure>')
 
     def validate_lodgings(self):
         """Where we sleep: one stay after another with no gap, every night from the first day to the last, each with its
@@ -1951,6 +2039,7 @@ class Page:
                f'<button type="button" class="btn-ghost show-map" data-day="{n - 1}" data-idx="{idx if plan == "a" else -1}" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" data-name="{E(st["name"])}" data-note="{E(note)}">{E(self.L["show_on_map"])}</button></header>'
                f'{swaps}'
                f'{self.suits(st, sid)}'
+               f'{self.crowd_line(day, sid, w)}'
                f'{self.bento(st.get("photos"), w + ".photos")}'
                f'{self.clips(st.get("clips"))}'
                f'{self.posts(st.get("embeds"))}'

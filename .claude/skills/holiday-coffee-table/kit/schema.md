@@ -263,6 +263,24 @@ every check-out (`stay: "pack"`, that morning or the evening before). Times are 
 is "14:45", and a "By 15:15" item starts at 14:45. The Stays section opens with "Where we sleep" (dates, nights, the two times and why), and each move day's
 header says the move: "Check out of A by 10:00 · check in at B from 14:00".
 
+### How busy: `crowds` (10 November 2026)
+
+How busy a stop usually is, hour by hour, from BestTime ("crowdness using best time api", the owner, 10 November
+2026). `crowds` maps a stop id to `{venue, read, source, week}`:
+
+| Key | Required | What it is |
+|---|---|---|
+| `venue` | yes | The venue BestTime matched (its own name and address), shown so a wrong match is seen. |
+| `read` | yes | The date it was read (`YYYY-MM-DD`). BestTime's patterns come from recent weeks: read again within a month of the trip. |
+| `source` | yes | A `sources` key for BestTime. |
+| `week` | yes | Seven days from Monday, each 24 whole numbers from 0 to 100, from 6 am to 5 am the next morning: the share of the venue's busiest hour of the week. |
+
+Each card of that stop shows the day we visit: a bar per hour (6 am to midnight, or to 5 am when the place is busy
+then), our timeline hours marked, and one line, for example "On a typical Tuesday it is usually busiest about 13:00,
+quieter about 10:00; at our 10:00, about 35% of its busiest hour of the week". It always says it is a typical week,
+not a forecast for the date: BestTime does not know holidays, school holidays or events. Put those in the day's own
+words (a "Crowds" box in `info`, sourced).
+
 ### The days as islands (10 November 2026)
 
 When every day has its `iso`, the page carries one island for each day, opened by the family site's globe button (or

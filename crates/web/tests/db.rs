@@ -23,6 +23,8 @@ fn config() -> Config {
         on_railway: false,
         weather_url: "http://127.0.0.1:9".into(),
         tiles_url: "http://127.0.0.1:9".into(),
+        besttime_url: "http://127.0.0.1:9".into(),
+        besttime_key: None,
     }
 }
 
@@ -4357,5 +4359,135 @@ async fn settings_has_the_version_page(pool: PgPool) {
     assert_eq!(
         Client::new(port).get("/version").await.header("location"),
         Some("/")
+    );
+}
+
+/// A stand-in for BestTime: records each request line and answers with one week's pattern.
+async fn besttime_stub() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind stub");
+    let port = listener.local_addr().expect("addr").port();
+    let log = seen.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let log = log.clone();
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 8192];
+                let n = socket.read(&mut buf).await.unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                log.lock()
+                    .unwrap()
+                    .push(request.lines().next().unwrap_or("").to_string());
+                let days: Vec<String> = (0..7)
+                    .map(|d| {
+                        let raw = vec![(d * 10).to_string(); 24].join(",");
+                        format!(
+                            r#"{{"day_info":{{"day_int":{d},"day_text":"Day {d}"}},"day_raw":[{raw}],"busy_hours":[12,13],"quiet_hours":[6,7],"hour_analysis":[]}}"#
+                        )
+                    })
+                    .collect();
+                let body = format!(
+                    r#"{{"status":"OK","forecast_updated_on":"2026-11-10T11:00:00+08:00","venue_info":{{"venue_id":"ven_1","venue_name":"Harbour Hall","venue_address":"1 Example Road","venue_timezone":"Europe/London","venue_dwell_time_min":45}},"analysis":[{}]}}"#,
+                    days.join(",")
+                );
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(reply.as_bytes()).await;
+            });
+        }
+    });
+    (format!("http://127.0.0.1:{port}"), seen)
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn only_the_owner_asks_besttime_and_the_key_stays_on_the_server(pool: PgPool) {
+    const KEY: &str = "pri_0123456789abcdef0123456789abcdef";
+    let (url, seen) = besttime_stub().await;
+    let body = "name=Harbour%20Hall&address=1%20Example%20Road%2C%20London";
+
+    // Without a key the owner is told it is not set up, and BestTime is not asked.
+    let unset = start(pool.clone(), config()).await;
+    let mut o = owner(unset).await;
+    let csrf = o.csrf().await;
+    let r = o
+        .send("POST", "/api/crowd", body, &[("X-CSRF-Token", &csrf)])
+        .await;
+    assert_eq!(r.status, 503, "{}", r.body);
+    assert!(r.body.contains("not set up"), "{}", r.body);
+
+    let mut cfg = config();
+    cfg.besttime_url = url;
+    cfg.besttime_key = Some(hongjia_web::family::crowd::Key::new(KEY.into()));
+    let port = start(pool, cfg).await;
+
+    let stranger = Client::new(port)
+        .send("POST", "/api/crowd", body, &[])
+        .await;
+    assert_eq!(stranger.status, 401, "signed-in people only");
+
+    let mut b = member(port, "beta").await;
+    let csrf_b = b.csrf().await;
+    let r = b
+        .send("POST", "/api/crowd", body, &[("X-CSRF-Token", &csrf_b)])
+        .await;
+    assert_eq!(r.status, 403, "the owner only: each forecast costs credits");
+
+    let mut o = owner(port).await;
+    let r = o.send("POST", "/api/crowd", body, &[]).await;
+    assert_eq!(r.status, 403, "no token, no ask");
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "nothing reached BestTime yet"
+    );
+
+    let csrf = o.csrf().await;
+    let r = o
+        .send(
+            "POST",
+            "/api/crowd",
+            "name=x&address=y",
+            &[("X-CSRF-Token", &csrf)],
+        )
+        .await;
+    assert_eq!(r.status, 400, "names and addresses are checked");
+
+    let r = o
+        .send("POST", "/api/crowd", body, &[("X-CSRF-Token", &csrf)])
+        .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert!(r.body.contains(r#""available":true"#), "{}", r.body);
+    assert!(r.body.contains(r#""first_hour":6"#), "{}", r.body);
+    assert!(r.body.contains(r#""day_int":6"#), "{}", r.body);
+    assert!(!r.body.contains(KEY), "the key never leaves the server");
+    assert!(!r.body.contains("venue_dwell_time_min"), "{}", r.body);
+    assert_eq!(r.header("cache-control"), Some("no-store"));
+    {
+        let asked = seen.lock().unwrap();
+        assert_eq!(asked.len(), 1);
+        assert!(
+            asked[0].starts_with("POST /api/v1/forecasts?"),
+            "{}",
+            asked[0]
+        );
+        assert!(
+            asked[0].contains(&format!("api_key_private={KEY}")),
+            "{}",
+            asked[0]
+        );
+        assert!(asked[0].contains("venue_name=Harbour"), "{}", asked[0]);
+    }
+    let again = o
+        .send("POST", "/api/crowd", body, &[("X-CSRF-Token", &csrf)])
+        .await;
+    assert_eq!(again.status, 200);
+    assert_eq!(
+        seen.lock().unwrap().len(),
+        1,
+        "kept for a day: no second charge"
     );
 }
