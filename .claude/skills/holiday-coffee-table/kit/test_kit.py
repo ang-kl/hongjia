@@ -2449,6 +2449,14 @@ class KitTest(unittest.TestCase):
         bad(lambda d: tl(d, 0, 'Lantern Beach, then rest').update(time='By 15:15'), r'leave at least 30 minutes to unpack')
         # a check-in needs a start: "By 14:00" does not say we arrive after 14:00 (Codex, 10 November 2026)
         bad(lambda d: tl(d, 0, 'Check in at Hotel Tidewater and unpack').update(time='By 14:00'), r'give the check-in a clock time')
+        # nothing starts inside a check-in's own span either, wherever it sits in the list (Codex, 10 November 2026)
+        def inside(d):
+            tl(d, 0, 'Check in at Hotel Tidewater and unpack').update(time='14:45 to 16:00')
+            tl(d, 0, 'Lantern Beach, then rest').update(time='From 15:15')
+        bad(inside, r'leave at least 30 minutes to unpack')
+        def listed_first(d):
+            tl(d, 0, 'Lantern Point').update(time='15:00 to 16:00')
+        bad(listed_first, r'leave at least 30 minutes to unpack')
         bad(lambda d: tl(d, 7, 'Check out').update(time='By 12.00'), r'after its check-out time 11:00')
         dotted = copy.deepcopy(self.data)
         tl(dotted, 0, 'Check in at Hotel Tidewater and unpack').update(time='14.45')

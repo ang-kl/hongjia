@@ -1146,18 +1146,19 @@ class Page:
                 if not t or t[0] is None:  # "By 14:00" alone does not say we arrive after 14:00 (Codex)
                     raise KitError(f'days[{i}].timeline[{j}]: give the check-in a clock time with a start ("From 14:00"); '
                                    f'a "By" time alone does not say when we arrive')
-                t = t[0]
-                if t < arriving[0]['_in']:
+                cin = t[0]
+                if cin < arriving[0]['_in']:
                     raise KitError(f'days[{i}].timeline[{j}]: we check in to {arriving[0]["name"]} at {x["time"]}, before its check-in time {arriving[0]["check_in"]}')
                 if outs and outs[0][0] > j:
                     raise KitError(f'days[{i}]: the check-out comes before the check-in')
-                for k, y in enumerate((day.get('timeline') or [])[j + 1:], j + 1):
-                    nxt = clock_span(y.get('time'))  # where the calendar starts it: "By 15:15" starts at 14:45 (Codex)
-                    if nxt:
-                        if nxt[0] < t + UNPACK_MIN:
-                            raise KitError(f'days[{i}].timeline[{k}]: starts at {y["time"]}, too soon after checking in at {x["time"]}: '
-                                           f'leave at least {UNPACK_MIN} minutes to unpack')
-                        break
+                # Nothing else starts while we check in, or in the 30 minutes after to unpack, wherever it sits in
+                # the list; each item starts where the calendar starts it (Codex, 10 November 2026).
+                free = max(cin + UNPACK_MIN, t[1] if t[1] is not None else cin)
+                for k, y in enumerate(day.get('timeline') or []):
+                    span = clock_span(y.get('time')) if k != j else None
+                    if span and cin <= span[0] < free:
+                        raise KitError(f'days[{i}].timeline[{k}]: starts at {y["time"]}, during or too soon after checking in at {x["time"]}: '
+                                       f'leave at least {UNPACK_MIN} minutes to unpack')
 
     def lodging_on(self, d):
         """The stays that end and begin on a date."""

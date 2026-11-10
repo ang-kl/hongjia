@@ -257,7 +257,8 @@ pack/unpack. this is very important for every trip", the owner, 10 November 2026
 The build checks that the stays cover every night from the first day to the last with no gap or overlap, that a day's
 `base` "night k of n" agrees with them, and that every move day's timeline marks the check-out (`stay: "out"`, at or
 before the check-out time), the check-in (`stay: "in"`, a start at or after the check-in time, so "From 14:00" or
-"14:45" but not "By 15:00" alone, with at least 30 minutes before the next timed item to unpack) and the packing before
+"14:45" but not "By 15:00" alone; nothing else on the day may start during the check-in's own time, or in the 30
+minutes after it starts, to unpack) and the packing before
 every check-out (`stay: "pack"`, that morning or the evening before). Times are read as the calendar reads them: "14.45"
 is "14:45", and a "By 15:15" item starts at 14:45. The Stays section opens with "Where we sleep" (dates, nights, the two times and why), and each move day's
 header says the move: "Check out of A by 10:00 · check in at B from 14:00".
