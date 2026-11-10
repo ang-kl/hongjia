@@ -4405,7 +4405,7 @@ async fn besttime_stub() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>
                     })
                     .collect();
                 let body = format!(
-                    r#"{{"status":"OK","forecast_updated_on":"2026-11-10T11:00:00+08:00","venue_info":{{"venue_id":"ven_1","venue_name":"Harbour Hall","venue_address":"1 Example Road","venue_timezone":"Europe/London","venue_dwell_time_min":45}},"analysis":[{}]}}"#,
+                    r#"{{"status":"OK","epoch_analysis":1794283200,"venue_info":{{"venue_id":"ven_1","venue_name":"Harbour Hall","venue_address":"1 Example Road","venue_timezone":"Europe/London","venue_dwell_time_min":45}},"analysis":[{}]}}"#,
                     days.join(",")
                 );
                 let reply = format!(
@@ -4477,6 +4477,11 @@ async fn only_the_owner_asks_besttime_and_the_key_stays_on_the_server(pool: PgPo
     assert_eq!(r.status, 200, "{}", r.body);
     assert!(r.body.contains(r#""available":true"#), "{}", r.body);
     assert!(r.body.contains(r#""first_hour":6"#), "{}", r.body);
+    assert!(
+        r.body.contains(r#""updated":"2026-11-10T04:00:00Z""#),
+        "{}",
+        r.body
+    );
     assert!(r.body.contains(r#""day_int":6"#), "{}", r.body);
     assert!(!r.body.contains(KEY), "the key never leaves the server");
     assert!(!r.body.contains("venue_dwell_time_min"), "{}", r.body);

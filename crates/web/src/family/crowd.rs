@@ -23,7 +23,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{FamilyState, handlers};
+use super::{FamilyState, handlers, weather};
 
 pub const DEFAULT_URL: &str = "https://besttime.app";
 pub const SOURCE: &str = "BestTime";
@@ -77,6 +77,18 @@ pub fn clean(field: &str) -> Option<String> {
     let text = field.split_whitespace().collect::<Vec<_>>().join(" ");
     let n = text.chars().count();
     ((2..=MAX_FIELD).contains(&n) && !text.chars().any(char::is_control)).then_some(text)
+}
+
+/// Seconds since 1970 as a UTC time, "2026-11-10T04:00:00Z".
+pub fn utc_stamp(secs: u64) -> String {
+    let (y, m, d) = weather::civil_from_days((secs / 86_400) as i64);
+    let s = secs % 86_400;
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        s / 3600,
+        s / 60 % 60,
+        s % 60
+    )
 }
 
 /// What BestTime said: a week's pattern, or why it has none.
@@ -145,7 +157,13 @@ pub fn answer_from(body: &str, key: &Key) -> Result<Answer, String> {
             "address": info["venue_address"].as_str().unwrap_or(""),
             "timezone": info["venue_timezone"].as_str().unwrap_or(""),
         },
-        "updated": v["forecast_updated_on"].as_str().unwrap_or(""),
+        // A new forecast carries `epoch_analysis`; the query endpoints carry `forecast_updated_on`
+        // (Codex, 10 November 2026).
+        "updated": v["forecast_updated_on"]
+            .as_str()
+            .map(str::to_string)
+            .or_else(|| v["epoch_analysis"].as_u64().map(utc_stamp))
+            .unwrap_or_default(),
         "first_hour": FIRST_HOUR,
         "days": days,
         "source": SOURCE,
@@ -362,8 +380,7 @@ mod tests {
             .collect();
         json!({
             "status": "OK",
-            "epoch_analysis": 1,
-            "forecast_updated_on": "2026-11-10T04:00:00+08:00",
+            "epoch_analysis": 1_794_283_200_u64,
             "venue_info": { "venue_id": "ven_1", "venue_name": "Hall", "venue_address": "1 Road",
                             "venue_timezone": "Europe/London", "venue_dwell_time_min": 30 },
             "analysis": analysis,
@@ -401,6 +418,7 @@ mod tests {
         assert_eq!(v["days"][0]["busy_hours"], json!([12, 13]));
         assert_eq!(v["first_hour"], 6);
         assert_eq!(v["venue"]["timezone"], "Europe/London");
+        assert_eq!(v["updated"], "2026-11-10T04:00:00Z", "from epoch_analysis");
         assert!(v["days"][0].get("hour_analysis").is_none());
         assert!(v["venue"].get("venue_dwell_time_min").is_none());
         assert!(!v.to_string().contains("pri_k"));
