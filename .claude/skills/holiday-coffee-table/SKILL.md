@@ -69,8 +69,12 @@ The owner chose "Everything v15 has". A new page leaves a part out only on the o
 - **Hair, nails and massage** (a day's `services`), shown like meals with their choices, prices, dated Google
   ratings, hours on the dates and the places' own Instagram and TikTok posts; never Google Maps photos copied in
   (they belong to their uploaders): link the place on Google Maps instead.
+- **Grocers and supermarkets** (the owner, 10 November 2026: "if it is grocery, use the IG as the pic"; every trip):
+  the card's picture is the grocer's own Instagram, as `embeds` (and its Instagram, Facebook and TikTok in `links`),
+  taken only from the accounts its own website links. No photo of the mall or building it sits in. On screens
+  700 px and wider the posts open by themselves; on phones a tap opens them, as for every Instagram post.
 - **Days**, one article each: the day's photo band, route line with every place linked, badges,
-  Plan A stops with 2 to 4 credited photos each, timeline items pointing at their stops, the four
+  Plan A stops with 2 to 4 credited photos each (a grocer: its own Instagram instead, above), timeline items pointing at their stops, the four
   info boxes (Getting around, Meals, Style & photo moments, Make it easier), the weather swaps
   ("If it rains"; "If it's hot", for heat, wind or storms), **the family's swaps at each stop**
   (Plan B hiking and nature, Plan C shopping, Plan D early or late; see below), nearby extras, "if it's closed or crowded"
