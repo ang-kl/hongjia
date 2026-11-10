@@ -2482,6 +2482,18 @@ class KitTest(unittest.TestCase):
         self.assertIn('not a forecast for Sun 13 Jun', text)
         self.assertIn('Gull Market, Example Bay (sample)', text)
 
+    def test_crowd_bar_puts_small_hours_in_the_day_before(self):
+        """BestTime's day runs 6 am to 5 am, so a visit at 01:00 on a Sunday is in Saturday's day (Codex, 10 November 2026)."""
+        d = copy.deepcopy(self.data)
+        next(t for t in d['days'][1]['timeline'] if t.get('stop') == 'market').update(time='01:00 to 01:45')
+        d['crowds']['market']['week'][5][19] = 42  # Saturday's day, 01:00 the next morning
+        fig = find(build.parse_html(build.build(d)), 'figure', 'crowd')[0]
+        self.assertIn('Saturday', find(fig, 'svg')[0].attrs.get('aria-label', ''))
+        rects = find(fig, 'rect')
+        self.assertEqual(len(rects), 24, 'to 5 am, since we are there after midnight')
+        self.assertEqual([i for i, r in enumerate(rects) if 'on' in (r.attrs.get('class') or '')], [19])
+        self.assertIn('at our 01:00, about 42%', fig.text())
+
     def test_crowds_are_checked(self):
         def bad(change, pattern):
             d = copy.deepcopy(self.data)

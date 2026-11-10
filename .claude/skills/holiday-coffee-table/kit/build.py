@@ -1115,17 +1115,22 @@ class Page:
         if not c or not day.get('iso'):
             return ''
         d = parse_date(day['iso'], w)
-        wd = WEEKDAY_NAMES[d.weekday()]
-        raw = c['week'][d.weekday()]
-        n = 24 if any(raw[18:]) else 18  # after midnight only when the place is busy then
-        visits = [clock_span(x.get('time')) for x in day.get('timeline') or [] if x.get('stop') == sid]
-        visits = [v for v in visits if v]
-        ours = set()
-        for a, b in visits:
-            for i in range(n):
-                h = (CROWD_FIRST_HOUR + i) * 60
-                if a < h + 60 and b > h:
-                    ours.add(i)
+        # BestTime's day runs from 6 am to 5 am the next morning, so a visit before 6 am belongs to the day before
+        # (Codex, 10 November 2026). Place each visit on that clock: (weekday, minutes from its 6 am).
+        first = CROWD_FIRST_HOUR * 60
+        visits = []
+        for x in day.get('timeline') or []:
+            span = clock_span(x.get('time')) if x.get('stop') == sid else None
+            if span:
+                shift = 1440 if span[0] < first else 0
+                visits.append(((d.weekday() - (1 if shift else 0)) % 7, span[0] + shift - first, span[1] + shift - first))
+        wday = visits[0][0] if visits else d.weekday()
+        wd = WEEKDAY_NAMES[wday]
+        raw = c['week'][wday]
+        visits = [(a, b) for k, a, b in visits if k == wday]
+        late = any(raw[18:]) or any(b > 18 * 60 for a, b in visits)
+        n = 24 if late else 18  # after midnight only when the place is busy then, or we are there
+        ours = {i for a, b in visits for i in range(n) if a < (i + 1) * 60 and b > i * 60}
         hhmm_of = lambda i: f'{(CROWD_FIRST_HOUR + i) % 24:02d}:00'
         bars = []
         for i in range(n):
@@ -1145,10 +1150,10 @@ class Page:
                 line += self.fmt('cr_quiet', quiet=hhmm_of(quiet))
             if visits:
                 start = visits[0][0]
-                i = start // 60 - CROWD_FIRST_HOUR
+                i = start // 60
                 if 0 <= i < n:
-                    t = f'{start // 60:02d}:{start % 60:02d}'
-                    line += self.fmt('cr_ours', time=t, pct=raw[i])
+                    clock = (start + first) % 1440
+                    line += self.fmt('cr_ours', time=f'{clock // 60:02d}:{clock % 60:02d}', pct=raw[i])
             line = E(line + '.')
         note = self.fmt('cr_note', venue=c['venue'], read=self.day_label(parse_date(c['read'], w)), date=self.day_label(d))
         name = self.stops[sid]['name']
