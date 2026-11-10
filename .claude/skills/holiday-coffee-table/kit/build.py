@@ -1151,9 +1151,9 @@ class Page:
                 if outs and outs[0][0] > j:
                     raise KitError(f'days[{i}]: the check-out comes before the check-in')
                 for k, y in enumerate((day.get('timeline') or [])[j + 1:], j + 1):
-                    nxt = clock_times(y.get('time'))
+                    nxt = clock_span(y.get('time'))  # where the calendar starts it: "By 15:15" starts at 14:45 (Codex)
                     if nxt:
-                        if (nxt[1] if nxt[0] is None else nxt[0]) < t + UNPACK_MIN:
+                        if nxt[0] < t + UNPACK_MIN:
                             raise KitError(f'days[{i}].timeline[{k}]: starts at {y["time"]}, too soon after checking in at {x["time"]}: '
                                            f'leave at least {UNPACK_MIN} minutes to unpack')
                         break
