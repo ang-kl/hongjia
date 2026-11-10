@@ -224,7 +224,8 @@ Suitability marks:
 | `title` | **yes** | The day's headline. |
 | `route` | **yes** | Place ids in order; the letters A, B, C… follow this order. |
 | `stops` | **yes** | Plan A: `{stop, role, swaps}` items, at least one. `swaps` is optional: see "The family's swaps" below. |
-| `iso` | with `weather` | The date, `YYYY-MM-DD`. |
+| `iso` | with `weather` | The date, `YYYY-MM-DD`. With every day's `iso`, the page also carries the days as islands (below). |
+| `holiday` | | The day's public holiday, in plain words ("Christmas Day"), 48 characters at most; needs `iso`. The day's island is named with it: "Fri 25 Dec · Christmas Day". Give it only for a public holiday where the family will be, as the `holidays` section's source says. |
 | `route_label`, `sub`, `base`, `badge` | | Kicker route, dek line and the two pills. |
 | `walk` | | `"a>b"` legs that are short walks (dashed on the map, no leg needed). |
 | `timeline` | | `{time, title, text, stop, photos, links}`; `text` is *rich*. With `stop` (a stop id), the item links to its card and shows the stop's photos (up to three: a swipeable strip on phones, tap to enlarge, credited) and its official links; `photos` and `links` override or stand alone. |
@@ -237,6 +238,15 @@ Suitability marks:
 | `taste`, `shop` | | The day's two boxes, "Taste of the day" and "Shop the day": `{text, hours, items}`. `text` and `hours` are *rich* (`hours`, the shops' trading hours that day, is a fact and needs a source tag); `items` are cards like a stop's `nearby` (`cat` defaults to `food` and `shopping`). |
 | `meals` | | The day's meals, each with its choices: `{meal, time, note, choices}`. `meal` is `breakfast`, `brunch`, `lunch`, `dinner` or `snack`; `note` is *rich*; each choice is `{stop, role}` (a planned stop, marked "Planned") or a card like a stop's `nearby` (`cat` defaults to `food`; `hours` need a `source`). With `page.meal_choices`, the count must match. |
 | `nearby` | | Optional extras: `{id, name, kind, why, hours, hours_sources, lat, lng, q, links, photo}`; `id`, `name`, `why`, `lat`, `lng`, `q` required; `hours` is a fact, so give `hours_sources` (source keys or https URLs); `photo` is a `photos` id or a photo object; `cat` puts it in the legend and on the map's Nearby options layer. |
+
+### The days as islands (10 November 2026)
+
+When every day has its `iso`, the page carries one island for each day, opened by the family site's globe button (or
+`#islands` in the address). Each island is named "DDD DD MMM" ("Sat 12 Jun"), with the day's `holiday` after it. Its
+places sit at their true positions on a flat projection centred on that day, with one scale bar for the island; the
+roads are the day's `legs` (their `km` and `min`), walks are straight lines, and the sea between islands only shows the
+order of the days. The build works all this out from `route`, `walk`, `legs`, `stops`, `timeline`, `base` and the
+`stays` cards; there is nothing more to write.
 
 ## Plans and weather
 

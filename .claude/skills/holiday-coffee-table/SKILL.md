@@ -5,7 +5,9 @@ description: Use when the family shares a briefing note, document, PDF or pictur
 
 # Holiday coffee-table pages
 
-Version 4, 9 November 2026: restaurants in Play the trip say what to eat and drink, their dated rating and what
+Version 5, 10 November 2026: the days as islands, opened by the family site's globe button: each day an island
+named like "Fri 25 Dec · Christmas Day", its places at their true distances, with Play. Version 4, 9 November 2026:
+restaurants in Play the trip say what to eat and drink, their dated rating and what
 diners say. Version 3, 8 November 2026: the family's swaps at each stop (Plans B, C and D). Version 2, the same day:
 Direction A, "River" (the owner's redesign: "A"). Version 1, 7 November
 2026, was rebuilt from the family's v15 trip page, which is the standard every new trip page meets for
@@ -19,6 +21,7 @@ The renderer, its style sheet and its script are generic and stay in this folder
 - `kit/build.py`: renders a data file and checks pages (`--check`). Python 3 standard library only.
 - `kit/schema.md`: every field of the data file, and which are required.
 - `kit/assets/kit.css`, `kit/assets/kit.js`: the approved design and the page's behaviour.
+- `kit/assets/islands.css`, `kit/assets/islands.js`: the days as islands (added when every day has its date).
 - `kit/example/trip.json`: a made-up eight-day trip shaped like v15 (two bases, two transfer days
   with a midway break, every section filled). Copy its shape; never its facts, which are fictional.
 - `kit/test_kit.py`: the kit's tests (`python3 kit/test_kit.py`); the GitHub checks run them.
@@ -279,6 +282,10 @@ accepts answers only from `window.parent`. The site checks every message's field
 - **Hungry? / Shop nearby** (`hj:near-want`): the site asks the person first, takes one rough reading
   on the device, and answers with the nearest place keys and rough distances only.
 - **The tour** (`hj:tour` open or closed): the site folds its right-hand buttons into a 🔭.
+- **The islands** (`hj:islands` ready, open or closed): on a page with islands, the site's globe button sends
+  `hj:islands-open` (or `hj:islands-close`) instead of opening its globe of documents, and asks again
+  (`hj:islands-ask`) whenever a new page loads in the frame. While they are open the site hides its pins, and on a
+  phone its ☰ and 🔭.
 - **Add to calendar:** links to the site's `/calendar.ics`, signed-in only, which turns the event in
   the link into a calendar file.
 

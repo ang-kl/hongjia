@@ -579,7 +579,8 @@ html.fabs-fold .fab-group:not(.is-open) { right: calc(max(14px, env(safe-area-in
    Back and 🔭 over the end of a quote. So both step aside while the tour is open and come back when it closes
    (the owner, 10 November 2026). A phone held sideways counts too; an iPad or a computer keeps them. */
 @media (max-width: 640px), (max-height: 500px) {
-  html.tour-on .menu-fab, html.tour-on .fab-scope, html.tour-on .fab-group { display: none !important; }
+  html.tour-on .menu-fab, html.tour-on .fab-scope, html.tour-on .fab-group,
+  html.islands-on .menu-fab, html.islands-on .fab-scope, html.islands-on .fab-group { display: none !important; }
 }
 
 /* Annotations and saved fields (P2b C). */
@@ -777,6 +778,8 @@ html.fabs-fold .fab-scope.fab-blink { animation: scope-blink 1s ease-in-out 3; }
 /* While a trip page's Play the trip tour is open, the family's pins and notes step aside, so nothing covers its
    pictures or its map; they come back when it closes (the owner, 9 November 2026: "Hide pins during Play"). */
 html.tour-on .doc-overlay { visibility: hidden; }
+/* And while a trip page shows its days as islands (10 November 2026). */
+html.islands-on .doc-overlay { visibility: hidden; }
 .ov {
   position: absolute;
   pointer-events: auto;

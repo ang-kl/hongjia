@@ -78,6 +78,14 @@ test('pins and notes step aside while a trip page plays its tour (9 November 202
   assert.match(js, /root\.classList\.toggle\('tour-on', on\)/, 'the tour message sets and clears the class');
 });
 
+test('pins and notes step aside while a trip page shows its islands (10 November 2026)', async () => {
+  const css = (await readFile(new URL('../assets/site.css', import.meta.url), 'utf8')).replace(/\s+/g, ' ');
+  assert.match(css, /html\.islands-on \.doc-overlay \{ visibility: hidden; \}/);
+  assert.match(css, /html\.islands-on \.menu-fab, html\.islands-on \.fab-scope, html\.islands-on \.fab-group \{ display: none !important; \}/, 'and ☰ and 🔭 on a phone');
+  const js = await readFile(new URL('../assets/doc-view.mjs', import.meta.url), 'utf8');
+  assert.match(js, /root\.classList\.toggle\('islands-on', state === 'open'\)/, 'the islands message sets and clears the class');
+});
+
 test('the header lists: an older version is view only, and files listed with a version are not pinned (9 November 2026)', async () => {
   const js = await readFile(new URL('../assets/doc-view.mjs', import.meta.url), 'utf8');
   assert.match(js, /const older = body\.dataset\.older === 'true';/);

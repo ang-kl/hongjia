@@ -556,6 +556,7 @@ function setup() {
 const OPEN = 'details[open], dialog[open], [role="dialog"]:not([hidden]), .fab-contents:not([hidden]), .fab-search:not([hidden]), .anno-menu:not([hidden]), .doc-ask:not([hidden]), [data-loupe-chip]:not([hidden]), [data-sig-pad]:not([hidden])';
 export function somethingOpen() {
   if (location.hash === '#panel') return true; // the document's panel over a phone screen
+  if (document.documentElement.classList.contains('islands-on')) return true; // a trip page's islands
   if (document.body.dataset.tab) return true; // a document tab chosen
   return [...document.querySelectorAll(OPEN)].some(e => e.getClientRects().length > 0);
 }

@@ -144,6 +144,9 @@ test('a trip page says when its tour opens and closes, and nothing else', () => 
   assert.deepEqual(validMessage({ type: 'hj:tour', open: true, extra: 'x' }), { type: 'hj:tour', open: true });
   assert.deepEqual(validMessage({ type: 'hj:tour', open: false }), { type: 'hj:tour', open: false });
   for (const open of [undefined, 'true', 1, null]) assert.equal(validMessage({ type: 'hj:tour', open }), null, String(open));
+  // A trip page's islands (10 November 2026): ready, open or closed, nothing else.
+  for (const state of ['ready', 'open', 'closed']) assert.deepEqual(validMessage({ type: 'hj:islands', state, extra: 1 }), { type: 'hj:islands', state });
+  for (const state of [undefined, 'shut', 1, true, null]) assert.equal(validMessage({ type: 'hj:islands', state }), null, String(state));
 });
 
 test('Near me sorts by distance and gives rough distances only', () => {
