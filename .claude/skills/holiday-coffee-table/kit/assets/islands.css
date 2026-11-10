@@ -63,7 +63,8 @@
 #islands .alab{position:absolute;font-size:11.5px;line-height:1.3;color:var(--i-teal);background:rgba(251,248,241,.94);border:1px solid var(--i-teal-mid);border-radius:8px;padding:3px 8px;white-space:nowrap}
 #islands .alab.end{color:var(--i-ink2);border-color:var(--i-line)}
 #islands .alab b{font-weight:600}
-#islands #isl-isle.wide{display:grid;grid-template-columns:minmax(0,1fr) var(--panel-w,380px)}
+/* only while shown: a hidden day must not stay laid out (and reachable by Tab) under all the islands (review of #61) */
+#islands #isl-isle.wide:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) var(--panel-w,380px)}
 #islands .isl-map{position:relative;overflow:hidden}
 #islands .isl-map svg{display:block}
 #islands .pin circle.c{fill:var(--i-teal);stroke:var(--i-paper2);stroke-width:2.5}

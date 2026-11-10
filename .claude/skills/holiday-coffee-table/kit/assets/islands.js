@@ -191,7 +191,9 @@ function renderArch() {
   // the sea path: in from the first flight, island to island, out with the last flight
   var C = isl.map(function (s) { return [s.cx, s.cy]; });
   function outward(a, b, dist) { var dx = a[0] - b[0], dy = a[1] - b[1], L = Math.hypot(dx, dy) || 1; return [clamp(a[0] + dx / L * dist, 4, W - 4), clamp(a[1] + dy / L * dist, 4, H - 4)]; }
-  var start = outward(C[0], C[1], cw * 0.62), end = outward(C[NDAYS - 1], C[NDAYS - 2], cw * 0.62);
+  // the first and last flights point away from the next island; a one-day trip has none, so they sit either side
+  var start = NDAYS > 1 ? outward(C[0], C[1], cw * 0.62) : [clamp(C[0][0] - cw * 0.62, 4, W - 4), C[0][1]];
+  var end = NDAYS > 1 ? outward(C[NDAYS - 1], C[NDAYS - 2], cw * 0.62) : [clamp(C[0][0] + cw * 0.62, 4, W - 4), C[0][1]];
   var pts = [start].concat(C, [end]);
   sv('path', { d: openPath(pts), 'class': 'seapath' }, archSvg);
   function segPoint(a, t) { // a: index in pts of the segment start

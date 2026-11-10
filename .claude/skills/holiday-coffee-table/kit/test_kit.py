@@ -576,12 +576,34 @@ const { chromium } = require('playwright');
     await f.press('#islands', 'Escape');
     await p.waitForTimeout(300);
     out.esc1 = await f.evaluate(() => ({ view: window.__islands.S.view, open: !document.getElementById('islands').hidden }));
+    out.hiddenDay = await f.evaluate(() => ({ display: getComputedStyle(document.getElementById('isl-isle')).display,
+      rects: [...document.querySelectorAll('#isl-panel .tl li')].filter(e => e.getClientRects().length).length }));
+    out.tabIntoDay = 0;
+    for (let i = 0; i < 40; i++) {
+      await f.press('#islands', 'Tab');
+      if (await f.evaluate(() => !!document.activeElement.closest('#isl-isle'))) out.tabIntoDay++;
+    }
     await f.press('#islands', 'Escape');
     await p.waitForTimeout(300);
     out.esc2 = await f.evaluate(() => !document.getElementById('islands').hidden);
     await p.evaluate(() => frames[0].postMessage({ type: 'hj:islands-ask' }, '*'));
     await p.waitForTimeout(300);
     out.msgs = await p.evaluate(() => window.__msgs.filter(m => m && m.type === 'hj:islands').map(m => m.state));
+    await ctx.close();
+  }
+  // A trip of one day: its one island opens without an error (review of #61).
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const p = await ctx.newPage();
+    p.on('pageerror', e => out.errors.push('one day: ' + String(e.message || e)));
+    await p.route(/^https?:/, r => r.abort());
+    await p.goto('file://' + dir + '/one.html#islands');
+    await p.waitForTimeout(1200);
+    out.oneDay = await p.evaluate(() => ({ open: !document.getElementById('islands').hidden, islands: document.querySelectorAll('#isl-archsvg .isl').length,
+      labels: document.querySelectorAll('#islands .ilabel').length }));
+    await p.click('#islands .ilabel');
+    await p.waitForTimeout(600);
+    out.oneDay.view = await p.evaluate(() => window.__islands.S.view);
     await ctx.close();
   }
   // On its own, at phone size: #islands opens them.
@@ -2381,6 +2403,21 @@ class KitTest(unittest.TestCase):
         blocks = find(root, 'script', id='islands-data')
         return root, (json.loads(blocks[0].text()) if blocks else None)
 
+    def one_day(self):
+        """The sample cut to its first day, with what pointed at the other days trimmed."""
+        one = copy.deepcopy(self.data)
+        one['days'] = one['days'][:1]
+        one.pop('pretrip', None)
+        one['opener']['hero'] = one['opener']['hero'][:2]
+        on_day = {it['stop'] for it in one['days'][0]['stops']}
+        for k in ('stays', 'highlights'):
+            keep = [s for s in one['opener'].get(k) or [] if (s if isinstance(s, str) else s.get('stop') or s.get('id')) in on_day]
+            if keep:
+                one['opener'][k] = keep
+            else:
+                one['opener'].pop(k, None)
+        return one
+
     def test_islands_name_each_day(self):
         """Each day is an island named "DDD DD MMM" (the owner, 10 November 2026), with its public holiday when it has one."""
         root, isl = self.islands()
@@ -2470,6 +2507,8 @@ class KitTest(unittest.TestCase):
             with open(os.path.join(tmp, 'host.html'), 'w', encoding='utf-8') as f:
                 f.write('<!doctype html><script>window.__msgs=[];addEventListener("message",function(e){window.__msgs.push(e.data);});</script>'
                         '<iframe src="page.html" style="width:1200px;height:860px;border:0"></iframe>')
+            with open(os.path.join(tmp, 'one.html'), 'w', encoding='utf-8') as f:
+                f.write(build.build(self.one_day()))
             script = os.path.join(tmp, 'islands.cjs')
             with open(script, 'w', encoding='utf-8') as f:
                 f.write(ISLANDS_JS)
@@ -2490,6 +2529,9 @@ class KitTest(unittest.TestCase):
         self.assertTrue(res['played']['playing'])
         self.assertTrue(res['played']['cap'])
         self.assertEqual(res['esc1'], {'view': 'arch', 'open': True}, 'Escape goes back to all the islands first')
+        self.assertEqual(res['hiddenDay'], {'display': 'none', 'rects': 0}, 'the day just left is not laid out under the islands (review of #61)')
+        self.assertEqual(res['tabIntoDay'], 0, 'and Tab never reaches it')
+        self.assertEqual(res['oneDay'], {'open': True, 'islands': 1, 'labels': 1, 'view': 'isle'}, 'a one-day trip has its island (review of #61)')
         self.assertFalse(res['esc2'], 'then closes them')
         self.assertEqual(res['msgs'], ['ready', 'open', 'closed', 'ready'])
         self.assertTrue(res['phone']['open'])
