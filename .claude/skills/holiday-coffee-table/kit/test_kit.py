@@ -1246,6 +1246,40 @@ class KitTest(unittest.TestCase):
         with self.assertRaises(build.KitError):
             build.build(d)
 
+    def test_choice_and_alternative_cards_show_a_photo_and_share(self):
+        """The owner, 12 November 2026: every place card (a meal or service choice, an "if it's closed" alternative)
+        shows its photo on the card, without a click, and has the same share buttons as the main card."""
+        d = copy.deepcopy(self.data)
+        d['stops']['harbour']['nearby'][0]['photo'] = 'harbour-2'
+        choice = next(c for c in d['days'][0]['meals'][2]['choices'] if 'stop' not in c)
+        choice['photo'] = 'harbour-3'
+        root = build.parse_html(build.build(d))
+        harbour = find(root, 'article', 'stop', id='d1-harbour')[0]
+        cards = find(find(harbour, 'section', 'alts')[0], 'article', 'alt')
+        fig = find(cards[0], 'figure', 'alt-photo')
+        self.assertEqual(len(fig), 1, 'the alternative shows its photo on the card')
+        self.assertTrue(find(fig[0], 'img') and find(fig[0], 'span', 'credit')[0].text().strip(), 'with its credit')
+        self.assertFalse(find(cards[1], 'figure', 'alt-photo'), 'a card with no photo has no empty frame')
+        day1 = find(root, 'section', 'meals')[0]
+        mine = [c for c in find(day1, 'article', 'alt') if choice['name'] in c.text() and find(c, 'figure', 'alt-photo')]
+        self.assertTrue(mine, 'a meal choice shows its photo on the card')
+        planned = find(day1, 'article', 'alt-planned')
+        self.assertTrue(planned and all(find(c, 'figure', 'alt-photo') for c in planned if 'Harbour' in c.text()),
+                        "the planned choice shows the stop's own first photo")
+        owned = [c for c in find(root, 'article', 'alt') if c.attrs.get('id')]
+        self.assertGreater(len(owned), 10)
+        for c in owned:
+            share = find(c, 'a', 'share-alt')
+            self.assertEqual([a.attrs.get('data-share') for a in share], [c.attrs['id']], 'one share button, for this card')
+            self.assertTrue(find(c, 'button', 'wa-btn'), 'and the owner-only WhatsApp button beside it')
+        for c in find(root, 'article', 'alt'):
+            if not c.attrs.get('id'):
+                self.assertFalse(find(c, 'a', 'share-alt'), 'a repeat of a place has no second share target')
+        css = open(os.path.join(HERE, 'assets', 'kit.css'), encoding='utf-8').read()
+        rule = re.search(r'\.alts-grid\{[^}]*\}', css).group(0)
+        self.assertIn('auto-fit', rule, 'cards fill the row whatever their number')
+        self.assertNotIn('auto-fill', rule)
+
     def test_alternatives_read_plainly(self):
         for c in find(self.root, 'article', 'alt'):
             dist = find(c, 'p', 'alt-dist')
@@ -1502,8 +1536,10 @@ class KitTest(unittest.TestCase):
 
     def test_page_weight_and_pinned_libraries(self):
         # The sample page's budget. 1.5 MB until the islands (the owner, 10 November 2026), which add about 100 KB:
-        # their script, styles, and each day's shapes and true distances.
-        self.assertLess(len(self.html.encode('utf-8')), 1_600_000)
+        # their script, styles, and each day's shapes and true distances. 1.65 MB since place cards show their photo
+        # and share buttons (the owner, 12 November 2026): about 60 KB here, most of it the sample's inline pictures
+        # repeated on the planned meal cards; a real trip's photos are links, not inline.
+        self.assertLess(len(self.html.encode('utf-8')), 1_650_000)
         for s in find(self.root, 'script') + find(self.root, 'link', rel='stylesheet'):
             url = s.attrs.get('src') or s.attrs.get('href') or ''
             if urllib.parse.urlsplit(url).hostname in SCRIPT_HOSTS:
