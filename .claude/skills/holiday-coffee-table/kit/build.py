@@ -2106,8 +2106,11 @@ class Page:
         ig = IG_URL.match(x.get('instagram') or '')
         if ig:
             links.insert(1 if x.get('website') else 0, f'<a href="{E(x["instagram"])}" target="_blank" rel="noopener" data-kind="ig">📸 @{E(ig.group(1))}</a>')
-        return (f'<article class="alt"{aid}{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{icon}</span> '
-                f'<b>{self.pl_link(pid, E(x["name"]), self.panels[pid]["anchor"])}</b></p>{dist}'
+        # the photo is on the card, seen while scrolling, and the card shares like a main one (the owner, 12 November 2026)
+        photo = self.small_photo(x['photo'], where + '.photo', 'alt-photo') if x.get('photo') else ''
+        share = self.share_pair(self.panels[pid]['anchor'], x['name']) if first else ''
+        return (f'<article class="alt"{aid}{self.cats_attr(cats)}>{photo}<p class="alt-h"><span class="alt-ico" aria-hidden="true">{icon}</span> '
+                f'<b>{self.pl_link(pid, E(x["name"]), self.panels[pid]["anchor"])}</b>{share}</p>{dist}'
                 f'{faith}' + (f'<p>{self.rich(x["why"], where + ".why")}</p>' if x.get('why') else '') + hours
                 + self.awards_line(x.get('awards'), where + '.awards')
                 + self.spot_line(x.get('photo_spot'), where + '.photo_spot')
@@ -2414,7 +2417,8 @@ class Page:
                     cats = self.stop_cats.get(x['stop']) or ['food']
                     pl = self.places[st['place']]
                     role = x.get('role') or self.first_role(x['stop'])
-                    cards.append(f'<article class="alt alt-planned"{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{self.cat_icons[cats[0]]}</span> '
+                    ph = self.small_photo(st['photos'][0], f'stops.{x["stop"]}.photos[0]', 'alt-photo') if st.get('photos') else ''
+                    cards.append(f'<article class="alt alt-planned"{self.cats_attr(cats)}>{ph}<p class="alt-h"><span class="alt-ico" aria-hidden="true">{self.cat_icons[cats[0]]}</span> '
                                  f'<b>{self.pl_link(pid, E(st["name"]), self.panels[pid]["anchor"])}</b> <span class="badge">{E(self.L["planned"])}</span></p>'
                                  + (f'<p>{E(role)}</p>' if role else '')
                                  + f'<p class="alt-links"><button type="button" class="linkish show-map" data-day="{n - 1}" data-idx="-1" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" '
@@ -2452,7 +2456,8 @@ class Page:
                     # "Planned" only for a place that is one of the day's own stops, not for the first of a list of options
                     is_plan = any(it.get('stop') == x['stop'] for it in day.get('stops') or [])
                     planned = f' <span class="badge">{E(self.L["planned"])}</span>' if is_plan else ''
-                    cards.append(f'<article class="alt{" alt-planned" if is_plan else ""}"{self.cats_attr(cats)}><p class="alt-h"><span class="alt-ico" aria-hidden="true">{self.cat_icons[cats[0]]}</span> '
+                    ph = self.small_photo(st['photos'][0], f'stops.{x["stop"]}.photos[0]', 'alt-photo') if st.get('photos') else ''
+                    cards.append(f'<article class="alt{" alt-planned" if is_plan else ""}"{self.cats_attr(cats)}>{ph}<p class="alt-h"><span class="alt-ico" aria-hidden="true">{self.cat_icons[cats[0]]}</span> '
                                  f'<b>{self.pl_link(pid, E(st["name"]), self.panels[pid]["anchor"])}</b>{planned}</p>'
                                  + (f'<p>{self.rich(role, f"{w}[{j}].choices[{c}].role")}</p>' if role else '')
                                  + f'<p class="alt-links"><button type="button" class="linkish show-map" data-day="{n - 1}" data-idx="-1" data-lat="{pl["lat"]}" data-lng="{pl["lng"]}" '

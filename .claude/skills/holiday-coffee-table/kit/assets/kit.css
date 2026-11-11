@@ -565,7 +565,13 @@ html[data-mode=print] .plan-tag,html[data-mode=print] .sugg-tag{background:#fff;
 .tl-go{color:var(--ink);text-decoration-color:var(--gold-soft)}
 /* if it's closed or crowded: alternatives near each stop */
 .alts{margin:12px 0 4px;padding-top:10px;border-top:1px solid var(--rule2)}
-.alts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:6px}
+/* auto-fit: two cards share the row, four reflow, none leaves a blank column beside it (12 November 2026) */
+.alts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:6px}
+.alt .alt-photo{margin:-12px -14px 10px;border-radius:var(--r-sm) var(--r-sm) 0 0;position:relative;height:150px;overflow:hidden;border-bottom:1px solid var(--rule)}
+.alt .alt-photo .zoom{position:absolute;inset:0}
+.alt .alt-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.alt .alt-photo figcaption{position:absolute;left:0;right:0;bottom:0;background:rgba(255,255,255,.93);font-size:.66rem;line-height:1.35;padding:4px 7px;color:var(--ink2)}
+.alt .alt-h .sec-pair{margin-left:auto}
 .alt{border:1px solid var(--rule);border-left:3px solid var(--gold-soft);padding:10px 12px;background:#fff;font-size:.9rem}
 .alt p{margin:0 0 .35em;color:var(--ink2)}
 .alt .alt-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;color:var(--ink)}
