@@ -1112,6 +1112,27 @@ class KitTest(unittest.TestCase):
         o = self.trip['opener']
         self.assertEqual(o['home']['name'], 'Sample City')
         self.assertEqual(o['dest']['name'], 'Example Bay')
+        self.assertNotIn('via', o, 'a direct flight has no change of planes')
+
+    def test_a_flight_that_changes_planes_is_drawn_through_the_change(self):
+        # The owner, 19 November 2026: the globe showed a direct flight where the family changes planes.
+        t = build.load(EXAMPLE)
+        stop = {'name': 'Midway City', 'lat': -37.67, 'lng': 144.84}
+        t['opener']['via'] = [dict(stop)]
+        html = build.build(t)
+        m = re.search(r'<script type="application/json" id="trip-data">(.*?)</script>', html, re.S)
+        self.assertEqual(json.loads(m.group(1))['opener']['via'], [stop])
+        self.assertIn('by way of Midway City', html)
+        js = open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read()
+        self.assertIn('[OP.home].concat(OP.via||[],[OP.dest])', js)
+        for bad in ('Midway City', [{'name': 'Midway City'}], [{'name': '', 'lat': 0, 'lng': 0}]):
+            t['opener']['via'] = bad
+            with self.assertRaises(build.KitError):
+                build.build(t)
+        t['opener']['via'] = [dict(stop)]
+        del t['opener']['home']
+        with self.assertRaises(build.KitError):
+            build.build(t)
 
     def test_schedule_items_have_photos_and_links(self):
         items = [li for li in find(self.root, 'li') if li.parent.tag == 'ol' and 'timeline' in li.parent.classes()]
