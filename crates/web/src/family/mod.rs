@@ -41,6 +41,9 @@ pub struct Config {
     pub profiles: Vec<String>,
     pub owner: String,
     pub public_origin: Option<String>,
+    /// Other addresses the same site also answers on (`HONGJIA_EXTRA_ORIGINS`, comma-separated),
+    /// for a network that blocks the main one. Each is served as itself, not sent to the main one.
+    pub extra_origins: Vec<String>,
     /// The one family password (the owner's choice, 5 November 2026). Set in Railway, never committed.
     pub family_password: String,
     pub on_railway: bool,
@@ -90,16 +93,30 @@ impl Config {
         }
         let public_origin = present("HONGJIA_PUBLIC_ORIGIN");
         if let Some(origin) = &public_origin {
-            if !(origin.starts_with("https://") || origin.starts_with("http://"))
-                || origin.ends_with('/')
-            {
-                return Err("HONGJIA_PUBLIC_ORIGIN must look like https://hongjia.org".into());
-            }
-            if on_railway && !origin.starts_with("https://") {
-                return Err("HONGJIA_PUBLIC_ORIGIN must use https on Railway".into());
-            }
+            check_origin("HONGJIA_PUBLIC_ORIGIN", origin, on_railway)?;
         } else if on_railway {
             return Err("HONGJIA_PUBLIC_ORIGIN is required on Railway".into());
+        }
+        let extra_origins: Vec<String> = present("HONGJIA_EXTRA_ORIGINS")
+            .map(|v| {
+                v.split(',')
+                    // Browsers send the address in lower case, and forms must match it exactly.
+                    .map(|o| o.trim().to_ascii_lowercase())
+                    .filter(|o| !o.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !extra_origins.is_empty() && public_origin.is_none() {
+            return Err("HONGJIA_EXTRA_ORIGINS needs HONGJIA_PUBLIC_ORIGIN".into());
+        }
+        for origin in &extra_origins {
+            check_origin("HONGJIA_EXTRA_ORIGINS", origin, on_railway)?;
+            // Browsers leave the usual port out, so an address written with it would never match.
+            if origin.starts_with("https://") && origin.ends_with(":443")
+                || origin.starts_with("http://") && origin.ends_with(":80")
+            {
+                return Err("HONGJIA_EXTRA_ORIGINS must leave out the usual port".into());
+            }
         }
         let family_password = get("HONGJIA_FAMILY_PASSWORD")
             .filter(|v| !v.is_empty())
@@ -132,6 +149,7 @@ impl Config {
             profiles,
             owner,
             public_origin,
+            extra_origins,
             family_password,
             on_railway,
             weather_url,
@@ -148,6 +166,28 @@ impl Config {
             .is_some_and(|o| o.starts_with("https://"))
     }
 
+    /// The configured address a request for `host` arrived on: an extra address when the host
+    /// names one, otherwise the main address. `None` when no address is configured (local runs).
+    pub fn origin_for(&self, host: Option<&str>) -> Option<&str> {
+        self.extra_origins
+            .iter()
+            .find(|o| {
+                let extra = o.split_once("://").map_or("", |p| p.1);
+                host.is_some_and(|h| h.eq_ignore_ascii_case(extra))
+            })
+            .or(self.public_origin.as_ref())
+            .map(String::as_str)
+    }
+
+    /// Where a request for `host` is sent instead of being served: the main address, unless the
+    /// host is the main address or one of the extra ones.
+    pub fn redirect_origin(&self, host: &str) -> Option<&str> {
+        let origin = self.public_origin.as_deref()?;
+        let public_host = origin.split_once("://")?.1;
+        (!host.eq_ignore_ascii_case(public_host) && self.origin_for(Some(host)) == Some(origin))
+            .then_some(origin)
+    }
+
     pub fn cookie_name(&self, base: &str) -> String {
         if self.secure_cookies() {
             format!("__Host-{base}")
@@ -155,6 +195,20 @@ impl Config {
             base.to_string()
         }
     }
+}
+
+/// An address must be a bare origin: scheme and host, no path, https on Railway.
+fn check_origin(name: &str, origin: &str, on_railway: bool) -> Result<(), String> {
+    let host = origin
+        .strip_prefix("https://")
+        .or_else(|| origin.strip_prefix("http://"));
+    if !host.is_some_and(|h| !h.is_empty() && !h.contains(['/', '?', '#', '@', ' '])) {
+        return Err(format!("{name} must look like https://hongjia.org"));
+    }
+    if on_railway && !origin.starts_with("https://") {
+        return Err(format!("{name} must use https on Railway"));
+    }
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -166,10 +220,17 @@ pub struct FamilyState {
 }
 
 impl FamilyState {
-    /// The origin forms must come from: the configured public origin, or this request's own host.
+    /// The configured address this request arrived on (see [`Config::origin_for`]).
+    pub fn request_origin(&self, headers: &HeaderMap) -> Option<&str> {
+        self.config
+            .origin_for(headers.get(header::HOST).and_then(|h| h.to_str().ok()))
+    }
+
+    /// The origin forms must come from: the configured address this request arrived on, or this
+    /// request's own host when none is configured.
     pub fn expected_origin(&self, headers: &HeaderMap) -> String {
-        match &self.config.public_origin {
-            Some(origin) => origin.clone(),
+        match self.request_origin(headers) {
+            Some(origin) => origin.to_string(),
             None => format!(
                 "http://{}",
                 headers
@@ -386,12 +447,11 @@ async fn guard(State(state): State<FamilyState>, request: Request, next: Next) -
 }
 
 fn canonical_redirect(state: &FamilyState, request: &Request) -> Option<HeaderValue> {
-    let origin = state.config.public_origin.as_deref()?;
-    let public_host = origin.split_once("://")?.1;
     let host = request.headers().get(header::HOST)?.to_str().ok()?;
-    if host.eq_ignore_ascii_case(public_host) || request.uri().path() == "/healthz" {
+    if request.uri().path() == "/healthz" {
         return None;
     }
+    let origin = state.config.redirect_origin(host)?;
     let path = request
         .uri()
         .path_and_query()
@@ -526,6 +586,74 @@ mod tests {
         let mut http = base.to_vec();
         http.push(("HONGJIA_PUBLIC_ORIGIN", "http://hongjia.org"));
         assert!(config(&http).is_err());
+    }
+
+    #[test]
+    fn extra_addresses_are_bare_https_origins() {
+        let base = [
+            ("HONGJIA_PROFILES", "alpha"),
+            ("HONGJIA_OWNER", "alpha"),
+            ("HONGJIA_FAMILY_PASSWORD", "family"),
+            ("RAILWAY_ENVIRONMENT", "production"),
+            ("HONGJIA_PUBLIC_ORIGIN", "https://hongjia.org"),
+        ];
+        assert!(config(&base).unwrap().extra_origins.is_empty());
+        let mut ok = base.to_vec();
+        ok.push((
+            "HONGJIA_EXTRA_ORIGINS",
+            "https://WWW.hongjia.org, https://demo.example",
+        ));
+        assert_eq!(
+            config(&ok).unwrap().extra_origins,
+            ["https://www.hongjia.org", "https://demo.example"]
+        );
+        for bad in [
+            "http://demo.example",
+            "https://demo.example/",
+            "demo.example",
+            "https://demo.example/path",
+            "https://demo.example:443",
+            "https://",
+        ] {
+            let mut pairs = base.to_vec();
+            pairs.push(("HONGJIA_EXTRA_ORIGINS", bad));
+            let err = config(&pairs).unwrap_err();
+            assert!(err.contains("HONGJIA_EXTRA_ORIGINS"), "{bad}: {err}");
+        }
+    }
+
+    #[test]
+    fn extra_addresses_are_served_and_others_go_to_the_main_one() {
+        let c = config(&[
+            ("HONGJIA_PROFILES", "alpha"),
+            ("HONGJIA_OWNER", "alpha"),
+            ("HONGJIA_FAMILY_PASSWORD", "family"),
+            ("RAILWAY_ENVIRONMENT", "production"),
+            ("HONGJIA_PUBLIC_ORIGIN", "https://hongjia.org"),
+            ("HONGJIA_EXTRA_ORIGINS", "https://www.hongjia.org"),
+        ])
+        .unwrap();
+        // Served as themselves, and forms on each must come from that same address.
+        assert_eq!(c.redirect_origin("hongjia.org"), None);
+        assert_eq!(c.redirect_origin("WWW.hongjia.org"), None);
+        assert_eq!(
+            c.origin_for(Some("hongjia.org")),
+            Some("https://hongjia.org")
+        );
+        assert_eq!(
+            c.origin_for(Some("www.hongjia.org")),
+            Some("https://www.hongjia.org")
+        );
+        // An address that is not listed is still sent to the main one.
+        assert_eq!(
+            c.redirect_origin("other.example"),
+            Some("https://hongjia.org")
+        );
+        assert_eq!(
+            c.origin_for(Some("other.example")),
+            Some("https://hongjia.org")
+        );
+        assert_eq!(c.origin_for(None), Some("https://hongjia.org"));
     }
 
     #[test]

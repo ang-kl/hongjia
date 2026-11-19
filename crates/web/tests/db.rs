@@ -19,6 +19,7 @@ fn config() -> Config {
             .to_vec(),
         owner: "delta".into(),
         public_origin: None,
+        extra_origins: Vec::new(),
         family_password: FAMILY.into(),
         on_railway: false,
         weather_url: "http://127.0.0.1:9".into(),
