@@ -301,7 +301,7 @@ pub async fn file(
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64);
     Ok(
-        match build(uri.query(), state.request_origin(&headers), now) {
+        match build(uri.query(), state.config.public_origin.as_deref(), now) {
             Ok(c) => (
                 [
                     (

@@ -100,7 +100,8 @@ impl Config {
         let extra_origins: Vec<String> = present("HONGJIA_EXTRA_ORIGINS")
             .map(|v| {
                 v.split(',')
-                    .map(|o| o.trim().to_string())
+                    // Browsers send the address in lower case, and forms must match it exactly.
+                    .map(|o| o.trim().to_ascii_lowercase())
                     .filter(|o| !o.is_empty())
                     .collect()
             })
@@ -110,6 +111,12 @@ impl Config {
         }
         for origin in &extra_origins {
             check_origin("HONGJIA_EXTRA_ORIGINS", origin, on_railway)?;
+            // Browsers leave the usual port out, so an address written with it would never match.
+            if origin.starts_with("https://") && origin.ends_with(":443")
+                || origin.starts_with("http://") && origin.ends_with(":80")
+            {
+                return Err("HONGJIA_EXTRA_ORIGINS must leave out the usual port".into());
+            }
         }
         let family_password = get("HONGJIA_FAMILY_PASSWORD")
             .filter(|v| !v.is_empty())
@@ -594,7 +601,7 @@ mod tests {
         let mut ok = base.to_vec();
         ok.push((
             "HONGJIA_EXTRA_ORIGINS",
-            "https://www.hongjia.org, https://demo.example",
+            "https://WWW.hongjia.org, https://demo.example",
         ));
         assert_eq!(
             config(&ok).unwrap().extra_origins,
@@ -605,6 +612,7 @@ mod tests {
             "https://demo.example/",
             "demo.example",
             "https://demo.example/path",
+            "https://demo.example:443",
             "https://",
         ] {
             let mut pairs = base.to_vec();
