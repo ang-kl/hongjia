@@ -659,7 +659,13 @@ function Globe(svg){
 function dressGlobe(g){
   if(!OP||!OP.dest){ return; }
   var pins=[], route=[];
-  if(OP.home){ pins.push({lat:OP.home.lat,lng:OP.home.lng,label:OP.home.name,kind:'home'}); route=greatCircle(OP.home,OP.dest,72); }
+  if(OP.home){ pins.push({lat:OP.home.lat,lng:OP.home.lng,label:OP.home.name,kind:'home'});
+    // a flight that changes planes is drawn through each change (opener.via), never as one direct line
+    var hops=[OP.home].concat(OP.via||[],[OP.dest]), far=0, i;
+    for(i=1;i<hops.length;i++){ far+=Math.abs(hops[i].lat-hops[i-1].lat)+Math.abs(hops[i].lng-hops[i-1].lng); }
+    for(i=1;i<hops.length;i++){ var part=Math.abs(hops[i].lat-hops[i-1].lat)+Math.abs(hops[i].lng-hops[i-1].lng);
+      route=route.concat(greatCircle(hops[i-1],hops[i],Math.max(8,Math.round(72*part/(far||1))))); }
+    (OP.via||[]).forEach(function(v){ pins.push({lat:v.lat,lng:v.lng,label:v.name,kind:'via'}); }); }
   pins.push({lat:OP.dest.lat,lng:OP.dest.lng,label:OP.dest.name,kind:'dest'});
   var last=OP.dest;
   (OP.bases||[]).forEach(function(b){ if(Math.abs(b.lat-last.lat)+Math.abs(b.lng-last.lng)>0.05){ route=route.concat(greatCircle(last,b,12)); last=b; } pins.push({lat:b.lat,lng:b.lng,kind:'base'}); });
@@ -849,7 +855,8 @@ if(tourEl&&playBtn){
     if(s.globe){
       if(map){ map.stop(); }  // the map is hidden behind the globe: no animation may run on a hidden map
       tourEl.setAttribute('data-view','globe');
-      tk.textContent=t('tour_way','The way there'); tt.textContent=fill(t('tour_from','From {home} to {dest}'),{home:OP.home.name,dest:OP.dest.name});
+      tk.textContent=t('tour_way','The way there'); tt.textContent=(OP.via&&OP.via.length)?fill(t('tour_from_via','From {home} to {dest}, by way of {via}'),{home:OP.home.name,dest:OP.dest.name,via:OP.via.map(function(v){ return v.name; }).join(' and ')})
+        :fill(t('tour_from','From {home} to {dest}'),{home:OP.home.name,dest:OP.dest.name});
       var dates=$('.hero-dates'); tl.textContent=dates?dates.textContent:'';
       setPhoto($('.hero-slide img'));
       if(!tGlobe){ tGlobe=Globe(tourEl.querySelector('.globe')); dressGlobe(tGlobe); }
