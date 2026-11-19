@@ -52,7 +52,7 @@ cargo run --release
 
 The server listens on `$PORT` and on 8080 (`HONGJIA_ALSO_LISTEN` changes or, if empty, disables the second port).
 
-Family mode settings (Railway variables, never committed): `DATABASE_URL`, `HONGJIA_PROFILES` (comma-separated lowercase names), `HONGJIA_OWNER`, `HONGJIA_PUBLIC_ORIGIN` (required on Railway, for example `https://hongjia.org`) and `HONGJIA_FAMILY_PASSWORD` (the one family password). Sign-in is: tap your name, type the family password. If the family password is not set, the site keeps showing the placeholder.
+Family mode settings (Railway variables, never committed): `DATABASE_URL`, `HONGJIA_PROFILES` (comma-separated lowercase names), `HONGJIA_OWNER`, `HONGJIA_PUBLIC_ORIGIN` (required on Railway, for example `https://hongjia.org`), optionally `HONGJIA_EXTRA_ORIGINS` (other addresses the same site also answers on, comma-separated, each served as itself; any address not listed is sent to the main one; sign-in is separate on each address) and `HONGJIA_FAMILY_PASSWORD` (the one family password). Sign-in is: tap your name, type the family password. If the family password is not set, the site keeps showing the placeholder.
 
 ## Deploying
 
