@@ -252,7 +252,7 @@ export function placeMenu(x, y, w, h, vw, vh, margin = 8) {
   return { left: Math.round(left), top: Math.round(top) };
 }
 
-/// A text cut into plain pieces and the @mentions of family members (handles in lowercase).
+/// A text cut into plain pieces and the @mentions of profiles (handles in lowercase).
 export function mentionPieces(text, mentions) {
   const pieces = [];
   const pattern = /@([A-Za-z]{1,21})/g;
@@ -642,7 +642,7 @@ function start() {
       if (can) how = await systemShare(data);
       if (how === 'refused') {
         const what = message.kind === 'doc'
-          ? `the link to this ${message.hash ? 'part of the document' : 'document'} (family sign-in needed)`
+          ? `the link to this ${message.hash ? 'part of the document' : 'document'} (${document.body.dataset.brand === 'd4y' ? 'sign-in' : 'family sign-in'} needed)`
           : `“${data.title}”`;
         const choice = await ask('Share', `Share ${what}?`, [
           ...(can ? [['share', 'Share…', true]] : []), ['copy', 'Copy link', !can], ['no', 'Cancel', false]
@@ -999,7 +999,7 @@ function start() {
     l.addEventListener('click', onListClick);
   }
 
-  // @mentions: the family's handles, offered under a text box when @ is typed.
+  // @mentions: the profiles' handles, offered under a text box when @ is typed.
   let handles = null;
   const loadHandles = async () => {
     if (handles) return handles;

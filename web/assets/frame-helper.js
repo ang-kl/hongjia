@@ -715,7 +715,7 @@
   document.addEventListener('pointerleave', hideRing, true);
 
   // The loupe (D3). The page chooses the magnification; the lens shows a copy of this document's own
-  // content (its scripts removed), so nothing the family wrote over the frame enters the document.
+  // content (its scripts removed), so nothing anyone wrote over the frame enters the document.
   // It follows the mouse, the Pencil (hovering or drawing) and a finger; a click or a tap closes
   // it, and so does Escape. Very long pages are refused: a copy that large would be slow.
   var LOUPE_SIZE = 180, LOUPE_MAX_ELEMENTS = 20000;

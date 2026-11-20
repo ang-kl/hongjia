@@ -254,7 +254,12 @@ pub async fn signin(
             &state,
             &headers,
             StatusCode::UNAUTHORIZED,
-            Some("That did not work. Check the name and the family password."),
+            Some(match super::brand::current() {
+                super::brand::Brand::Family => {
+                    "That did not work. Check the name and the family password."
+                }
+                super::brand::Brand::D4y => "That did not work. Check the name and the password.",
+            }),
         )
         .await;
     };

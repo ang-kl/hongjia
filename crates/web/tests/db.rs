@@ -26,6 +26,7 @@ fn config() -> Config {
         tiles_url: "http://127.0.0.1:9".into(),
         besttime_url: "http://127.0.0.1:9".into(),
         besttime_key: None,
+        brand: family::brand::Brand::Family,
     }
 }
 
@@ -74,6 +75,8 @@ struct Client {
     port: u16,
     cookies: HashMap<String, String>,
     origin: Option<String>,
+    /// The Host header; the test server's own address unless set (d4y's tests set d4y's).
+    host: Option<String>,
 }
 
 fn urlencode(value: &str) -> String {
@@ -94,6 +97,17 @@ impl Client {
             port,
             cookies: HashMap::new(),
             origin: Some(format!("http://127.0.0.1:{port}")),
+            host: None,
+        }
+    }
+
+    /// A client that visits the server under another address, as a browser on d4y would.
+    fn at(port: u16, host: &str) -> Client {
+        Client {
+            port,
+            cookies: HashMap::new(),
+            origin: Some(format!("http://{host}")),
+            host: Some(host.to_string()),
         }
     }
 
@@ -114,8 +128,10 @@ impl Client {
             .collect::<Vec<_>>()
             .join("; ");
         let mut request = format!(
-            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\nUser-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Safari/604.1\r\n",
-            self.port
+            "{method} {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nUser-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Safari/604.1\r\n",
+            self.host
+                .clone()
+                .unwrap_or_else(|| format!("127.0.0.1:{}", self.port))
         );
         if !cookie.is_empty() {
             request.push_str(&format!("Cookie: {cookie}\r\n"));
@@ -293,6 +309,218 @@ async fn member(port: u16, handle: &str) -> Client {
     assert_eq!(r.header("location"), Some("/documents/latest"));
     assert_eq!(c.consent("no").await.status, 303);
     c
+}
+
+const D4Y: &str = "test friends password";
+
+/// d4y's settings for the tests: its own names, owner, password and address.
+fn d4y_config() -> Config {
+    Config {
+        profiles: ["north", "south"].map(String::from).to_vec(),
+        owner: "north".into(),
+        public_origin: Some("http://d4y.test".into()),
+        family_password: D4Y.into(),
+        brand: family::brand::Brand::D4y,
+        ..config()
+    }
+}
+
+/// The family's site and d4y on one server, split by address, each on its own tables.
+async fn start_both(pool: PgPool) -> (u16, PgPool) {
+    let d4y_pool = family::d4y_pool(&pool).await.expect("d4y pool");
+    sqlx::migrate!("../../db/migrations")
+        .run(&d4y_pool)
+        .await
+        .expect("d4y migrations");
+    let family_app = family::app(pool, config(), "abc1234")
+        .await
+        .expect("family app");
+    let d4y_app = family::app(d4y_pool.clone(), d4y_config(), "abc1234")
+        .await
+        .expect("d4y app");
+    let app = family::split_by_host(family_app, d4y_app, vec!["d4y.test".into()]);
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .expect("serve");
+    });
+    (port, d4y_pool)
+}
+
+/// Nothing on a d4y page may name the family's site or speak of the family.
+fn assert_walled(page: &str, what: &str) {
+    let lower = page.to_lowercase();
+    for word in ["hongjia", "洪", "family"] {
+        assert!(!lower.contains(word), "{what} mentions {word:?}");
+    }
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn d4y_is_walled_off_from_the_family_site(pool: PgPool) {
+    // The owner, 20 November 2026: friends see trip pages on d4y.app, with a wall between it and
+    // the family's site. Same server, its own tables, names, password and wording.
+    let (port, d4y_pool) = start_both(pool.clone()).await;
+
+    // The family's site is as before: its name, its four profiles, its password.
+    let mut fam = Client::new(port);
+    let start = fam.get("/").await;
+    assert!(start.body.contains("洪家") && start.body.contains("Family password"));
+    assert!(!start.body.contains("north"));
+    assert_eq!(
+        fam.signin("delta", D4Y).await.status,
+        401,
+        "d4y's password opens nothing here"
+    );
+    let mut fam = owner(port).await;
+    let csrf = fam.csrf().await;
+    let r = upload(
+        &mut fam,
+        &csrf,
+        "Family only",
+        Some(("family-only.html", SAMPLE)),
+    )
+    .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+
+    // d4y: its own name and names, none of the family's.
+    let mut friend = Client::at(port, "d4y.test");
+    let start = friend.get("/").await;
+    assert_eq!(start.status, 200);
+    assert!(start.body.contains("D4Y · Discover, 4 Lens, Yield"));
+    assert!(start.body.contains(r#"value="north""#) && start.body.contains(r#"value="south""#));
+    assert!(!start.body.contains(r#"value="delta""#));
+    assert!(
+        start.body.contains("<title>Sign in · D4Y</title>"),
+        "{}",
+        start.body
+    );
+    assert_walled(&start.body, "the sign-in page");
+    assert_eq!(
+        friend.signin("north", FAMILY).await.status,
+        401,
+        "the family's password opens nothing here"
+    );
+    assert_eq!(
+        friend.signin("delta", D4Y).await.status,
+        401,
+        "the family's names are not d4y's"
+    );
+    let r = friend.signin("south", D4Y).await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    assert_eq!(friend.consent("no").await.status, 303);
+
+    // Every page friends reach says nothing of the family, and the family's document is not there.
+    for path in [
+        "/documents",
+        "/about",
+        "/privacy",
+        "/journal",
+        "/version",
+        "/consent",
+        "/documents/new",
+    ] {
+        let page = friend.get(path).await;
+        assert_eq!(page.status, 200, "{path}");
+        assert_walled(&page.body, path);
+        assert!(
+            !page.body.contains("Family only"),
+            "{path} shows the family's document"
+        );
+        assert!(page.body.contains(r#"data-brand="d4y""#), "{path}");
+    }
+    assert!(
+        !friend
+            .get("/api/library")
+            .await
+            .body
+            .contains("Family only")
+    );
+    assert!(
+        !friend
+            .get("/api/search?q=Family")
+            .await
+            .body
+            .contains("Family only")
+    );
+    // The shared page scripts and styles never name the family's site either.
+    for asset in [
+        "site.css",
+        "site.mjs",
+        "session.mjs",
+        "explorer.mjs",
+        "globe-layout.mjs",
+        "device-profile.mjs",
+        "doc-view.mjs",
+        "menu.mjs",
+        "frame-helper.js",
+    ] {
+        let body = friend
+            .get(&format!("/assets/{asset}"))
+            .await
+            .body
+            .to_lowercase();
+        assert!(
+            !body.contains("hongjia") && !body.contains('洪'),
+            "{asset} names the family's site"
+        );
+    }
+    // A friend's upload stays on d4y.
+    let csrf = friend.csrf().await;
+    let r = upload(
+        &mut friend,
+        &csrf,
+        "Friends trip",
+        Some(("friends-trip.html", SAMPLE)),
+    )
+    .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    let shown = friend.get(r.header("location").expect("location")).await;
+    assert_eq!(shown.status, 200);
+    assert_walled(
+        &shown.body.replace("Sample trip", ""),
+        "a d4y document page",
+    );
+    assert!(!fam.get("/documents").await.body.contains("Friends trip"));
+
+    // A family sign-in does not carry over to d4y, nor a d4y one to the family's site.
+    let mut stray = Client::at(port, "d4y.test");
+    stray.cookies = fam.cookies.clone();
+    assert_eq!(
+        stray.get("/documents").await.status,
+        303,
+        "the family's session is unknown on d4y"
+    );
+    let mut stray = Client::new(port);
+    stray.cookies = friend.cookies.clone();
+    assert_eq!(
+        stray.get("/documents").await.status,
+        303,
+        "d4y's session is unknown on the family's site"
+    );
+
+    // The two sites' tables are apart: each holds only its own profiles and documents.
+    let fam_profiles: Vec<String> =
+        sqlx::query_scalar("SELECT handle FROM profiles WHERE active ORDER BY position")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    let d4y_profiles: Vec<String> =
+        sqlx::query_scalar("SELECT handle FROM profiles WHERE active ORDER BY position")
+            .fetch_all(&d4y_pool)
+            .await
+            .unwrap();
+    assert_eq!(fam_profiles, ["alpha", "beta", "gamma", "delta"]);
+    assert_eq!(d4y_profiles, ["north", "south"]);
+    let d4y_documents: i64 = sqlx::query_scalar("SELECT count(*) FROM documents")
+        .fetch_one(&d4y_pool)
+        .await
+        .unwrap();
+    assert_eq!(d4y_documents, 1, "only the friend's upload");
 }
 
 #[sqlx::test(migrations = "../../db/migrations")]

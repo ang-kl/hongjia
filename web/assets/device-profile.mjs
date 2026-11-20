@@ -1,4 +1,4 @@
-// Device profile for hongjia. Copied unchanged in its rules from the owner's michi repository
+// Device profile for the site. Copied unchanged in its rules from the owner's michi repository
 // (assets/device-profile.mjs), which ports the owner's 2026-0313_AI-JS profile
 // (v3.1/src/responsive/deviceProfile.js, profile "v2-template-rin3-1"). Keep the rules identical:
 // geometry decides the layout; the browser's reported device family is descriptive only and is

@@ -3,6 +3,7 @@
 
 pub mod attach;
 pub mod auth;
+pub mod brand;
 pub mod calendar;
 pub mod crowd;
 pub mod doccheck;
@@ -58,23 +59,138 @@ pub struct Config {
     /// BestTime's private key (`BESTTIME_API_KEY_PRIVATE`, set in Railway, never committed); without
     /// it the owner's crowd asks say it is not set up. It never prints.
     pub besttime_key: Option<crowd::Key>,
+    /// Which site these settings are for: its name and wording follow it.
+    pub brand: brand::Brand,
 }
+
+/// The setting names each site reads.
+struct Names {
+    profiles: &'static str,
+    owner: &'static str,
+    public_origin: &'static str,
+    extra_origins: &'static str,
+    password: &'static str,
+}
+
+const FAMILY_NAMES: Names = Names {
+    profiles: "HONGJIA_PROFILES",
+    owner: "HONGJIA_OWNER",
+    public_origin: "HONGJIA_PUBLIC_ORIGIN",
+    extra_origins: "HONGJIA_EXTRA_ORIGINS",
+    password: "HONGJIA_FAMILY_PASSWORD",
+};
+
+/// d4y's own settings (the owner's names, 20 November 2026). Weather and map tiles come from the
+/// same places as the family's; crowd patterns stay off.
+const D4Y_NAMES: Names = Names {
+    profiles: "D4Y_PROFILE",
+    owner: "D4Y_OWNER",
+    public_origin: "D4Y_PUBLIC_ORIGIN",
+    extra_origins: "D4Y_EXTRA_ORIGINS",
+    password: "D4Y_PASSWORD",
+};
+
+/// The database schema that holds d4y's own copy of every table.
+pub const D4Y_SCHEMA: &str = "d4y";
 
 impl Config {
     pub fn from_env(get: impl Fn(&str) -> Option<String>) -> Result<Config, String> {
+        Config::read(&FAMILY_NAMES, brand::Brand::Family, &get)
+    }
+
+    /// d4y's settings, or `None` when d4y is not set up (no `D4Y_PUBLIC_ORIGIN`). d4y must have
+    /// its own address and its own password: a password the family's site also accepts would
+    /// open both sites, so it is refused.
+    pub fn d4y_from_env(get: impl Fn(&str) -> Option<String>) -> Option<Result<Config, String>> {
+        get(D4Y_NAMES.public_origin)
+            .filter(|v| !v.trim().is_empty())
+            .map(|_| {
+                if let Some(country) = get("D4Y_COUNTRY").filter(|v| !v.trim().is_empty())
+                    && country.trim() != "Singapore"
+                {
+                    return Err(
+                        "D4Y_COUNTRY can only be Singapore (times are Singapore time)".into(),
+                    );
+                }
+                let c = Config::read(&D4Y_NAMES, brand::Brand::D4y, &get)?;
+                if c.public_origin.is_none() {
+                    return Err("D4Y_PUBLIC_ORIGIN is required".into());
+                }
+                if get(FAMILY_NAMES.password).as_deref() == Some(c.family_password.as_str()) {
+                    return Err("D4Y_PASSWORD must differ from the family password".into());
+                }
+                let family_origins: Vec<String> = get(FAMILY_NAMES.public_origin)
+                    .into_iter()
+                    .chain(get(FAMILY_NAMES.extra_origins))
+                    .flat_map(|v| {
+                        v.split(',')
+                            .map(|o| o.trim().to_ascii_lowercase())
+                            .collect::<Vec<_>>()
+                    })
+                    .collect();
+                if c.hosts().iter().any(|h| {
+                    family_origins
+                        .iter()
+                        .any(|o| o.split_once("://").is_some_and(|p| p.1 == h.as_str()))
+                }) {
+                    return Err("D4Y_PUBLIC_ORIGIN must differ from the family's addresses".into());
+                }
+                Ok(Config {
+                    besttime_key: None,
+                    ..c
+                })
+            })
+    }
+
+    /// d4y's hosts as written in `D4Y_PUBLIC_ORIGIN` and `D4Y_EXTRA_ORIGINS`, even when the rest
+    /// of d4y's settings are wrong: a visit to d4y must never land on the family's site.
+    pub fn d4y_hosts(get: impl Fn(&str) -> Option<String>) -> Vec<String> {
+        [D4Y_NAMES.public_origin, D4Y_NAMES.extra_origins]
+            .into_iter()
+            .filter_map(&get)
+            .flat_map(|v| {
+                v.split(',')
+                    .filter_map(|o| {
+                        o.trim()
+                            .split_once("://")
+                            .map(|p| p.1.trim_end_matches('/').to_ascii_lowercase())
+                    })
+                    .filter(|h| !h.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    /// The hosts this site answers on: its main address and any extra ones, in lower case.
+    pub fn hosts(&self) -> Vec<String> {
+        self.public_origin
+            .iter()
+            .chain(&self.extra_origins)
+            .filter_map(|o| o.split_once("://").map(|p| p.1.to_ascii_lowercase()))
+            .collect()
+    }
+
+    fn read(
+        names: &Names,
+        brand: brand::Brand,
+        get: &impl Fn(&str) -> Option<String>,
+    ) -> Result<Config, String> {
         let present = |key: &str| {
             get(key)
                 .map(|v| v.trim().to_string())
                 .filter(|v| !v.is_empty())
         };
         let on_railway = present("RAILWAY_ENVIRONMENT").is_some();
-        let profiles: Vec<String> = present("HONGJIA_PROFILES")
-            .ok_or("HONGJIA_PROFILES is required (comma-separated lowercase names)")?
+        let profiles: Vec<String> = present(names.profiles)
+            .ok_or(format!(
+                "{} is required (comma-separated lowercase names)",
+                names.profiles
+            ))?
             .split(',')
             .map(|p| p.trim().to_string())
             .collect();
         if profiles.is_empty() || profiles.len() > 8 {
-            return Err("HONGJIA_PROFILES must name 1 to 8 profiles".into());
+            return Err(format!("{} must name 1 to 8 profiles", names.profiles));
         }
         for (i, p) in profiles.iter().enumerate() {
             if p.is_empty() || p.len() > 20 || !p.bytes().all(|b| b.is_ascii_lowercase()) {
@@ -87,17 +203,17 @@ impl Config {
                 return Err("profile names must be unique".into());
             }
         }
-        let owner = present("HONGJIA_OWNER").ok_or("HONGJIA_OWNER is required")?;
+        let owner = present(names.owner).ok_or(format!("{} is required", names.owner))?;
         if !profiles.contains(&owner) {
-            return Err("HONGJIA_OWNER must be one of HONGJIA_PROFILES".into());
+            return Err(format!("{} must be one of {}", names.owner, names.profiles));
         }
-        let public_origin = present("HONGJIA_PUBLIC_ORIGIN");
+        let public_origin = present(names.public_origin);
         if let Some(origin) = &public_origin {
-            check_origin("HONGJIA_PUBLIC_ORIGIN", origin, on_railway)?;
+            check_origin(names.public_origin, origin, on_railway)?;
         } else if on_railway {
-            return Err("HONGJIA_PUBLIC_ORIGIN is required on Railway".into());
+            return Err(format!("{} is required on Railway", names.public_origin));
         }
-        let extra_origins: Vec<String> = present("HONGJIA_EXTRA_ORIGINS")
+        let extra_origins: Vec<String> = present(names.extra_origins)
             .map(|v| {
                 v.split(',')
                     // Browsers send the address in lower case, and forms must match it exactly.
@@ -107,20 +223,26 @@ impl Config {
             })
             .unwrap_or_default();
         if !extra_origins.is_empty() && public_origin.is_none() {
-            return Err("HONGJIA_EXTRA_ORIGINS needs HONGJIA_PUBLIC_ORIGIN".into());
+            return Err(format!(
+                "{} needs {}",
+                names.extra_origins, names.public_origin
+            ));
         }
         for origin in &extra_origins {
-            check_origin("HONGJIA_EXTRA_ORIGINS", origin, on_railway)?;
+            check_origin(names.extra_origins, origin, on_railway)?;
             // Browsers leave the usual port out, so an address written with it would never match.
             if origin.starts_with("https://") && origin.ends_with(":443")
                 || origin.starts_with("http://") && origin.ends_with(":80")
             {
-                return Err("HONGJIA_EXTRA_ORIGINS must leave out the usual port".into());
+                return Err(format!(
+                    "{} must leave out the usual port",
+                    names.extra_origins
+                ));
             }
         }
-        let family_password = get("HONGJIA_FAMILY_PASSWORD")
+        let family_password = get(names.password)
             .filter(|v| !v.is_empty())
-            .ok_or("HONGJIA_FAMILY_PASSWORD is required")?;
+            .ok_or(format!("{} is required", names.password))?;
         let weather_url =
             present("HONGJIA_WEATHER_URL").unwrap_or_else(|| weather::DEFAULT_URL.to_string());
         if !(weather_url.starts_with("https://")
@@ -156,6 +278,7 @@ impl Config {
             tiles_url,
             besttime_url,
             besttime_key,
+            brand,
         })
     }
 
@@ -412,6 +535,75 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
         .layer(middleware::from_fn_with_state(state, guard)))
 }
 
+/// Serves `other` for requests whose host is one of `other_hosts`, and `main` for every other
+/// request: d4y beside the family's site (the owner, 20 November 2026). Each router has its own
+/// settings and its own database tables, so neither can reach the other's pages or sign-ins.
+pub fn split_by_host(main: Router, other: Router, other_hosts: Vec<String>) -> Router {
+    use tower::ServiceExt;
+    Router::new().fallback(move |request: Request| {
+        let to_other = request
+            .headers()
+            .get(header::HOST)
+            .and_then(|h| h.to_str().ok())
+            .map(|h| bare_host(h).to_ascii_lowercase())
+            .is_some_and(|h| other_hosts.contains(&h));
+        let router = if to_other {
+            other.clone()
+        } else {
+            main.clone()
+        };
+        async move {
+            match router.oneshot(request).await {
+                Ok(response) => response,
+                Err(never) => match never {},
+            }
+        }
+    })
+}
+
+/// What d4y's addresses answer while d4y cannot start (its settings are wrong): a plain notice,
+/// never the family's site.
+pub fn unavailable() -> Router {
+    Router::new().fallback(|| async {
+        let mut r = crate::plain(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "This site is not available just now.\n",
+        );
+        for (name, value) in security_headers() {
+            r.headers_mut()
+                .insert(name, HeaderValue::from_static(value));
+        }
+        r.headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        r
+    })
+}
+
+/// A Host header without its port.
+fn bare_host(host: &str) -> &str {
+    match host.rsplit_once(':') {
+        Some((name, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => host,
+    }
+}
+
+/// d4y's own connection pool: the same database, but its search path holds only d4y's schema,
+/// created here on first use, so every query finds d4y's own copy of each table and never the
+/// family's.
+pub async fn d4y_pool(main: &PgPool) -> Result<PgPool, sqlx::Error> {
+    sqlx::query("CREATE SCHEMA IF NOT EXISTS d4y")
+        .execute(main)
+        .await?;
+    let options = (*main.connect_options())
+        .clone()
+        .options([("search_path", D4Y_SCHEMA)]);
+    sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(std::time::Duration::from_secs(10))
+        .connect_with(options)
+        .await
+}
+
 /// Sends other hosts to the public origin, refuses unexpected methods, and adds the security
 /// headers and no-store caching to every response.
 async fn guard(State(state): State<FamilyState>, request: Request, next: Next) -> Response {
@@ -422,7 +614,7 @@ async fn guard(State(state): State<FamilyState>, request: Request, next: Next) -
         r.headers_mut().insert(header::LOCATION, target);
         r
     } else if method == Method::GET || method == Method::HEAD || method == Method::POST {
-        next.run(request).await
+        brand::scope(state.config.brand, next.run(request)).await
     } else {
         let mut refused = crate::plain(StatusCode::METHOD_NOT_ALLOWED, "Method not allowed\n");
         refused
@@ -471,6 +663,102 @@ mod tests {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
         Config::from_env(|k| map.get(k).cloned())
+    }
+
+    fn d4y(pairs: &[(&str, &str)]) -> Option<Result<Config, String>> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        Config::d4y_from_env(|k| map.get(k).cloned())
+    }
+
+    #[test]
+    fn d4y_has_its_own_settings_and_its_own_password() {
+        let base = [
+            ("HONGJIA_PROFILES", "alpha,beta"),
+            ("HONGJIA_OWNER", "alpha"),
+            ("HONGJIA_FAMILY_PASSWORD", "family"),
+            ("HONGJIA_PUBLIC_ORIGIN", "https://hongjia.org"),
+            ("HONGJIA_EXTRA_ORIGINS", "https://www.hongjia.org"),
+        ];
+        assert!(d4y(&base).is_none(), "without D4Y_PUBLIC_ORIGIN d4y is off");
+        let mut on = base.to_vec();
+        on.extend([
+            ("D4Y_PROFILE", "north, south"),
+            ("D4Y_OWNER", "north"),
+            ("D4Y_PASSWORD", "friends"),
+            ("D4Y_PUBLIC_ORIGIN", "https://d4y.app"),
+            ("D4Y_COUNTRY", "Singapore"),
+        ]);
+        let c = d4y(&on).unwrap().unwrap();
+        assert_eq!(c.profiles, ["north", "south"]);
+        assert_eq!(c.owner, "north");
+        assert_eq!(c.family_password, "friends");
+        assert_eq!(c.hosts(), ["d4y.app"]);
+        assert_eq!(c.brand, brand::Brand::D4y);
+        assert!(c.besttime_key.is_none(), "crowd patterns stay off on d4y");
+        assert!(c.secure_cookies());
+        let refused = |change: (&'static str, &'static str)| {
+            let mut v = on.clone();
+            v.retain(|(k, _)| *k != change.0);
+            v.push(change);
+            d4y(&v).unwrap().is_err()
+        };
+        assert!(
+            refused(("D4Y_PASSWORD", "family")),
+            "the family's password would open both"
+        );
+        assert!(refused(("D4Y_PUBLIC_ORIGIN", "https://www.hongjia.org")));
+        assert!(refused(("D4Y_PUBLIC_ORIGIN", "https://hongjia.org")));
+        assert!(refused(("D4Y_COUNTRY", "Malaysia")));
+        assert!(
+            refused(("D4Y_OWNER", "alpha")),
+            "the owner must be one of d4y's names"
+        );
+        assert!(refused(("D4Y_PROFILE", "North")));
+        assert!(refused(("D4Y_PASSWORD", "")));
+        assert_eq!(
+            Config::from_env(|k| base.iter().find(|p| p.0 == k).map(|p| p.1.to_string()))
+                .unwrap()
+                .brand,
+            brand::Brand::Family
+        );
+    }
+
+    #[test]
+    fn d4y_addresses_are_known_even_when_its_settings_are_wrong() {
+        let get = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| pairs.iter().find(|p| p.0 == k).map(|p| p.1.to_string())
+        };
+        assert_eq!(
+            Config::d4y_hosts(get(&[("D4Y_PUBLIC_ORIGIN", "https://D4Y.app/")])),
+            ["d4y.app"]
+        );
+        assert!(Config::d4y_hosts(get(&[])).is_empty());
+        assert!(
+            d4y(&[("D4Y_PUBLIC_ORIGIN", "https://d4y.app")])
+                .unwrap()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn hosts_are_matched_without_their_port() {
+        assert_eq!(bare_host("d4y.app"), "d4y.app");
+        assert_eq!(bare_host("d4y.app:443"), "d4y.app");
+        assert_eq!(bare_host("127.0.0.1:8080"), "127.0.0.1");
+        assert_eq!(bare_host("[::1]"), "[::1]");
+        assert_eq!(bare_host("[::1]:8080"), "[::1]");
+    }
+
+    #[test]
+    fn every_reworded_phrase_is_still_in_the_site() {
+        let pages = include_str!("pages.rs");
+        for (from, to) in brand::wording() {
+            assert!(pages.contains(from), "the template no longer says {from:?}");
+            assert!(!to.to_lowercase().contains("family"), "{to:?}");
+        }
     }
 
     #[test]

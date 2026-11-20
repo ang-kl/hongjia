@@ -89,15 +89,14 @@ fn page_shell(
     // The family's pages are reached from the menu button (bottom left), so the header keeps only
     // the name; a document page drops it to give the document the whole window.
     let viewer = body_class.split_whitespace().any(|c| c == "viewer-page");
+    let brand = super::brand::current();
+    let name = brand.name_html();
     let header = match nav {
         Some(_) if viewer => String::new(),
-        Some(_) => concat!(
-            r#"<header class="bar"><div class="bar-start">"#,
-            r#"<button type="button" class="back" data-back title="Back to the previous page (Esc)"><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button>"#,
-            r#"<a class="brand" href="/documents/latest"><span lang="zh">洪家</span> · hongjia</a></div></header>"#
-        )
-        .to_string(),
-        None => r#"<header class="bar"><a class="brand" href="/"><span lang="zh">洪家</span> · hongjia</a></header>"#.to_string(),
+        Some(_) => format!(
+            r#"<header class="bar"><div class="bar-start"><button type="button" class="back" data-back title="Back to the previous page (Esc)"><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button><a class="brand" href="/documents/latest">{name}</a></div></header>"#
+        ),
+        None => format!(r#"<header class="bar"><a class="brand" href="/">{name}</a></header>"#),
     };
     let session_script = if nav.is_some() {
         r#"<script type="module" src="/assets/session.mjs"></script>
@@ -118,6 +117,8 @@ fn page_shell(
         Some(nav) if nav.locate => format!(r#"{body_attrs} data-location="yes""#),
         _ => body_attrs.to_string(),
     };
+    let main = brand.reword(main.to_string());
+    let explore = brand.reword(explore);
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -126,13 +127,13 @@ fn page_shell(
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="color-scheme" content="light dark">
-<title>{title} · hongjia</title>
+<title>{title} · {tab}</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/assets/site.css">
 <script type="module" src="/assets/site.mjs"></script>
 {session_script}
 </head>
-<body class="{body_class}"{body_attrs}>
+<body class="{body_class}" data-brand="{code}"{body_attrs}>
 {header}
 <main {main_attrs}>
 {main}
@@ -141,7 +142,9 @@ fn page_shell(
 </body>
 </html>
 "#,
-        title = escape(title)
+        title = escape(title),
+        tab = brand.tab(),
+        code = brand.code(),
     )
 }
 
