@@ -153,9 +153,11 @@ impl Config {
             .flat_map(|v| {
                 v.split(',')
                     .filter_map(|o| {
-                        o.trim()
-                            .split_once("://")
-                            .map(|p| p.1.trim_end_matches('/').to_ascii_lowercase())
+                        // Only the host (and port), whatever path, query or sign-in part follows.
+                        o.trim().split_once("://").map(|p| {
+                            let rest = p.1.split(['/', '?', '#']).next().unwrap_or("");
+                            rest.rsplit('@').next().unwrap_or("").to_ascii_lowercase()
+                        })
                     })
                     .filter(|h| !h.is_empty())
                     .collect::<Vec<_>>()
@@ -756,6 +758,17 @@ mod tests {
             ["d4y.app"]
         );
         assert!(Config::d4y_hosts(get(&[])).is_empty());
+        assert_eq!(
+            Config::d4y_hosts(get(&[("D4Y_PUBLIC_ORIGIN", "https://d4y.app/about?x#y")])),
+            ["d4y.app"]
+        );
+        assert_eq!(
+            Config::d4y_hosts(get(&[(
+                "D4Y_PUBLIC_ORIGIN",
+                "https://someone@d4y.app:8443/"
+            )])),
+            ["d4y.app:8443"]
+        );
         assert!(
             d4y(&[("D4Y_PUBLIC_ORIGIN", "https://d4y.app")])
                 .unwrap()
