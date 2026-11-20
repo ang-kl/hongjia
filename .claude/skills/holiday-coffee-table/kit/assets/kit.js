@@ -231,7 +231,7 @@ function initMap(){
   var box=$('#leaflet');
   if(!window.L){ clear(box); box.appendChild(el('p','map-fallback',t('map_fallback','The route map could not load here.'))); if(flyBtn){flyBtn.disabled=true;} return; }
   map=L.map(box,{scrollWheelZoom:false,zoomControl:true,attributionControl:true});
-  // Tiles. "site" (the default): OpenStreetMap through the family site's relay, with a ticket the
+  // Tiles. "site" (the default): OpenStreetMap through the host site's relay, with a ticket the
   // site gives this page when asked; anywhere else, no tile server is contacted. "carto": CARTO with
   // the trip's key. "osm": OpenStreetMap directly (refused inside the site's locked frame).
   // The credits are fixed here, never taken from the data, and always shown on the map.
@@ -258,7 +258,7 @@ var TILES_TICKET=/^[0-9]{1,12}\.[0-9a-f]{32}$/;
 function siteTiles(box,credit){
   var layer=null, closed=false, timer=0, notice=null;
   box.classList.add('no-tiles');
-  var Notice=L.Control.extend({options:{position:'topright'},onAdd:function(){ var n=el('p','tiles-notice',t('tiles_notice','Map pictures load inside the family site.')); n.setAttribute('role','status'); return n; }});
+  var Notice=L.Control.extend({options:{position:'topright'},onAdd:function(){ var n=el('p','tiles-notice',t('tiles_notice','Map pictures load inside the site.')); n.setAttribute('role','status'); return n; }});
   notice=new Notice(); notice.addTo(map);
   var framed=false; try{ framed=window.parent!==window; }catch(e){ framed=true; }
   if(!framed){ return; }
@@ -383,8 +383,8 @@ function choosePlan(day,p,save){
 $$('.day[data-chosen]').forEach(function(day){ var saved=store.get(SKEY+'plan:'+day.id); if(saved){ choosePlan(day,String(saved),false); } });
 document.addEventListener('click',function(e){ var b=e.target.closest&&e.target.closest('.plan-btn'); if(!b){return;} var day=b.closest('.day'); if(day){ choosePlan(day,b.getAttribute('data-plan'),true); } });
 
-/* ---- the family's swaps at a stop (the owner, 8 November 2026): Plans B (hiking and nature), C (shopping) and D
-   (early or late). Each opens on its own, so the family can split up and meet again; the choice is remembered on
+/* ---- the swaps at a stop (the owner, 8 November 2026): Plans B (hiking and nature), C (shopping) and D
+   (early or late). Each opens on its own, so the group can split up and meet again; the choice is remembered on
    this device, the map shows the chosen places and the day's timeline says what was swapped. ---- */
 function swapState(card){ return String(card.getAttribute('data-swaps')||'').split(' ').filter(function(x){ return /^[bcd]$/.test(x); }); }
 function swapMarks(card,list){
@@ -462,7 +462,7 @@ function openSwapAt(target){
   var card=target.closest('.stop'); if(card){ setSwap(card,target.getAttribute('data-swap'),true,true); }
 }
 
-/* ---- live weather: asked of the family site once on load, only inside its frame ---- */
+/* ---- live weather: asked of the host site once on load, only inside its frame ---- */
 var WX=D.weather||null, MONTH=Array.isArray(UI.months)?UI.months:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 var ISO=/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 var RANGE={code:[0,99],tmax:[-90,60],tmin:[-90,60],rain_pct:[0,100],rain_mm:[0,2000],wind_kmh:[0,500],gust_kmh:[0,500],uv:[0,30]};
@@ -538,7 +538,7 @@ if(WX&&Array.isArray(WX.places)&&WX.places.length){
     if(document.readyState==='complete'){ ask(); } else { window.addEventListener('load',ask); }
   } else {
     var today=new Date().toISOString().slice(0,10);
-    $$('.wx[data-wx-date]').forEach(function(box){ var iso=box.getAttribute('data-wx-date'); if(ISO.test(iso)&&today>=addDays(iso,-15)&&today<=iso){ var m=box.querySelector('.wx-msg'); if(m){ m.textContent=t('wx_frame','The live forecast shows when this page is opened on the family site.'); } } });
+    $$('.wx[data-wx-date]').forEach(function(box){ var iso=box.getAttribute('data-wx-date'); if(ISO.test(iso)&&today>=addDays(iso,-15)&&today<=iso){ var m=box.querySelector('.wx-msg'); if(m){ m.textContent=t('wx_frame','The live forecast shows when this page is opened on the site.'); } } });
   }
 }
 
@@ -919,7 +919,7 @@ if(tourEl&&playBtn){
     }
     label();
   };
-  // On the family site, the tour says when it opens and closes, so the site's own buttons fold away.
+  // On the host site, the tour says when it opens and closes, so the site's own buttons fold away.
   var tellSite=function(open){ if(window.parent!==window){ try{ window.parent.postMessage({type:'hj:tour',open:open},'*'); }catch(e){} } };
   var openTour=function(){
     if(!steps.length){ return; }
@@ -1021,7 +1021,7 @@ function shareDay(n){
   var d=D.days[n-1]||{};
   shareAnchor('day-'+n,String((D.trip||'')+' · '+(d.label||'')).slice(0,120));
 }
-/* A link to one part of the page (the owner, 7 November 2026). On the family site the site shares its own
+/* A link to one part of the page (the owner, 7 November 2026). On the host site the site shares its own
    address for this document with the part's # at the end; the frame sends only the title and that #. */
 var ANCHOR_OK=/^[A-Za-z][A-Za-z0-9_-]{0,60}$/;
 function shareAnchor(id,title){
@@ -1081,7 +1081,7 @@ function placeOpen(pid,from){
   }
   return true;
 }
-/* -- Near me: on the family site the site's own page asks the person and the device, and sends back
+/* -- Near me: on the host site the site's own page asks the person and the device, and sends back
    only the nearest places' keys and rough distances; opened elsewhere, the page asks the browser. -- */
 var NEAR_CATS={food:['food','snacks','drinks'],shopping:['shopping']};
 function nearPlaces(filter){ var want=NEAR_CATS[filter]||null, out=[]; Object.keys(P).forEach(function(k){ var p=P[k];
@@ -1197,10 +1197,10 @@ document.addEventListener('click',function(e){
   if(shareAnchor(a.getAttribute('data-sec-link')||a.getAttribute('data-share'),String((D.trip||'')+(words?' · '+words:'')).slice(0,120))){ e.preventDefault(); }
 });
 /* ==== 🤙🏼 (the owner, 9 November 2026): WhatsApp, for the owner's account only; everyone else sees it greyed. The
-   family site says whether the reader is the owner; a tap sends the part's name, time and address (and the site adds
+   host site says whether the reader is the owner; a tap sends the part's name, time and address (and the site adds
    its link) and the site opens WhatsApp, where the owner picks a chat. Nothing is sent until they press Send. ==== */
 var WA_OWNER=false;
-function waWhy(){ return inFrame?t('wa_owner',"Only the owner's account can send on WhatsApp."):t('wa_site','WhatsApp works when this page is opened on the family site.'); }
+function waWhy(){ return inFrame?t('wa_owner',"Only the owner's account can send on WhatsApp."):t('wa_site','WhatsApp works when this page is opened on the site.'); }
 function waState(){
   $$('.wa-btn').forEach(function(b){ b.setAttribute('aria-disabled',WA_OWNER?'false':'true'); b.title=WA_OWNER?t('wa_label','Send on WhatsApp'):waWhy(); });
   root.classList.toggle('wa-on',WA_OWNER);
@@ -1260,7 +1260,7 @@ document.addEventListener('click',function(e){
 });
 if(location.hash){ if(document.readyState==='complete'){ goToHash(); } else { window.addEventListener('load',goToHash); } }
 
-/* ==== Add to calendar (the owner, 7 November 2026): each Add opens the family site's /calendar.ics with
+/* ==== Add to calendar (the owner, 7 November 2026): each Add opens the host site's /calendar.ics with
    the event in its address. On the site, the link also names this trip page so the event links back;
    anywhere else (a saved copy of the page) the buttons are hidden, with a note. ==== */
 (function(){
