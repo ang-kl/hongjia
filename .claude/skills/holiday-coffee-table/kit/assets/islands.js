@@ -1,6 +1,6 @@
 /* The islands (the owner, 9 and 10 November 2026: "simulation of day's events as islands"): each day an island
    named like "Fri 25 Dec", with its public holiday, and its places at their true distances; the build works out the
-   shapes and distances (islands_data in build.py). Opened by the family site's globe button ('hj:islands-open')
+   shapes and distances (islands_data in build.py). Opened by the host site's globe button ('hj:islands-open')
    or by #islands; the page tells the site when the islands are ready, open and closed ('hj:islands'). */
 (function () {
 'use strict';
@@ -255,7 +255,7 @@ function renderArch() {
     isl[i].ubox = [Math.min(b[0], lb[0]), Math.min(b[1], lb[1]), Math.max(b[2], lb[2]), Math.max(b[3], lb[3])];
   });
   var bounds = [6, 6, W - 6, H - 6];
-  // where the family changes base
+  // where the trip changes base
   D.days.forEach(function (day, i) {
     if (!day.base_change || i === 0) return;
     var gp = gap(i - 1), p = segPoint(i, (gp[0] + gp[1]) / 2);

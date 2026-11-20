@@ -1,5 +1,5 @@
 
-/* The islands (the owner, 9 and 10 November 2026): each day an island, opened by the family site's globe
+/* The islands (the owner, 9 and 10 November 2026): each day an island, opened by the host site's globe
    button or #islands. Everything here sits inside #islands, so the trip page around it is untouched. */
 #islands{--i-paper:#f6f1e6;--i-paper2:#fbf8f1;--i-ink:#1e2a2b;--i-ink2:#4c5a59;--i-ink3:#6c7674;--i-teal:#1d6a6c;--i-teal-soft:rgba(29,106,108,.10);
   --i-teal-mid:rgba(29,106,108,.28);--i-sea:#e4ece7;--i-reef:#d2e3dc;--i-reef-cur:#b7d6cc;--i-sand:#f8f0da;--i-sand2:#efe0bd;--i-coast:#c4aa7c;

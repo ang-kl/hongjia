@@ -954,7 +954,7 @@ class KitTest(unittest.TestCase):
                      "TILES_BASE.test(a.base)&&TILES_TICKET.test(a.ticket)", "setTimeout(function(){closed=true;},8000)",
                      "if(closed&&!layer){return;}", "L.tileLayer(url,{maxZoom:19,attribution:credit})",
                      "varurl=a.base+'/{z}/{x}/{y}.png?t='+a.ticket;", "box.classList.add('no-tiles');",
-                     "t('tiles_notice','Mappicturesloadinsidethefamilysite.')"):
+                     "t('tiles_notice','Mappicturesloadinsidethesite.')"):
             self.assertIn(part, relay)
         self.assertEqual(relay.count("postMessage({type:'hj:tiles-want'}"), 1, 'asked once')
         self.assertIn('https://www.openstreetmap.org/copyright', compact)

@@ -98,7 +98,7 @@ select{min-height:44px;border:1px solid var(--rule);border-radius:10px;padding:0
 .sk.pol span{border-color:#1f4e8c;color:#1f4e8c}
 .map-fallback{position:absolute;inset:0;display:grid;place-items:center;padding:20px;text-align:center;color:var(--muted)}
 .leaflet-container{font-family:var(--sans);background:#f4f2ee}
-/* tiles through the family site: a plain background and a small notice until the site answers;
+/* tiles through the host site: a plain background and a small notice until the site answers;
    the OpenStreetMap credit stays visible on the map whenever its tiles show */
 #leaflet.no-tiles{background:#f4f2ee}
 .tiles-notice{margin:0;max-width:220px;padding:6px 10px;border:1px solid var(--rule);border-radius:8px;background:rgba(255,255,255,.94);color:var(--ink2);font-size:.78rem;line-height:1.35;box-shadow:0 1px 4px rgba(0,0,0,.08)}
@@ -1058,7 +1058,7 @@ html[data-mode=print] .sec-link{display:none}
 @media print{.sec-link{display:none !important}}
 
 /* ==== Direction A, "River" (the owner, 8 November 2026) ====
-   The family's name, 洪, means "flood; big, vast" and is written with the water element; one fine water line
+   A river theme: water and calm; one fine water line
    is the only ornament. The site's two typefaces, four heading sizes that differ at a glance, text on paper
    (no dark overlays on photos), no small labels above titles, nothing that floats in, and the whole width. */
 :root{--paper:#fbfaf6;--ivory:#fbfaf6;--ink:#15201f;--ink2:#2c3836;--muted:#5a6563;--rule:#dcdfd9;--rule2:#ecefea;
@@ -1199,7 +1199,7 @@ thead th,.cc-grid dt,.upg-dl dt,.sh-facts dt{font-family:var(--sans);font-size:v
 /* the opening sits on the page's paper, the photo credit under the photo with no band */
 .opener{background:transparent}
 .ocard > .ocard-ph{background:transparent}
-/* the family's swaps at a stop: Plans B, C and D (the owner, 8 November 2026) */
+/* the swaps at a stop: Plans B, C and D (the owner, 8 November 2026) */
 .swaps{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
 .swap-btn{display:inline-block;min-height:44px;padding:10px 14px;text-align:left;border:1px solid var(--rule);border-radius:22px;background:var(--paper);color:var(--ink);font:500 .9375rem/1.35 var(--sans);cursor:pointer}
 .swap-btn b,.swap-btn small{white-space:nowrap}
