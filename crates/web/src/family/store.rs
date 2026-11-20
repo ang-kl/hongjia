@@ -6,7 +6,8 @@ use sqlx::{FromRow, PgPool};
 
 pub const SESSION_IDLE_DAYS: i32 = 14;
 pub const SESSION_MAX_DAYS: i32 = 30;
-pub const FAILURE_WINDOW_MINUTES: i32 = 15;
+// The owner, 20 November 2026: a name locked out by wrong passwords waits 1 minute, not 15.
+pub const FAILURE_WINDOW_MINUTES: i32 = 1;
 pub const FAILURE_LIMIT: i64 = 5;
 
 #[derive(Clone, Debug, FromRow)]

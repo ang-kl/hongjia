@@ -238,7 +238,7 @@ pub async fn signin(
             &state,
             &headers,
             StatusCode::TOO_MANY_REQUESTS,
-            Some("Too many attempts. Please wait 15 minutes and try again."),
+            Some("Too many attempts. Please wait a minute and try again."),
         )
         .await;
     }
