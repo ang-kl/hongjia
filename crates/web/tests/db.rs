@@ -433,6 +433,20 @@ async fn d4y_is_walled_off_from_the_family_site(pool: PgPool) {
         );
         assert!(page.body.contains(r#"data-brand="d4y""#), "{path}");
     }
+    // d4y's About page says what D4Y is; the family's does not.
+    let about = friend.get("/about").await.body;
+    for words in [
+        "What is D4Y?",
+        "Discover the Land",
+        "Four Lenses on Site",
+        "Yield to Application &amp; Reflection",
+        "<h2>Hello, south</h2>",
+    ] {
+        assert!(about.contains(words), "d4y's About lacks {words:?}");
+    }
+    let family_about = fam.get("/about").await.body;
+    assert!(!family_about.contains("What is D4Y?"));
+    assert!(family_about.contains("<h1>Hello, delta</h1>"));
     assert!(
         !friend
             .get("/api/library")

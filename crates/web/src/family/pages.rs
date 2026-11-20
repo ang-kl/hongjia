@@ -300,14 +300,33 @@ fn mentioned_list(mentioned: &[MentionRow]) -> String {
 
 /// The page that used to greet people after signing in; since 5 November 2026 they land on the
 /// latest document and reach this from Settings, About (the owner's request).
+/// What D4Y is, at the top of d4y's About page (the owner's words, 20 November 2026).
+const D4Y_ABOUT: &str = r#"<section class="d4y-about" aria-labelledby="d4y-what">
+<h1 id="d4y-what">What is D4Y?</h1>
+<p><strong>D4Y</strong> stands for <strong>Discover, 4 Lens, Yield</strong>.</p>
+<h2>D · Discover the Land</h2>
+<ul><li>Walk the physical locations in the biblical narrative (such as Jerusalem, the Galilee, or sites from Paul’s journeys).</li><li>Observe the terrain, distances, and sightlines firsthand.</li></ul>
+<h2>4 · Four Lenses on Site</h2>
+<p>At each stop, study the passage through four lenses:</p>
+<ol><li><strong>Geography:</strong> How the landscape shaped events, travel, and imagery.</li><li><strong>History:</strong> Who ruled, what conflicts occurred, and how the site changed over time.</li><li><strong>Culture:</strong> Daily life, customs, worship practices, and social structures of the era.</li><li><strong>Scripture:</strong> Read the relevant biblical text on location to connect words with place.</li></ol>
+<h2>Y · Yield to Application &amp; Reflection</h2>
+<ul><li>Hold a brief group debrief, prayer, or journaling time before moving on.</li><li>Connect historical context to present-day faith, discipleship, and daily life.</li></ul>
+</section>
+"#;
+
 pub fn about(nav: &Nav, device: &str, mentioned: &[MentionRow]) -> String {
     let attrs = format!(r#" data-csrf="{}""#, escape(nav.csrf));
+    // On d4y the page opens with what D4Y is; the greeting follows as a second-level heading.
+    let (intro, hello) = match super::brand::current() {
+        super::brand::Brand::D4y => (D4Y_ABOUT, "h2"),
+        super::brand::Brand::Family => ("", "h1"),
+    };
     layout(
         "About",
         Some(nav),
         &attrs,
         &format!(
-            r#"<h1>Hello, {handle}</h1>
+            r#"{intro}<{hello}>Hello, {handle}</{hello}>
 <p>You are signed in on {device}.</p>
 {mentions}
 <p>Open the <a href="/documents">documents</a> or <a href="/documents/new">add one</a>. To mark up a document, right-click it (tap twice on a touch screen or with the Pencil). You can also see the <a href="/journal">login journal</a>, change <a href="/consent">this device's settings</a>, or read <a href="/privacy">what we collect</a>.</p>
