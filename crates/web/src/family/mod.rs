@@ -565,6 +565,18 @@ pub fn split_by_host(main: Router, other: Router, other_hosts: Vec<String>) -> R
     })
 }
 
+/// The hosts to wall off for d4y: d4y's own, never one the family's site answers on (a d4y
+/// setting that names the family's address must not take the family's site offline).
+pub fn d4y_only_hosts(d4y: Vec<String>, family: &[String]) -> Vec<String> {
+    let family: Vec<String> = family
+        .iter()
+        .map(|h| bare_host(h).to_ascii_lowercase())
+        .collect();
+    d4y.into_iter()
+        .filter(|h| !family.contains(&bare_host(h).to_ascii_lowercase()))
+        .collect()
+}
+
 /// What d4y's addresses answer while d4y cannot start (its settings are wrong): a plain notice,
 /// never the family's site.
 pub fn unavailable() -> Router {
@@ -748,21 +760,28 @@ mod tests {
     }
 
     #[test]
+    fn a_wrong_d4y_address_never_walls_off_the_family_site() {
+        let family = ["hongjia.org".to_string(), "www.hongjia.org:443".to_string()];
+        assert_eq!(
+            d4y_only_hosts(
+                vec![
+                    "d4y.app".into(),
+                    "HONGJIA.org".into(),
+                    "www.hongjia.org".into()
+                ],
+                &family
+            ),
+            ["d4y.app"]
+        );
+    }
+
+    #[test]
     fn hosts_are_matched_without_their_port() {
         assert_eq!(bare_host("d4y.app"), "d4y.app");
         assert_eq!(bare_host("d4y.app:443"), "d4y.app");
         assert_eq!(bare_host("127.0.0.1:8080"), "127.0.0.1");
         assert_eq!(bare_host("[::1]"), "[::1]");
         assert_eq!(bare_host("[::1]:8080"), "[::1]");
-    }
-
-    #[test]
-    fn every_reworded_phrase_is_still_in_the_site() {
-        let pages = include_str!("pages.rs");
-        for (from, to) in brand::wording() {
-            assert!(pages.contains(from), "the template no longer says {from:?}");
-            assert!(!to.to_lowercase().contains("family"), "{to:?}");
-        }
     }
 
     #[test]

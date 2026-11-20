@@ -27,6 +27,8 @@ const LIBRARY_CONTENTS: &str = r#"<p class="fab-contents-head">All documents</p>
 /// The 🛰️ satellite, globe and 📁 folder buttons at the bottom right of every signed-in page, in
 /// the michi order, with the search field, the contents list and the globe they open.
 fn explorer(contents: &str) -> String {
+    let globe_label =
+        super::brand::current().say("Globe of the family documents", "Globe of the documents");
     format!(
         r##"<div class="fab-group" id="fab-group" data-fab-group>
 <form class="fab-search glass" id="fab-search" role="search" data-fab-search hidden><label><span class="visually-hidden">Search all documents</span><input type="search" data-fab-input placeholder="Search titles, hashtags and text" autocomplete="off" spellcheck="false" maxlength="100"></label><button type="submit" aria-label="Search">→</button></form>
@@ -36,7 +38,7 @@ fn explorer(contents: &str) -> String {
 <button type="button" class="fab-folder" data-fab-folder aria-expanded="false" aria-controls="fab-contents" title="Contents" disabled><span aria-hidden="true">📁</span><span class="visually-hidden">Contents</span></button>
 </div>
 <button type="button" class="fab-scope" data-fab-scope aria-expanded="false" aria-controls="fab-group" title="Show the search, globe and contents buttons"><span aria-hidden="true">🔭</span><span class="visually-hidden">Show the search, globe and contents buttons</span></button>
-<div class="globe-dialog" id="globe" role="dialog" aria-modal="true" aria-label="Globe of the family documents" data-globe hidden>
+<div class="globe-dialog" id="globe" role="dialog" aria-modal="true" aria-label="{globe_label}" data-globe hidden>
 <div class="globe-backdrop" data-globe-close></div>
 <p class="visually-hidden" role="status" aria-live="polite" data-globe-status></p>
 <button type="button" class="globe-x glass" data-globe-close aria-label="Close the globe">×</button>
@@ -117,8 +119,6 @@ fn page_shell(
         Some(nav) if nav.locate => format!(r#"{body_attrs} data-location="yes""#),
         _ => body_attrs.to_string(),
     };
-    let main = brand.reword(main.to_string());
-    let explore = brand.reword(explore);
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -155,6 +155,7 @@ fn notice(message: Option<&str>) -> String {
 }
 
 pub fn signin(profiles: &[Profile], csrf: &str, message: Option<&str>) -> String {
+    let password_label = super::brand::current().say("Family password", "Password");
     let choices: String = profiles
         .iter()
         .map(|p| {
@@ -174,7 +175,7 @@ pub fn signin(profiles: &[Profile], csrf: &str, message: Option<&str>) -> String
 <form method="post" action="/signin" class="stack">
 <input type="hidden" name="csrf" value="{csrf}">
 <fieldset class="choices"><legend>Who is signing in?</legend>{choices}</fieldset>
-<label>Family password <input type="password" name="passphrase" autocomplete="current-password" required maxlength="256"></label>
+<label>{password_label} <input type="password" name="passphrase" autocomplete="current-password" required maxlength="256"></label>
 <button type="submit">Sign in</button>
 </form>
 <p class="small"><a href="/privacy">What we collect</a>. Location is off unless you turn it on under ☰ Settings, This device.</p>"#,
@@ -193,6 +194,7 @@ pub fn consent(
     location_allowed: Option<bool>,
     unanswered: bool,
 ) -> String {
+    let all_profiles = super::brand::current().say("All four profiles", "Everyone signed in");
     let yes = if location_allowed == Some(true) {
         " checked"
     } else {
@@ -216,7 +218,7 @@ pub fn consent(
             r#"<h1>This device</h1>
 <p>Here is what the site records on this device and who can see it. The full list is on <a href="/privacy">What we collect</a>.</p>
 <ul>
-<li>Each sign-in: the profile chosen, the time, a short description of this browser, and a device code. All four profiles can see this in the journal.</li>
+<li>Each sign-in: the profile chosen, the time, a short description of this browser, and a device code. {all_profiles} can see this in the journal.</li>
 <li>While the page is open and you are using it, an estimate of active time. An open tab does not prove anyone was reading.</li>
 <li>Your approximate location, <strong>only if you allow it below and your browser allows it</strong>, rounded to about 40 km. It is off unless you choose it.</li>
 </ul>
@@ -500,18 +502,25 @@ pub fn owner(
 }
 
 pub fn privacy(owner: &str, journal_days: i32, location_days: i32) -> String {
+    let brand = super::brand::current();
+    let private_site = brand.say(
+        "This is a private site for four family profiles.",
+        "This is a private site for a small group.",
+    );
+    let the_people = brand.say("the family", "the group");
+    let all_profiles = brand.say("All four profiles", "Everyone signed in");
     layout(
         "What we collect",
         None,
         "",
         &format!(
             r#"<h1>What we collect</h1>
-<p>This is a private site for four family profiles. Nothing here is shared outside the family, sold, or sent by email, SMS or push messages.</p>
+<p>{private_site} Nothing here is shared outside {the_people}, sold, or sent by email, SMS or push messages.</p>
 <div class="scroll"><table><thead><tr><th>Data</th><th>When</th><th>Who can see it</th><th>Kept for</th></tr></thead><tbody>
-<tr><td>Profile chosen, time, result of each sign-in</td><td>Every sign-in</td><td>All four profiles (details of unsuccessful attempts: the owner)</td><td>{journal_days} days (attempts at most 90)</td></tr>
-<tr><td>Short browser description and a device code</td><td>Every sign-in</td><td>All four profiles</td><td>{journal_days} days</td></tr>
-<tr><td>Approximate location, rounded to about 40 km</td><td>Only if you allowed it on that device</td><td>All four profiles</td><td>{location_days} days</td></tr>
-<tr><td>Estimated active time</td><td>While a page is visible and in use</td><td>All four profiles</td><td>{journal_days} days</td></tr>
+<tr><td>Profile chosen, time, result of each sign-in</td><td>Every sign-in</td><td>{all_profiles} (details of unsuccessful attempts: the owner)</td><td>{journal_days} days (attempts at most 90)</td></tr>
+<tr><td>Short browser description and a device code</td><td>Every sign-in</td><td>{all_profiles}</td><td>{journal_days} days</td></tr>
+<tr><td>Approximate location, rounded to about 40 km</td><td>Only if you allowed it on that device</td><td>{all_profiles}</td><td>{location_days} days</td></tr>
+<tr><td>Estimated active time</td><td>While a page is visible and in use</td><td>{all_profiles}</td><td>{journal_days} days</td></tr>
 <tr><td>Network address</td><td>Every request</td><td>Nobody; it is coarsened and hashed before storage, only to slow down password guessing</td><td>at most 90 days</td></tr>
 </tbody></table></div>
 <p>Choosing a profile name does not prove who signed in, and an open tab does not prove anyone was reading. Precise GPS is never requested.</p>
@@ -677,6 +686,7 @@ pub fn documents(
 }
 
 pub fn document_upload(nav: &Nav, message: Option<&str>) -> String {
+    let whose_data = super::brand::current().say("the family's", "the site's");
     layout(
         "Add a document",
         Some(nav),
@@ -690,7 +700,7 @@ pub fn document_upload(nav: &Nav, message: Option<&str>) -> String {
 <label>Hashtags (optional) <input type="text" name="tags" maxlength="400" placeholder="#trip #2027"></label>
 <label>File <input type="file" name="file" accept=".html,.htm,.txt,.md,.jpg,.jpeg,.png,.webp,text/html,text/plain,text/markdown,image/jpeg,image/png,image/webp" required></label>
 <p class="small">HTML pages, text files and pictures (JPEG, PNG or WebP), up to 10 MB. On an iPhone, choose a photo from the library; Safari sends it as a JPEG. Leave the hashtags empty and the site suggests some from the file. The document is filed under today's date and number, for example 2026-1105_#1.</p>
-<p class="small">Pages run in a locked-down frame: their own scripts, libraries from cdnjs, jsDelivr, unpkg and Tailwind, Google Fonts, online pictures, links and printing work, but they cannot reach your account, the family's data or other pages.</p>
+<p class="small">Pages run in a locked-down frame: their own scripts, libraries from cdnjs, jsDelivr, unpkg and Tailwind, Google Fonts, online pictures, links and printing work, but they cannot reach your account, {whose_data} data or other pages.</p>
 <button type="submit">Upload</button>
 </form>"##,
             notice = notice(message),
@@ -1132,6 +1142,9 @@ fn attachments_section(key: &str, csrf: &str, review: &Review) -> String {
 
 /// Saved fields: who sees what people fill in, and the latest changes to the family copy.
 fn fields_section(key: &str, csrf: &str, review: &Review) -> String {
+    let brand = super::brand::current();
+    let sees = brand.say("the family sees", "everyone sees");
+    let shared_copy = brand.say("Shared: one family copy", "Shared: one copy for everyone");
     let state = if review.mode == "personal" {
         format!(
             r#"<p>Ticks and typed answers are <strong>personal</strong>: each person sees only their own. You have {} saved.</p>"#,
@@ -1160,7 +1173,7 @@ fn fields_section(key: &str, csrf: &str, review: &Review) -> String {
             )
         };
         format!(
-            r#"<p>Ticks and typed answers are <strong>shared</strong>: the family sees one copy. Latest changes:</p>{changes}"#
+            r#"<p>Ticks and typed answers are <strong>shared</strong>: {sees} one copy. Latest changes:</p>{changes}"#
         )
     };
     let form = if review.can_choose_mode {
@@ -1170,7 +1183,7 @@ fn fields_section(key: &str, csrf: &str, review: &Review) -> String {
             (" checked", "")
         };
         format!(
-            r#"<form method="post" action="/documents/{key}/fields-mode" class="stack"><input type="hidden" name="csrf" value="{csrf}"><fieldset class="choices"><legend>Who sees what people fill in?</legend><label class="choice"><input type="radio" name="mode" value="shared"{shared}><span>Shared: one family copy</span></label><label class="choice"><input type="radio" name="mode" value="personal"{personal}><span>Personal: each person their own</span></label></fieldset><p class="small">Switching keeps both sets; each choice shows its own answers.</p><button type="submit" class="secondary">Save choice</button></form>"#
+            r#"<form method="post" action="/documents/{key}/fields-mode" class="stack"><input type="hidden" name="csrf" value="{csrf}"><fieldset class="choices"><legend>Who sees what people fill in?</legend><label class="choice"><input type="radio" name="mode" value="shared"{shared}><span>{shared_copy}</span></label><label class="choice"><input type="radio" name="mode" value="personal"{personal}><span>Personal: each person their own</span></label></fieldset><p class="small">Switching keeps both sets; each choice shows its own answers.</p><button type="submit" class="secondary">Save choice</button></form>"#
         )
     } else {
         String::new()
@@ -1275,13 +1288,19 @@ pub fn document_view(
         (
             "unhide",
             "Unhide",
-            "Hidden from the family's lists, the globe, search and the landing page. Unhide lists it again.",
+            super::brand::current().say(
+                "Hidden from the family's lists, the globe, search and the landing page. Unhide lists it again.",
+                "Hidden from everyone's lists, the globe, search and the landing page. Unhide lists it again.",
+            ),
         )
     } else {
         (
             "hide",
             "Hide",
-            "Hiding takes it off the family's lists, the globe, search and the landing page; it is kept, and can be unhidden.",
+            super::brand::current().say(
+                "Hiding takes it off the family's lists, the globe, search and the landing page; it is kept, and can be unhidden.",
+                "Hiding takes it off everyone's lists, the globe, search and the landing page; it is kept, and can be unhidden.",
+            ),
         )
     };
     let manage = if can_manage {
@@ -1322,7 +1341,10 @@ pub fn document_view(
         })
         .unwrap_or_default();
     let hidden_notice = if doc.hidden {
-        r#"<p class="notice">This document is hidden from the family's lists. Unhide it in Manage.</p>"#
+        super::brand::current().say(
+            r#"<p class="notice">This document is hidden from the family's lists. Unhide it in Manage.</p>"#,
+            r#"<p class="notice">This document is hidden from everyone's lists. Unhide it in Manage.</p>"#,
+        )
     } else {
         ""
     };

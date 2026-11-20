@@ -502,6 +502,33 @@ async fn d4y_is_walled_off_from_the_family_site(pool: PgPool) {
     );
     assert!(!fam.get("/documents").await.body.contains("Friends trip"));
 
+    // The site's words never change anyone's own text: a title that reads like the family's
+    // wording is shown, and kept in the rename box, exactly as typed.
+    let csrf = friend.csrf().await;
+    let r = upload(
+        &mut friend,
+        &csrf,
+        "Shared: one family copy",
+        Some(("words.html", SAMPLE)),
+    )
+    .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    let page = friend
+        .get(r.header("location").expect("location"))
+        .await
+        .body;
+    assert!(
+        page.contains(r#"value="Shared: one family copy""#),
+        "rename box changed"
+    );
+    assert!(
+        friend
+            .get("/documents")
+            .await
+            .body
+            .contains("Shared: one family copy")
+    );
+
     // A family sign-in does not carry over to d4y, nor a d4y one to the family's site.
     let mut stray = Client::at(port, "d4y.test");
     stray.cookies = fam.cookies.clone();
@@ -535,7 +562,7 @@ async fn d4y_is_walled_off_from_the_family_site(pool: PgPool) {
         .fetch_one(&d4y_pool)
         .await
         .unwrap();
-    assert_eq!(d4y_documents, 1, "only the friend's upload");
+    assert_eq!(d4y_documents, 2, "only the friend's uploads");
 }
 
 #[sqlx::test(migrations = "../../db/migrations")]

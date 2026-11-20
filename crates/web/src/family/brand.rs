@@ -49,56 +49,12 @@ impl Brand {
         }
     }
 
-    /// A page's text as this site words it. The family's site keeps every word; on d4y the
-    /// site's own sentences that speak of the family are reworded (whole phrases from the site's
-    /// templates only, so nobody's document text is touched).
-    pub fn reword(self, html: String) -> String {
+    /// The family's site's words, or d4y's. Each template passes both, so a d4y page never
+    /// carries the family's wording, and nobody's own text is touched.
+    pub fn say(self, family: &'static str, d4y: &'static str) -> &'static str {
         match self {
-            Brand::Family => html,
-            Brand::D4y => D4Y_WORDING
-                .iter()
-                .fold(html, |page, (from, to)| page.replace(from, to)),
+            Brand::Family => family,
+            Brand::D4y => d4y,
         }
     }
 }
-
-/// The phrases d4y rewords (for the tests that keep them in step with the templates).
-pub fn wording() -> &'static [(&'static str, &'static str)] {
-    &D4Y_WORDING
-}
-
-/// The site's own phrases that name the family, and how d4y says them.
-const D4Y_WORDING: [(&str, &str); 11] = [
-    (
-        r#"aria-label="Globe of the family documents""#,
-        r#"aria-label="Globe of the documents""#,
-    ),
-    ("<label>Family password <input", "<label>Password <input"),
-    (
-        "This is a private site for four family profiles. Nothing here is shared outside the family,",
-        "This is a private site for a small group. Nothing here is shared outside the group,",
-    ),
-    (
-        "All four profiles can see this in the journal.",
-        "Everyone signed in can see this in the journal.",
-    ),
-    ("<td>All four profiles", "<td>Everyone signed in"),
-    ("the family sees one copy.", "everyone sees one copy."),
-    ("Shared: one family copy", "Shared: one copy for everyone"),
-    (
-        "Hidden from the family's lists",
-        "Hidden from everyone's lists",
-    ),
-    (
-        "Hiding takes it off the family's lists",
-        "Hiding takes it off everyone's lists",
-    ),
-    (
-        "hidden from the family's lists",
-        "hidden from everyone's lists",
-    ),
-    (
-        "they cannot reach your account, the family's data or other pages",
-        "they cannot reach your account, the site's data or other pages",
-    ),
-];

@@ -92,13 +92,17 @@ async fn family(url: &str, commit: &str) -> io::Result<Router> {
         .run(&pool)
         .await
         .map_err(|e| io::Error::other(format!("migration failed: {e}")))?;
+    let family_hosts = config.hosts();
     let app = hongjia_web::family::app(pool.clone(), config, commit)
         .await
         .map_err(|e| io::Error::other(format!("startup failed: {e}")))?;
     retention(pool.clone(), "");
     // d4y, the friends' site (the owner, 20 November 2026), when its settings are present. Its
     // trouble never stops the family's site: it is then left off and says why.
-    let d4y_hosts = hongjia_web::family::Config::d4y_hosts(|key| env::var(key).ok());
+    let d4y_hosts = hongjia_web::family::d4y_only_hosts(
+        hongjia_web::family::Config::d4y_hosts(|key| env::var(key).ok()),
+        &family_hosts,
+    );
     let off = |e: String| {
         eprintln!("d4y off: {e}");
         if d4y_hosts.is_empty() {
