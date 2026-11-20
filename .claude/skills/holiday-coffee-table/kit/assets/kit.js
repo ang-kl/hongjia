@@ -620,16 +620,31 @@ function Globe(svg){
     GEO.dots.forEach(function(p){ var q=proj(p[0],p[1],sp,cp,l0); if(q){ dd.push('M'+q[0].toFixed(1)+' '+q[1].toFixed(1)+'h0'); } });
     P.dots.setAttribute('d',dd.join(''));
     P.arc.setAttribute('d',g.arc.length?lines([g.arc],sp,cp,l0,Math.round(g.arcT*g.arc.length)):'');
-    g.pins.forEach(function(pin){ var q=proj(pin.lo,pin.la,sp,cp,l0);
+    g.pins.forEach(function(pin){ var q=proj(pin.lo,pin.la,sp,cp,l0); pin.q=q;
       if(q){ pin.el.setAttribute('transform','translate('+q[0].toFixed(1)+' '+q[1].toFixed(1)+')'); pin.el.style.display=''; } else { pin.el.style.display='none'; } });
+    placeLabels();
   };
+  // names of pins that sit close together (a change of planes beside the destination) must not cover each other:
+  // each name takes the first free spot around its pin, the destination's first
+  function placeLabels(){
+    var spots=[[10,4,'start'],[-10,4,'end'],[-9,18,'end'],[9,18,'start'],[-9,-10,'end'],[9,-10,'start']], taken=[];
+    g.pins.forEach(function(p){ var r=p.kind==='base'?3.5:6; if(p.q){ taken.push([p.q[0]-r,p.q[1]-r,p.q[0]+r,p.q[1]+r,p]); } });
+    g.pins.filter(function(p){ return p.q&&p.tx; }).sort(function(a,b){ return (b.kind==='dest')-(a.kind==='dest'); }).forEach(function(p){
+      var w=0, h=15, i, pick=spots[0], box=null;
+      try{ w=p.tx.getComputedTextLength(); }catch(e){} if(!w){ w=String(p.tx.textContent).length*8; }
+      for(i=0;i<spots.length;i++){ var sp=spots[i], x0=p.q[0]+(sp[2]==='end'?sp[0]-w:sp[0]), y0=p.q[1]+sp[1]-h+3, b=[x0,y0,x0+w,y0+h];
+        if(!taken.some(function(t){ return t[4]!==p&&b[0]<t[2]&&b[2]>t[0]&&b[1]<t[3]&&b[3]>t[1]; })){ pick=sp; box=b; break; } }
+      if(!box){ box=[p.q[0]+10,p.q[1]-8,p.q[0]+10+w,p.q[1]+7]; }
+      p.tx.setAttribute('x',pick[0]); p.tx.setAttribute('y',pick[1]); p.tx.setAttribute('text-anchor',pick[2]); taken.push(box.concat([p]));
+    });
+  }
   g.setPins=function(list){
     clear(P.pins); g.pins=[];
     list.forEach(function(p){
       var grp=document.createElementNS(SVGNS,'g'), c=document.createElementNS(SVGNS,'circle');
       grp.setAttribute('class','g-pin '+(p.kind||'')); c.setAttribute('r',p.kind==='base'?'3.5':'6'); grp.appendChild(c);
-      if(p.label){ var tx=document.createElementNS(SVGNS,'text'); tx.setAttribute('x','10'); tx.setAttribute('y','4'); tx.textContent=String(p.label); grp.appendChild(tx); }
-      P.pins.appendChild(grp); g.pins.push({lo:p.lng*RAD,la:p.lat*RAD,el:grp});
+      var tx=null; if(p.label){ tx=document.createElementNS(SVGNS,'text'); tx.setAttribute('x','10'); tx.setAttribute('y','4'); tx.textContent=String(p.label); grp.appendChild(tx); }
+      P.pins.appendChild(grp); g.pins.push({lo:p.lng*RAD,la:p.lat*RAD,el:grp,tx:tx,kind:p.kind||''});
     });
   };
   g.stop=function(){ cancelAnimationFrame(g.raf); };
@@ -658,10 +673,10 @@ function Globe(svg){
 }
 function dressGlobe(g){
   if(!OP||!OP.dest){ return; }
-  var pins=[], route=[];
+  var pins=[], route=[], far=0;
   if(OP.home){ pins.push({lat:OP.home.lat,lng:OP.home.lng,label:OP.home.name,kind:'home'});
     // a flight that changes planes is drawn through each change (opener.via), never as one direct line
-    var hops=[OP.home].concat(OP.via||[],[OP.dest]), far=0, i;
+    var hops=[OP.home].concat(OP.via||[],[OP.dest]), i;
     for(i=1;i<hops.length;i++){ far+=Math.abs(hops[i].lat-hops[i-1].lat)+Math.abs(hops[i].lng-hops[i-1].lng); }
     for(i=1;i<hops.length;i++){ var part=Math.abs(hops[i].lat-hops[i-1].lat)+Math.abs(hops[i].lng-hops[i-1].lng);
       route=route.concat(greatCircle(hops[i-1],hops[i],Math.max(8,Math.round(72*part/(far||1))))); }
@@ -669,7 +684,21 @@ function dressGlobe(g){
   pins.push({lat:OP.dest.lat,lng:OP.dest.lng,label:OP.dest.name,kind:'dest'});
   var last=OP.dest;
   (OP.bases||[]).forEach(function(b){ if(Math.abs(b.lat-last.lat)+Math.abs(b.lng-last.lng)>0.05){ route=route.concat(greatCircle(last,b,12)); last=b; } pins.push({lat:b.lat,lng:b.lng,kind:'base'}); });
+  // the flight home (opener.back): from where it leaves, through each change, to home
+  if(OP.home&&OP.back&&OP.back.length){
+    var back=OP.back.concat([OP.home]), j;
+    if(Math.abs(back[0].lat-last.lat)+Math.abs(back[0].lng-last.lng)>0.05){ route=route.concat(greatCircle(last,back[0],12)); }
+    for(j=1;j<back.length;j++){ var bp=Math.abs(back[j].lat-back[j-1].lat)+Math.abs(back[j].lng-back[j-1].lng);
+      route=route.concat(greatCircle(back[j-1],back[j],Math.max(8,Math.round(72*bp/(far||bp||1))))); }
+    OP.back.forEach(function(v){ if(!pins.some(function(p){ return p.label&&Math.abs(p.lat-v.lat)+Math.abs(p.lng-v.lng)<0.05; })){ pins.push({lat:v.lat,lng:v.lng,label:v.name,kind:'via'}); } });
+  }
+  pins.sort(function(a,b){ return (a.kind==='dest')-(b.kind==='dest'); });
   g.arc=route; g.setPins(pins);
+}
+function wayBack(){
+  if(!OP.back||!OP.back.length){ return ''; }
+  var bv=OP.back.slice(1).map(function(v){ return v.name; }).join(' and ');
+  return '; '+(bv?fill(t('tour_back_via','home from {start}, by way of {via}'),{start:OP.back[0].name,via:bv}):fill(t('tour_back','home from {start}'),{start:OP.back[0].name}));
 }
 var opGlobeSvg=$('#opener .globe');
 if(opGlobeSvg&&GEO&&OP&&OP.dest){
@@ -855,8 +884,9 @@ if(tourEl&&playBtn){
     if(s.globe){
       if(map){ map.stop(); }  // the map is hidden behind the globe: no animation may run on a hidden map
       tourEl.setAttribute('data-view','globe');
-      tk.textContent=t('tour_way','The way there'); tt.textContent=(OP.via&&OP.via.length)?fill(t('tour_from_via','From {home} to {dest}, by way of {via}'),{home:OP.home.name,dest:OP.dest.name,via:OP.via.map(function(v){ return v.name; }).join(' and ')})
-        :fill(t('tour_from','From {home} to {dest}'),{home:OP.home.name,dest:OP.dest.name});
+      tk.textContent=(OP.back&&OP.back.length)?t('tour_way_back','There and back'):t('tour_way','The way there');
+      tt.textContent=((OP.via&&OP.via.length)?fill(t('tour_from_via','From {home} to {dest}, by way of {via}'),{home:OP.home.name,dest:OP.dest.name,via:OP.via.map(function(v){ return v.name; }).join(' and ')})
+        :fill(t('tour_from','From {home} to {dest}'),{home:OP.home.name,dest:OP.dest.name}))+wayBack();
       var dates=$('.hero-dates'); tl.textContent=dates?dates.textContent:'';
       setPhoto($('.hero-slide img'));
       if(!tGlobe){ tGlobe=Globe(tourEl.querySelector('.globe')); dressGlobe(tGlobe); }
