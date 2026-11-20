@@ -1134,6 +1134,30 @@ class KitTest(unittest.TestCase):
         with self.assertRaises(build.KitError):
             build.build(t)
 
+    def test_the_flight_home_is_drawn_from_where_it_leaves(self):
+        # The owner, 20 November 2026: show the way home too, from the airport we leave by, through the change.
+        t = build.load(EXAMPLE)
+        stop = {'name': 'Midway City', 'lat': -37.67, 'lng': 144.84}
+        leave = {'name': 'Northport', 'lat': -41.54, 'lng': 147.21}
+        t['opener']['via'] = [dict(stop)]
+        t['opener']['back'] = [dict(leave), dict(stop)]
+        html = build.build(t)
+        m = re.search(r'<script type="application/json" id="trip-data">(.*?)</script>', html, re.S)
+        self.assertEqual(json.loads(m.group(1))['opener']['back'], [leave, stop])
+        self.assertIn('home from Northport, by way of Midway City', html)
+        js = open(os.path.join(HERE, 'assets', 'kit.js'), encoding='utf-8').read()
+        self.assertIn('OP.back.concat([OP.home])', js)
+        t['opener']['back'] = [dict(leave)]
+        self.assertIn('; home from Northport', build.build(t))
+        for bad in ([], 'Northport', [{'name': 'Northport'}]):
+            t['opener']['back'] = bad
+            with self.assertRaises(build.KitError):
+                build.build(t)
+        t['opener']['back'] = [dict(leave)]
+        del t['opener']['home']
+        with self.assertRaises(build.KitError):
+            build.build(t)
+
     def test_schedule_items_have_photos_and_links(self):
         items = [li for li in find(self.root, 'li') if li.parent.tag == 'ol' and 'timeline' in li.parent.classes()]
         with_stop = [li for li in items if find(li, 'a', 'tl-go')]

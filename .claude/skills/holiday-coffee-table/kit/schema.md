@@ -476,6 +476,7 @@ with the masthead as before.
 | `highlights` | | Stop ids: "Can't-miss, day by day": one row per day in date order, each pick on the day whose plan has it (Plan A first, then B and C). A day with one pick lays its card on its side; a day with none shows the day's `sub` line. Under the picks, the day's Plan B, C and D swaps (one of each at most, a Can't-miss stop's own first): each with its photo and credit, a "Plan B" link that opens that swap at its stop, and the place's name. |
 | `home` | | `{name, lat, lng}`: where the travellers start; the globe draws a gold great-circle arc from it. |
 | `via` | | A list of `{name, lat, lng}`: where the flight changes planes on the way there, in order. The arc runs home, each change, destination, and each change gets a named pin; without it the arc is one direct line, which is right only for a direct flight. Needs `home`. |
+| `back` | | A list of `{name, lat, lng}`: the flight home, starting where it leaves (it may be a different airport from the one we landed at), then each change of planes, in order. The arc runs from the last stay to the first place, through each change, and ends at `home`; the first place and any change not already pinned get a named pin. Without it only the way there is drawn. Needs `home`. |
 | `destination` | | `{name, lat, lng}`; default: the first stay's place. The arc continues to the bases (the stays' places). |
 
 The globe is drawn by the kit's own orthographic projection over Natural Earth 1:110m land (the

@@ -186,6 +186,7 @@ LABELS.update({
     'ig_drawer': 'Instagram: @{h}', 'ig_profile': 'Instagram profile of @{h}', 'stop_details': 'Details below',
     'tour': 'Play the trip', 'tour_pause': 'Pause', 'tour_play': 'Play', 'tour_next': 'Next', 'tour_prev': 'Back',
     'tour_close': 'Close the tour', 'tour_from': 'From {home} to {dest}', 'tour_from_via': 'From {home} to {dest}, by way of {via}', 'tour_way': 'The way there',
+    'tour_back': 'home from {start}', 'tour_back_via': 'home from {start}, by way of {via}', 'tour_way_back': 'There and back',
     # what to eat, drink and what diners say, in Play the trip (9 November 2026)
     'tt_eat': 'Eat', 'tt_drink': 'Drink', 'tt_adults': 'adults', 'tt_menu': 'Menu', 'tt_menu_read': 'From the menu, read {read}',
     'tt_rating': '★ {stars} on {site} · {count} reviews · read {read}', 'tt_say': 'What diners say', 'tt_cite': '{site} review, {when}',
@@ -1027,15 +1028,17 @@ class Page:
             if not p.get('name') or not all(isinstance(p.get(c), (int, float)) and not isinstance(p.get(c), bool) for c in ('lat', 'lng')) \
                     or not (-90 <= p['lat'] <= 90 and -180 <= p['lng'] <= 180):
                 raise KitError(f'opener.{k}: name, lat and lng are required')
-        via = o.get('via')
-        if via is not None:
-            if not isinstance(via, list) or not o.get('home'):
-                raise KitError('opener.via: a list of places, and it needs opener.home')
-            for i, p in enumerate(via):
+        for k in ('via', 'back'):
+            hops = o.get(k)
+            if hops is None:
+                continue
+            if not isinstance(hops, list) or not o.get('home') or (k == 'back' and not hops):
+                raise KitError(f'opener.{k}: a list of places, and it needs opener.home')
+            for i, p in enumerate(hops):
                 if not isinstance(p, dict) or not p.get('name') \
                         or not all(isinstance(p.get(c), (int, float)) and not isinstance(p.get(c), bool) for c in ('lat', 'lng')) \
                         or not (-90 <= p['lat'] <= 90 and -180 <= p['lng'] <= 180):
-                    raise KitError(f'opener.via[{i}]: name, lat and lng are required')
+                    raise KitError(f'opener.{k}[{i}]: name, lat and lng are required')
         for i, a in enumerate(o.get('alerts') or []):
             if not a.get('text') or not str(a.get('href') or '').startswith('#') or not ID.match(str(a['href'])[1:]):
                 raise KitError(f'opener.alerts[{i}]: text and an in-page #anchor are required')
@@ -2848,6 +2851,10 @@ class Page:
         via = ' and '.join(v['name'] for v in o.get('via') or [])
         glabel = (self.fmt('tour_from_via', home=home['name'], dest=dest['name'], via=via) if via
                   else self.fmt('tour_from', home=home['name'], dest=dest['name'])) if home else dest['name']
+        back = o.get('back') or []
+        if home and back:
+            bvia = ' and '.join(v['name'] for v in back[1:])
+            glabel += '; ' + (self.fmt('tour_back_via', start=back[0]['name'], via=bvia) if bvia else self.fmt('tour_back', start=back[0]['name']))
         globe = (f'<figure class="op-globe">{self.globe_svg("g-sea-1", glabel)}<figcaption class="fine">{E(self.L["op_globe_hint"])} '
                  f'Land: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>.</figcaption></figure>')
         stays = ''.join(self.ocard(s, 'opener.stays') for s in o.get('stays') or [])
@@ -3714,7 +3721,7 @@ class Page:
                                      'wx_frame', 'wx_credit', 'wx_licence', 'wx_rain', 'wx_gust', 'wx_wind', 'wx_uv', 'wx_suggests', 'wx_fits',
                                      'wx_no_plan', 'wx_max_min', 'plans_rules', 'lens_fits', 'lens_check', 'lens_unknown', 'lens_for', 'rail_start', 'to',
                                      'cd_to_go', 'cd_one', 'cd_today', 'cd_during', 'local_time', 'lg_lit', 'lg_none', 'tour_pause', 'tour_play',
-                                     'tour_from', 'tour_from_via', 'tour_way', 'tt_eat', 'tt_drink', 'tt_adults', 'tt_menu', 'tt_say', 'nearby_pins', 'photo_spot', 'share', 'share_day', 'shared', 'copied',
+                                     'tour_from', 'tour_from_via', 'tour_way', 'tour_back', 'tour_back_via', 'tour_way_back', 'tt_eat', 'tt_drink', 'tt_adults', 'tt_menu', 'tt_say', 'nearby_pins', 'photo_spot', 'share', 'share_day', 'shared', 'copied',
                                      'near_me', 'near_title', 'near_wait', 'near_note', 'near_declined', 'near_denied', 'near_unavailable',
                                      'near_unsupported', 'near_none', 'about_km', 'new_tab', 'ig_posts', 'address', 'website', 'google_maps',
                                      'alt_map', 'hours', 'embed_note', 'call', 'stop_details', 'swapped',
@@ -3747,8 +3754,9 @@ class Page:
             start, end = self.trip_dates()
             out['opener'] = dict(start=start, end=end, tz=o.get('tz') or '', home=o.get('home'), dest=dict(name=dest['name'], lat=dest['lat'], lng=dest['lng']),
                                  bases=bases)
-            if o.get('via'):
-                out['opener']['via'] = [dict(name=v['name'], lat=v['lat'], lng=v['lng']) for v in o['via']]
+            for k in ('via', 'back'):
+                if o.get(k):
+                    out['opener'][k] = [dict(name=v['name'], lat=v['lat'], lng=v['lng']) for v in o[k]]
             out['tour'] = self.tour_steps()
         return out
 
