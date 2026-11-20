@@ -1,4 +1,4 @@
-// Globe layout for hongjia's documents, ported from the owner's michi explorer
+// Globe layout for the site's documents, ported from the owner's michi explorer
 // (src/claude-explorer.mjs): islands are placed on a golden spiral, pins spread around each
 // island's centre, and every island has its own coastline. Pure functions, no DOM, so Node tests
 // can check them. Positions are a layout only; distance means nothing.

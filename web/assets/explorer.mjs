@@ -1,5 +1,5 @@
-// The 🛰️ satellite, globe and 📁 folder for hongjia, ported from the owner's michi explorer
-// (assets/claude-explorer.mjs, release 0.9.1) to the family's documents. The globe is a
+// The 🛰️ satellite, globe and 📁 folder for the site, ported from the owner's michi explorer
+// (assets/claude-explorer.mjs, release 0.9.1) to the site's documents. The globe is a
 // chromeless glass sphere: each island is a hashtag, each pin a document. The satellite searches
 // every document on the server; the folder lists the open document's headings or all documents.
 // Rules kept from michi: button order 🛰️ globe 📁; the search field stays closed until the
@@ -63,7 +63,7 @@ function setup() {
   function build() {
     if (svg) return;
     const layout = placeGlobe(buildIslands(library));
-    svg = el('svg', { class: 'globe-canvas', viewBox: '-50 -50 700 700', width: 600, height: 600, role: 'group', tabindex: 0, 'aria-describedby': 'globe-help', 'aria-label': 'Globe of the family documents. Each island is a hashtag; each pin is a document.' });
+    svg = el('svg', { class: 'globe-canvas', viewBox: '-50 -50 700 700', width: 600, height: 600, role: 'group', tabindex: 0, 'aria-describedby': 'globe-help', 'aria-label': `Globe of the ${document.body.dataset.brand === 'd4y' ? '' : 'family '}documents. Each island is a hashtag; each pin is a document.` });
     const defs = el('defs', {}, svg);
     const glass = el('radialGradient', { id: 'globe-glass', cx: '38%', cy: '30%', r: '75%' }, defs);
     for (const [offset, colour, opacity] of [['0', '#fff', '.92'], ['.55', '#f4f8fd', '.78'], ['.9', '#dfe9f6', '.7'], ['1', '#b9cbe4', '.85']]) el('stop', { offset, 'stop-color': colour, 'stop-opacity': opacity }, glass);

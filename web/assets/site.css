@@ -66,7 +66,7 @@ p {
 [data-size-tier="phone-compact"] { --gutter: 12px; }
 [data-size-tier="phone-compact"] .card { padding: 22px; border-radius: 16px; }
 
-/* Family pages (P1): sign-in, enrolment, consent, home, journal, owner. */
+/* Site pages (P1): sign-in, enrolment, consent, home, journal, owner. */
 body.app {
   display: block;
   /* The placeholder centres with place-items; browsers that apply it to block layout would
@@ -775,7 +775,7 @@ html.fabs-fold .fab-scope.fab-blink { animation: scope-blink 1s ease-in-out 3; }
 }
 @media (prefers-reduced-motion: reduce) { html.fabs-fold .fab-scope.fab-blink { outline: 3px solid #4b9be8; outline-offset: 3px; } }
 .pick-more a { color: var(--river); }
-/* While a trip page's Play the trip tour is open, the family's pins and notes step aside, so nothing covers its
+/* While a trip page's Play the trip tour is open, the site's pins and notes step aside, so nothing covers its
    pictures or its map; they come back when it closes (the owner, 9 November 2026: "Hide pins during Play"). */
 html.tour-on .doc-overlay { visibility: hidden; }
 /* And while a trip page shows its days as islands (10 November 2026). */
@@ -1086,7 +1086,7 @@ body.inking .loupe-chip { display: none; }
 @media print { .ov-attachment { box-shadow: none; } }
 
 /* ==== Direction A, "River" (the owner, 8 November 2026) ====
-   洪, the family's name, means "flood; big, vast" and is written with the water element. One typeface
+   The river theme: water and calm. One typeface
    pair (Source Serif 4 for titles, Source Sans 3 for everything else, both SIL OFL, kept on this site),
    four heading sizes that differ at a glance, the whole width of the window, and no decoration that
    does not carry meaning. */

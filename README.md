@@ -54,6 +54,8 @@ The server listens on `$PORT` and on 8080 (`HONGJIA_ALSO_LISTEN` changes or, if 
 
 Family mode settings (Railway variables, never committed): `DATABASE_URL`, `HONGJIA_PROFILES` (comma-separated lowercase names), `HONGJIA_OWNER`, `HONGJIA_PUBLIC_ORIGIN` (required on Railway, for example `https://hongjia.org`), optionally `HONGJIA_EXTRA_ORIGINS` (other addresses the same site also answers on, comma-separated, each served as itself; any address not listed is sent to the main one; sign-in is separate on each address) and `HONGJIA_FAMILY_PASSWORD` (the one family password). Sign-in is: tap your name, type the family password. If the family password is not set, the site keeps showing the placeholder.
 
+A second site, d4y, can run beside it on the same server: set `D4Y_PUBLIC_ORIGIN` (its own address), `D4Y_PROFILE` (its names), `D4Y_OWNER`, `D4Y_PASSWORD` (must differ from the family password) and optionally `D4Y_COUNTRY` (only `Singapore`). Requests for d4y's address get d4y's own pages, name and wording, and its own copy of every table (schema `d4y` in the same database); its sign-ins, documents and journal never meet the family's. If d4y's settings are wrong, its address shows a plain notice and the family's site carries on.
+
 ## Deploying
 
 Railway builds the root `Dockerfile` from the `main` branch, so **a merge to `main` deploys**. Merges happen only with the owner's approval.

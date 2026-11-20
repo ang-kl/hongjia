@@ -66,8 +66,8 @@ async fn main() -> io::Result<()> {
     Ok(())
 }
 
-/// Connects (retrying for about a minute), migrates, and builds the family router. Also starts the
-/// retention job: first run after one minute, then every six hours.
+/// Connects (retrying for about a minute), migrates, and builds the family router, with d4y beside
+/// it when d4y is set up. Also starts each site's retention job.
 async fn family(url: &str, commit: &str) -> io::Result<Router> {
     let config = hongjia_web::family::Config::from_env(|key| env::var(key).ok())
         .map_err(|e| io::Error::other(format!("configuration error: {e}")))?;
@@ -92,24 +92,80 @@ async fn family(url: &str, commit: &str) -> io::Result<Router> {
         .run(&pool)
         .await
         .map_err(|e| io::Error::other(format!("migration failed: {e}")))?;
+    let family_hosts = config.hosts();
     let app = hongjia_web::family::app(pool.clone(), config, commit)
         .await
         .map_err(|e| io::Error::other(format!("startup failed: {e}")))?;
+    retention(pool.clone(), "");
+    // d4y, the friends' site (the owner, 20 November 2026), when its settings are present. Its
+    // trouble never stops the family's site: it is then left off and says why.
+    let d4y_hosts = hongjia_web::family::d4y_only_hosts(
+        hongjia_web::family::Config::d4y_hosts(|key| env::var(key).ok()),
+        &family_hosts,
+    );
+    let off = |e: String| {
+        eprintln!("d4y off: {e}");
+        if d4y_hosts.is_empty() {
+            app.clone()
+        } else {
+            hongjia_web::family::split_by_host(
+                app.clone(),
+                hongjia_web::family::unavailable(),
+                d4y_hosts.clone(),
+            )
+        }
+    };
+    match hongjia_web::family::Config::d4y_from_env(|key| env::var(key).ok()) {
+        None => Ok(app),
+        Some(Err(e)) => Ok(off(e)),
+        Some(Ok(d4y_config)) => match d4y(&pool, d4y_config, commit).await {
+            Ok((d4y_app, hosts)) => {
+                let hosts = hongjia_web::family::d4y_only_hosts(hosts, &family_hosts);
+                println!("d4y on: {}", hosts.join(", "));
+                Ok(hongjia_web::family::split_by_host(app, d4y_app, hosts))
+            }
+            Err(e) => Ok(off(e)),
+        },
+    }
+}
+
+/// d4y's router on its own tables (schema `d4y` in the same database), migrated like the family's.
+async fn d4y(
+    pool: &sqlx::PgPool,
+    config: hongjia_web::family::Config,
+    commit: &str,
+) -> Result<(Router, Vec<String>), String> {
+    let hosts = config.hosts();
+    let d4y_pool = hongjia_web::family::d4y_pool(pool)
+        .await
+        .map_err(|e| format!("database: {e}"))?;
+    sqlx::migrate!("../../db/migrations")
+        .run(&d4y_pool)
+        .await
+        .map_err(|e| format!("migration failed: {e}"))?;
+    let app = hongjia_web::family::app(d4y_pool.clone(), config, commit)
+        .await
+        .map_err(|e| format!("startup failed: {e}"))?;
+    retention(d4y_pool, "d4y ");
+    Ok((app, hosts))
+}
+
+/// The retention job for one site's tables: first run after one minute, then every six hours.
+fn retention(pool: sqlx::PgPool, label: &'static str) {
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(60)).await;
         loop {
             match hongjia_web::family::store::run_retention(&pool).await {
                 Ok((sessions, locations, attempts)) => {
                     println!(
-                        "retention: sessions {sessions}, locations {locations}, attempts {attempts}"
+                        "{label}retention: sessions {sessions}, locations {locations}, attempts {attempts}"
                     )
                 }
-                Err(e) => eprintln!("retention failed: {e}"),
+                Err(e) => eprintln!("{label}retention failed: {e}"),
             }
             tokio::time::sleep(Duration::from_secs(6 * 3600)).await;
         }
     });
-    Ok(app)
 }
 
 /// Binds on all IPv6 and IPv4 addresses, falling back to IPv4 only where IPv6 is unavailable.

@@ -555,6 +555,7 @@ dependencies = [
  "sqlx",
  "subtle",
  "tokio",
+ "tower",
  "ureq",
 ]
 
