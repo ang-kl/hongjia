@@ -128,10 +128,12 @@ impl Config {
                             .collect::<Vec<_>>()
                     })
                     .collect();
+                // Compared as the dispatcher compares them: without the port, in lower case.
                 if c.hosts().iter().any(|h| {
-                    family_origins
-                        .iter()
-                        .any(|o| o.split_once("://").is_some_and(|p| p.1 == h.as_str()))
+                    family_origins.iter().any(|o| {
+                        o.split_once("://")
+                            .is_some_and(|p| bare_host(p.1.trim_end_matches('/')) == bare_host(h))
+                    })
                 }) {
                     return Err("D4Y_PUBLIC_ORIGIN must differ from the family's addresses".into());
                 }
@@ -727,6 +729,8 @@ mod tests {
         );
         assert!(refused(("D4Y_PUBLIC_ORIGIN", "https://www.hongjia.org")));
         assert!(refused(("D4Y_PUBLIC_ORIGIN", "https://hongjia.org")));
+        assert!(refused(("D4Y_PUBLIC_ORIGIN", "https://hongjia.org:8443")));
+        assert!(refused(("D4Y_PUBLIC_ORIGIN", "https://HONGJIA.org")));
         assert!(refused(("D4Y_COUNTRY", "Malaysia")));
         assert!(
             refused(("D4Y_OWNER", "alpha")),

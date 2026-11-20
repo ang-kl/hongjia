@@ -120,6 +120,7 @@ async fn family(url: &str, commit: &str) -> io::Result<Router> {
         Some(Err(e)) => Ok(off(e)),
         Some(Ok(d4y_config)) => match d4y(&pool, d4y_config, commit).await {
             Ok((d4y_app, hosts)) => {
+                let hosts = hongjia_web::family::d4y_only_hosts(hosts, &family_hosts);
                 println!("d4y on: {}", hosts.join(", "));
                 Ok(hongjia_web::family::split_by_host(app, d4y_app, hosts))
             }
