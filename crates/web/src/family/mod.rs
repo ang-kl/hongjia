@@ -540,6 +540,10 @@ pub async fn app(pool: PgPool, config: Config, commit: &str) -> Result<Router, s
 /// settings and its own database tables, so neither can reach the other's pages or sign-ins.
 pub fn split_by_host(main: Router, other: Router, other_hosts: Vec<String>) -> Router {
     use tower::ServiceExt;
+    let other_hosts: Vec<String> = other_hosts
+        .iter()
+        .map(|h| bare_host(h).to_ascii_lowercase())
+        .collect();
     Router::new().fallback(move |request: Request| {
         let to_other = request
             .headers()

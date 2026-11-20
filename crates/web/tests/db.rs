@@ -338,7 +338,8 @@ async fn start_both(pool: PgPool) -> (u16, PgPool) {
     let d4y_app = family::app(d4y_pool.clone(), d4y_config(), "abc1234")
         .await
         .expect("d4y app");
-    let app = family::split_by_host(family_app, d4y_app, vec!["d4y.test".into()]);
+    // As configured, with the port a local address carries; requests are matched without it.
+    let app = family::split_by_host(family_app, d4y_app, vec!["D4Y.test:8443".into()]);
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let port = listener.local_addr().expect("addr").port();
     tokio::spawn(async move {
