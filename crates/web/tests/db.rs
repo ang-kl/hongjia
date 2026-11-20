@@ -345,9 +345,44 @@ async fn signin_success_failure_and_rate_limit(pool: PgPool) {
     let blocked = attacker.signin("delta", FAMILY).await;
     assert_eq!(
         blocked.status, 429,
-        "five failures in 15 minutes block even the right passphrase"
+        "five failures in a minute block even the right passphrase"
     );
     assert!(blocked.body.contains("Too many attempts"));
+    assert!(blocked.body.contains("wait a minute"));
+}
+
+#[sqlx::test(migrations = "../../db/migrations")]
+async fn a_lockout_lasts_one_minute(pool: PgPool) {
+    let port = start(pool.clone(), config()).await;
+    let _o = owner(port).await;
+    // five wrong passwords for one name, two minutes ago: the lock has already lifted
+    sqlx::query(
+        "INSERT INTO login_attempts (at, kind, profile_id, result, net_hash, ua_summary)
+         SELECT now() - interval '2 minutes', 'signin', id, 'failure', '\\x00', 'test'
+         FROM profiles, generate_series(1, 5) WHERE handle = 'beta'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        Client::new(port).signin("beta", FAMILY).await.status,
+        303,
+        "failures older than a minute no longer lock the name"
+    );
+    // the same five, half a minute ago: still locked
+    sqlx::query(
+        "INSERT INTO login_attempts (at, kind, profile_id, result, net_hash, ua_summary)
+         SELECT now() - interval '30 seconds', 'signin', id, 'failure', '\\x00', 'test'
+         FROM profiles, generate_series(1, 5) WHERE handle = 'beta'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        Client::new(port).signin("beta", FAMILY).await.status,
+        429,
+        "five failures within the minute lock the name"
+    );
 }
 
 #[sqlx::test(migrations = "../../db/migrations")]
